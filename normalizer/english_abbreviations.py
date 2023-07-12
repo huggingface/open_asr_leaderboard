@@ -1,4 +1,4 @@
-{
+english_spelling_normalizer = {
   "accessorise": "accessorize",
   "accessorised": "accessorized",
   "accessorises": "accessorizes",

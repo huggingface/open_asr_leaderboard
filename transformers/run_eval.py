@@ -1,10 +1,9 @@
 import argparse
 
 from transformers import pipeline
-from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
+from normalizer import EnglishTextNormalizer
 from datasets import load_dataset, Audio
 import evaluate
-import json
 
 wer_metric = evaluate.load("wer")
 
@@ -34,15 +33,11 @@ def get_text(sample):
         )
 
 
-# TODO(SG): generalise loading of normaliser
-with open("normalizer.json", encoding="utf-8") as vocab_handle:
-    english_spelling_normalizer = json.load(vocab_handle)
-
-whisper_norm = EnglishTextNormalizer(english_spelling_mapping=english_spelling_normalizer)
+normalizer = EnglishTextNormalizer()
 
 
-def normalise(batch):
-    batch["norm_text"] = whisper_norm(get_text(batch))
+def normalize(batch):
+    batch["norm_text"] = normalizer(get_text(batch))
     return batch
 
 
@@ -69,7 +64,7 @@ def main(args):
 
     # Re-sample to 16kHz and normalise transcriptions
     dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
-    dataset = dataset.map(normalise)
+    dataset = dataset.map(normalize)
     dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
 
     predictions = []
@@ -77,7 +72,7 @@ def main(args):
 
     # run streamed inference
     for out in asr_pipe(data(dataset), batch_size=args.batch_size):
-        predictions.append(whisper_norm(out["text"]))
+        predictions.append(normalizer(out["text"]))
         references.append(out["reference"][0])
 
     wer = wer_metric.compute(references=references, predictions=predictions)
@@ -99,7 +94,7 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-            "can be found at `https://huggingface.co/datasets/esb/datasets`".
+            "can be found at `https://huggingface.co/datasets/esb/datasets`"
     )
     parser.add_argument(
         "--split",
