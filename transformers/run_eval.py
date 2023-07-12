@@ -4,6 +4,7 @@ from transformers import pipeline
 from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
 from datasets import load_dataset, Audio
 import evaluate
+import json
 
 wer_metric = evaluate.load("wer")
 
@@ -34,7 +35,10 @@ def get_text(sample):
 
 
 # TODO(SG): generalise loading of normaliser
-whisper_norm = EnglishTextNormalizer(english_spelling_mapping="normalizer.json")
+with open("normalizer.json", encoding="utf-8") as vocab_handle:
+    english_spelling_normalizer = json.load(vocab_handle)
+
+whisper_norm = EnglishTextNormalizer(english_spelling_mapping=english_spelling_normalizer)
 
 
 def normalise(batch):
