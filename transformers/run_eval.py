@@ -33,7 +33,8 @@ def get_text(sample):
         )
 
 
-whisper_norm = EnglishTextNormalizer()
+# TODO(SG): generalise loading of normaliser
+whisper_norm = EnglishTextNormalizer(english_spelling_mapping="normalizer.json")
 
 
 def normalise(batch):
