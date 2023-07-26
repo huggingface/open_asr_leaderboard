@@ -110,10 +110,16 @@ def main(args):
         predictions.append(data_utils.normalizer(sample["pred_text"]))
         references.append(sample["reference"])
 
+    # Write manifest results
+    manifest_path = data_utils.write_manifest(
+        references, predictions, args.model_id, args.dataset_path, args.dataset, args.split
+    )
+    print("Results saved at path:", os.path.abspath(manifest_path))
+
     wer = wer_metric.compute(references=references, predictions=predictions)
     wer = round(100 * wer, 2)
 
-    print("WER:", wer)
+    print("WER:", wer, "%")
 
 
 if __name__ == "__main__":
