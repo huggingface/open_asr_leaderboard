@@ -103,12 +103,8 @@ def score_results(directory: str, model_id: str = None):
         model_id = model_id[:author_index] + "/" + model_id[author_index + 1 :]
 
         ds_fp = fp[ds_index:]
-        ds_fp = ds_fp.replace("DATASET_", "").rstrip(".jsonl")
-        parts = ds_fp.split("_")
-        dataset_path = parts[0]
-        dataset_name = parts[1]
-        split = parts[2]
-        return model_id, dataset_path, dataset_name, split
+        dataset_id = ds_fp.replace("DATASET_", "").rstrip(".jsonl")
+        return model_id, dataset_id
 
     # Compute results per dataset
     results = {}
@@ -116,7 +112,7 @@ def score_results(directory: str, model_id: str = None):
 
     for result_file in result_files:
         manifest = read_manifest(result_file)
-        model_id_of_file, dataset_path, dataset_name, split = parse_filepath(result_file)
+        model_id_of_file, dataset_id = parse_filepath(result_file)
 
         references = [datum["text"] for datum in manifest]
         predictions = [datum["pred_text"] for datum in manifest]
@@ -124,7 +120,7 @@ def score_results(directory: str, model_id: str = None):
         wer = wer_metric.compute(references=references, predictions=predictions)
         wer = round(100 * wer, 2)
 
-        result_key = f"{model_id_of_file} | {dataset_path}_{dataset_name}_{split}"
+        result_key = f"{model_id_of_file} | {dataset_id}"
         results[result_key] = wer
 
     print("*" * 80)
