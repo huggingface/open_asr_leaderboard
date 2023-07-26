@@ -7,6 +7,9 @@ import evaluate
 
 
 def read_manifest(manifest_path: str):
+    """
+    Reads a manifest file (jsonl format) and returns a list of dictionaries containing samples.
+    """
     data = []
     with open(manifest_path, "r", encoding='utf-8') as f:
         for line in f:
@@ -19,6 +22,20 @@ def read_manifest(manifest_path: str):
 def write_manifest(
     references: list, transcriptions: list, model_id: str, dataset_path: str, dataset_name: str, split: str
 ):
+    """
+    Writes a manifest file (jsonl format) and returns the path to the file.
+
+    Args:
+        references: Ground truth reference texts.
+        transcriptions: Model predicted transcriptions.
+        model_id: String identifier for the model.
+        dataset_path: Path to the dataset.
+        dataset_name: Name of the dataset.
+        split: Dataset split name.
+
+    Returns:
+        Path to the manifest file.
+    """
     model_id = model_id.replace("/", "-")
     dataset_path = dataset_path.replace("/", "-")
     dataset_name = dataset_name.replace("/", "-")
@@ -47,23 +64,23 @@ def write_manifest(
     return manifest_path
 
 
-def score_results(directory: str = None, model_id: str = None):
-    if directory is None:
-        # try to parse cmd line args
-        args = sys.argv[1:]
-        if len(args) == 0:
-            raise ValueError("Please specify a directory containing result files.")
+def score_results(directory: str, model_id: str = None):
+    """
+    Scores all result files in a directory and returns a composite score over all evaluated datasets.
 
-        directory = args[0]
+    Args:
+        directory: Path to the result directory, containing one or more jsonl files.
+        model_id: Optional, model name to filter out result files based on model name.
 
-        # see if model_id is specified
-        if len(args) > 1 and args[1] != "":
-            model_id = args[1]
+    Returns:
+        Composite score over all evaluated datasets and a dictionary of all results.
+    """
 
     # Strip trailing slash
     if directory.endswith(os.pathsep):
         directory = directory[:-1]
 
+    # Find all result files in the directory
     result_files = list(glob.glob(f"{directory}/**/*.jsonl", recursive=True))
     result_files = list(sorted(result_files))
 
@@ -72,9 +89,11 @@ def score_results(directory: str = None, model_id: str = None):
         model_id = model_id.replace("/", "-")
         result_files = [fp for fp in result_files if model_id in fp]
 
+    # Check if any result files were found
     if len(result_files) == 0:
         raise ValueError(f"No result files found in {directory}")
 
+    # Utility function to parse the file path and extract model id, dataset path, dataset name and split
     def parse_filepath(fp: str):
         model_index = fp.find("MODEL_")
         fp = fp[model_index:]
@@ -91,7 +110,7 @@ def score_results(directory: str = None, model_id: str = None):
         split = parts[2]
         return model_id, dataset_path, dataset_name, split
 
-    # Results per dataset
+    # Compute results per dataset
     results = {}
     wer_metric = evaluate.load("wer")
 
@@ -120,4 +139,4 @@ def score_results(directory: str = None, model_id: str = None):
     print("*" * 80)
     print(f"Composite WER: {composite_wer:0.2f} %")
 
-    return composite_wer
+    return composite_wer, results
