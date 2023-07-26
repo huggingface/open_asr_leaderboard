@@ -17,7 +17,7 @@ def main(args):
         "automatic-speech-recognition", model=args.model_id, device=args.device
     )
 
-    dataset = data_utils.load_dataset(args)
+    dataset = data_utils.load_data(args)
 
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         print(f"Subsampling dataset to first {args.max_eval_samples} samples !")
