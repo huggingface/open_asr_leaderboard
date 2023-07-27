@@ -85,7 +85,8 @@ def score_results(directory: str, model_id: str = None):
     result_files = list(sorted(result_files))
 
     # Filter files belonging to a specific model id
-    if model_id is not None:
+    if model_id is not None and model_id != "":
+        print("Filtering models by id:", model_id)
         model_id = model_id.replace("/", "-")
         result_files = [fp for fp in result_files if model_id in fp]
 
