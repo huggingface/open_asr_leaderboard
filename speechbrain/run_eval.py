@@ -8,9 +8,10 @@ import argparse
 
 import evaluate
 from normalizer import data_utils
-
+from tqdm import tqdm
+import torch 
 import speechbrain.pretrained as pretrained
-import os 
+from speechbrain.utils.data_utils import batch_pad_right
 
 def get_model(speechbrain_repository, speechbrain_pretrained_class_name, savedir=None, **kwargs):
 
@@ -25,14 +26,10 @@ def get_model(speechbrain_repository, speechbrain_pretrained_class_name, savedir
 
     run_opts = {**run_opt_defaults, **kwargs}
     
-    if run_opts["device"] == -1:
-        run_opts["device"] = "cpu"
-    else:
-        run_opts["device"] = f"cuda:{run_opts['device']}"
-
     kwargs = {
         "source": f"speechbrain/{speechbrain_repository}",
         "savedir": f"pretrained_models/{speechbrain_repository}",
+        "run_opts": run_opts,
     }
 
     if savedir is not None:
@@ -43,7 +40,7 @@ def get_model(speechbrain_repository, speechbrain_pretrained_class_name, savedir
     except AttributeError:
         raise AttributeError(f"SpeechBrain Pretrained class: {speechbrain_pretrained_class_name} not found in pretrained.py")
 
-    return model_class
+    return model_class.from_hparams(**kwargs)
 
 
 def dataset_iterator(dataset):
@@ -56,10 +53,45 @@ def dataset_iterator(dataset):
             "sample_id": i,
         }
 
+def evaluate_batch(model, buffer, predictions, device: str):
+    wavs = [torch.from_numpy(sample['array']) for sample in buffer]
+    wavs, wav_lens = batch_pad_right(wavs)
+    # cast to device
+    wavs = wavs.to(device)
+    wav_lens = wav_lens.to(device)
+    predicted_words, _ = model.transcribe_batch(wavs, wav_lens)
+
+    for result in predicted_words:
+        result = data_utils.normalizer(result)
+        predictions.append(result)
+    buffer.clear()
+
+
+def evaluate_dataset(model, dataset, device: str, batch_size: int, verbose: bool = True):
+    references = []
+    predictions = []
+    buffer = []
+    for sample in tqdm(dataset_iterator(dataset), desc='Evaluating: Sample id', unit='', disable=not verbose):
+        buffer.append(sample)
+        references.append(sample['reference'])
+        if len(buffer) == batch_size:
+            evaluate_batch(model, buffer, predictions, device)
+            
+    if len(buffer) > 0:
+        evaluate_batch(model, buffer, predictions, device)
+
+    return references, predictions
+
 wer_metric = evaluate.load("wer")
 
 def main(args):
-    asr_model = get_model(args.source, args.speechbrain_pretrained_class_name, device=args.device)
+
+    if args.device == -1:
+        device = "cpu"
+    else:
+        device = f"cuda:{args.device}"
+
+    asr_model = get_model(args.source, args.speechbrain_pretrained_class_name, device=device)
 
     dataset = data_utils.load_data(args)
 
@@ -72,10 +104,7 @@ def main(args):
     predictions = []
     references = []
 
-    # run streamed inference
-    for out in asr_pipe(dataset_iterator(dataset), batch_size=args.batch_size):
-        predictions.append(data_utils.normalizer(out["text"]))
-        references.append(out["reference"][0])
+    references, predictions = evaluate_dataset(asr_model, dataset, device, args.batch_size, verbose=True)
 
     wer = wer_metric.compute(references=references, predictions=predictions)
     wer = round(100 * wer, 2)
