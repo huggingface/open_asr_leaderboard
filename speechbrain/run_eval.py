@@ -1,22 +1,26 @@
-""" 
-Script to evaluate a pretrained SpeechBrain model on ESB.
+"""Script to evaluate a pretrained SpeechBrain model from the 🤗 Hub.
 
 Authors
-* Adel Moumen 2023
+* Adel Moumen 2023 <adel.moumen@univ-avignon.fr>
 """
 import argparse
 
 import evaluate
 from normalizer import data_utils
 from tqdm import tqdm
-import torch 
+import torch
 import speechbrain.pretrained as pretrained
 from speechbrain.utils.data_utils import batch_pad_right
-import speechbrain.pretrained.Pretrained as Pretrained
 from datasets import Dataset
 from typing import List, Union
 
-def get_model(speechbrain_repository: str, speechbrain_pretrained_class_name: str, savedir=None, **kwargs) -> Pretrained:
+
+def get_model(
+    speechbrain_repository: str,
+    speechbrain_pretrained_class_name: str,
+    savedir=None,
+    **kwargs,
+):
     """Fetch a pretrained SpeechBrain model from the SpeechBrain 🤗 Hub.
 
     Arguments
@@ -35,6 +39,11 @@ def get_model(speechbrain_repository: str, speechbrain_pretrained_class_name: st
     -------
     SpeechBrain pretrained model
         The Pretrained model.
+
+    Example
+    -------
+    >>> from open_asr_leaderboard.speechbrain.run_eval import get_model
+    >>> model = get_model("asr-crdnn-rnnlm-librispeech", "EncoderASR", device="cuda:0")
     """
 
     run_opt_defaults = {
@@ -47,7 +56,7 @@ def get_model(speechbrain_repository: str, speechbrain_pretrained_class_name: st
     }
 
     run_opts = {**run_opt_defaults, **kwargs}
-    
+
     kwargs = {
         "source": f"speechbrain/{speechbrain_repository}",
         "savedir": f"pretrained_models/{speechbrain_repository}",
@@ -60,9 +69,12 @@ def get_model(speechbrain_repository: str, speechbrain_pretrained_class_name: st
     try:
         model_class = getattr(pretrained, speechbrain_pretrained_class_name)
     except AttributeError:
-        raise AttributeError(f"SpeechBrain Pretrained class: {speechbrain_pretrained_class_name} not found in pretrained.py")
+        raise AttributeError(
+            f"SpeechBrain Pretrained class: {speechbrain_pretrained_class_name} not found in pretrained.py"
+        )
 
     return model_class.from_hparams(**kwargs)
+
 
 def dataset_iterator(dataset: Dataset):
     """Iterate over the dataset and yield the audio and reference text.
@@ -86,7 +98,8 @@ def dataset_iterator(dataset: Dataset):
             "sample_id": i,
         }
 
-def evaluate_batch(model: Pretrained, buffer: List, predictions: List, device: str) -> None:
+
+def evaluate_batch(model, buffer: List, predictions: List, device: str) -> None:
     """Evaluate a batch of audio samples.
 
     Arguments
@@ -100,7 +113,7 @@ def evaluate_batch(model: Pretrained, buffer: List, predictions: List, device: s
     device : str
         The device to run the model on.
     """
-    wavs = [torch.from_numpy(sample['array']) for sample in buffer]
+    wavs = [torch.from_numpy(sample["array"]) for sample in buffer]
     wavs, wav_lens = batch_pad_right(wavs)
     wavs = wavs.to(device)
     wav_lens = wav_lens.to(device)
@@ -112,7 +125,9 @@ def evaluate_batch(model: Pretrained, buffer: List, predictions: List, device: s
     buffer.clear()
 
 
-def evaluate_dataset(model, dataset, device: str, batch_size: int, verbose: bool = True) -> Union[List, List]:
+def evaluate_dataset(
+    model, dataset: Dataset, device: str, batch_size: int, verbose: bool = True
+) -> Union[List, List]:
     """Evaluate a dataset the SpeechBrain pretrained model.
 
     Arguments
@@ -138,25 +153,33 @@ def evaluate_dataset(model, dataset, device: str, batch_size: int, verbose: bool
     references = []
     predictions = []
     buffer = []
-    for sample in tqdm(dataset_iterator(dataset), desc='Evaluating: Sample id', unit='', disable=not verbose):
+    for sample in tqdm(
+        dataset_iterator(dataset),
+        desc="Evaluating: Sample id",
+        unit="",
+        disable=not verbose,
+    ):
         buffer.append(sample)
-        references.append(sample['reference'])
+        references.append(sample["reference"])
         if len(buffer) == batch_size:
             evaluate_batch(model, buffer, predictions, device)
-            
+
     if len(buffer) > 0:
         evaluate_batch(model, buffer, predictions, device)
 
     return references, predictions
 
-def main(args):
 
+def main(args):
+    """Run the evaluation script."""
     if args.device == -1:
         device = "cpu"
     else:
         device = f"cuda:{args.device}"
 
-    asr_model = get_model(args.source, args.speechbrain_pretrained_class_name, device=device)
+    asr_model = get_model(
+        args.source, args.speechbrain_pretrained_class_name, device=device
+    )
 
     dataset = data_utils.load_data(args)
 
@@ -169,7 +192,9 @@ def main(args):
     predictions = []
     references = []
 
-    references, predictions = evaluate_dataset(asr_model, dataset, device, args.batch_size, verbose=True)
+    references, predictions = evaluate_dataset(
+        asr_model, dataset, device, args.batch_size, verbose=True
+    )
 
     wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(references=references, predictions=predictions)
@@ -196,14 +221,17 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--dataset_path', type=str, default='esb/datasets', help='Dataset path. By default, it is `esb/datasets`'
+        "--dataset_path",
+        type=str,
+        default="esb/datasets",
+        help="Dataset path. By default, it is `esb/datasets`",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-            "can be found at `https://huggingface.co/datasets/esb/datasets`"
+        "can be found at `https://huggingface.co/datasets/esb/datasets`",
     )
     parser.add_argument(
         "--split",
@@ -231,7 +259,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--no-streaming",
-        dest='streaming',
+        dest="streaming",
         action="store_false",
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
     )
@@ -239,4 +267,3 @@ if __name__ == "__main__":
     parser.set_defaults(streaming=True)
 
     main(args)
-
