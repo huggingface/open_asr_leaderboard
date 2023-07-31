@@ -1,5 +1,5 @@
 """ 
-Script to evaluate a pretrained SpeechBrain model on ESB.
+Script to evaluate a pretrained SpeechBrain's model on ESB.
 
 Authors
 * Adel Moumen 2023
@@ -56,7 +56,6 @@ def dataset_iterator(dataset):
 def evaluate_batch(model, buffer, predictions, device: str):
     wavs = [torch.from_numpy(sample['array']) for sample in buffer]
     wavs, wav_lens = batch_pad_right(wavs)
-    # cast to device
     wavs = wavs.to(device)
     wav_lens = wav_lens.to(device)
     predicted_words, _ = model.transcribe_batch(wavs, wav_lens)
