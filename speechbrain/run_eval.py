@@ -160,7 +160,7 @@ def evaluate_dataset(
         disable=not verbose,
     ):
         buffer.append(sample)
-        references.append(sample["reference"])
+        references.append(data_utils.normalizer(sample["reference"]))
         if len(buffer) == batch_size:
             evaluate_batch(model, buffer, predictions, device)
 
