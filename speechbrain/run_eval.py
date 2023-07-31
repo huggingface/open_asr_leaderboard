@@ -13,6 +13,8 @@ import torch
 import speechbrain.pretrained as pretrained
 from speechbrain.utils.data_utils import batch_pad_right
 import speechbrain.pretrained.Pretrained as Pretrained
+from datasets import Dataset
+from typing import List, Union
 
 def get_model(speechbrain_repository: str, speechbrain_pretrained_class_name: str, savedir=None, **kwargs) -> Pretrained:
     """Fetch a pretrained SpeechBrain model from the SpeechBrain 🤗 Hub.
@@ -62,7 +64,19 @@ def get_model(speechbrain_repository: str, speechbrain_pretrained_class_name: st
 
     return model_class.from_hparams(**kwargs)
 
-def dataset_iterator(dataset):
+def dataset_iterator(dataset: Dataset):
+    """Iterate over the dataset and yield the audio and reference text.
+
+    Arguments
+    ---------
+    dataset : Dataset
+        The dataset to iterate over.
+
+    Yields
+    ------
+    dict
+        A dictionary containing the audio and reference text.
+    """
     for i, item in enumerate(dataset):
         yield {
             **item["audio"],
@@ -72,7 +86,20 @@ def dataset_iterator(dataset):
             "sample_id": i,
         }
 
-def evaluate_batch(model, buffer, predictions, device: str):
+def evaluate_batch(model: Pretrained, buffer: List, predictions: List, device: str) -> None:
+    """Evaluate a batch of audio samples.
+
+    Arguments
+    ---------
+    model : Pretrained
+        The SpeechBrain pretrained model.
+    buffer : List
+        A list of audio samples.
+    predictions : List
+        A list of predictions.
+    device : str
+        The device to run the model on.
+    """
     wavs = [torch.from_numpy(sample['array']) for sample in buffer]
     wavs, wav_lens = batch_pad_right(wavs)
     wavs = wavs.to(device)
@@ -85,7 +112,29 @@ def evaluate_batch(model, buffer, predictions, device: str):
     buffer.clear()
 
 
-def evaluate_dataset(model, dataset, device: str, batch_size: int, verbose: bool = True):
+def evaluate_dataset(model, dataset, device: str, batch_size: int, verbose: bool = True) -> Union[List, List]:
+    """Evaluate a dataset the SpeechBrain pretrained model.
+
+    Arguments
+    ---------
+    model : Pretrained
+        The SpeechBrain pretrained model.
+    dataset : Dataset
+        The dataset to evaluate.
+    device : str
+        The device to run the model on.
+    batch_size : int
+        The batch size to use.
+    verbose : bool, optional
+        Whether to print progress information.
+
+    Returns
+    -------
+    references : List
+        A list of references.
+    predictions : List
+        A list of predictions.
+    """
     references = []
     predictions = []
     buffer = []
@@ -99,8 +148,6 @@ def evaluate_dataset(model, dataset, device: str, batch_size: int, verbose: bool
         evaluate_batch(model, buffer, predictions, device)
 
     return references, predictions
-
-wer_metric = evaluate.load("wer")
 
 def main(args):
 
@@ -124,6 +171,7 @@ def main(args):
 
     references, predictions = evaluate_dataset(asr_model, dataset, device, args.batch_size, verbose=True)
 
+    wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(references=references, predictions=predictions)
     wer = round(100 * wer, 2)
 
