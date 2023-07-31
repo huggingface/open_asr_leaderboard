@@ -1,5 +1,5 @@
 """ 
-Script to evaluate a pretrained SpeechBrain's model on ESB.
+Script to evaluate a pretrained SpeechBrain model on ESB.
 
 Authors
 * Adel Moumen 2023
@@ -12,8 +12,28 @@ from tqdm import tqdm
 import torch 
 import speechbrain.pretrained as pretrained
 from speechbrain.utils.data_utils import batch_pad_right
+import speechbrain.pretrained.Pretrained as Pretrained
 
-def get_model(speechbrain_repository, speechbrain_pretrained_class_name, savedir=None, **kwargs):
+def get_model(speechbrain_repository: str, speechbrain_pretrained_class_name: str, savedir=None, **kwargs) -> Pretrained:
+    """Fetch a pretrained SpeechBrain model from the SpeechBrain 🤗 Hub.
+
+    Arguments
+    ---------
+    speechbrain_repository : str
+        The name of the SpeechBrain repository to fetch the pretrained model from. E.g. `asr-crdnn-rnnlm-librispeech`.
+    speechbrain_pretrained_class_name : str
+        The name of the SpeechBrain pretrained class to fetch. E.g. `EncoderASR`.
+        See: https://github.com/speechbrain/speechbrain/blob/develop/speechbrain/pretrained/interfaces.py
+    savedir : str, optional
+        The directory to save the pretrained model to. If not provided, the model will be saved to `pretrained_models/{speechbrain_repository}`.
+    **kwargs
+        Additional keyword arguments to pass to override the default run options of the pretrained model.
+
+    Returns
+    -------
+    SpeechBrain pretrained model
+        The Pretrained model.
+    """
 
     run_opt_defaults = {
         "device": "cpu",
@@ -41,7 +61,6 @@ def get_model(speechbrain_repository, speechbrain_pretrained_class_name, savedir
         raise AttributeError(f"SpeechBrain Pretrained class: {speechbrain_pretrained_class_name} not found in pretrained.py")
 
     return model_class.from_hparams(**kwargs)
-
 
 def dataset_iterator(dataset):
     for i, item in enumerate(dataset):
