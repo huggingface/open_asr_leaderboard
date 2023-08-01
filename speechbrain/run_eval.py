@@ -18,7 +18,6 @@ import os
 def get_model(
     speechbrain_repository: str,
     speechbrain_pretrained_class_name: str,
-    savedir=None,
     **kwargs,
 ):
     """Fetch a pretrained SpeechBrain model from the SpeechBrain 🤗 Hub.
@@ -30,8 +29,6 @@ def get_model(
     speechbrain_pretrained_class_name : str
         The name of the SpeechBrain pretrained class to fetch. E.g. `EncoderASR`.
         See: https://github.com/speechbrain/speechbrain/blob/develop/speechbrain/pretrained/interfaces.py
-    savedir : str, optional
-        The directory to save the pretrained model to. If not provided, the model will be saved to `pretrained_models/{speechbrain_repository}`.
     **kwargs
         Additional keyword arguments to pass to override the default run options of the pretrained model.
 
@@ -62,9 +59,6 @@ def get_model(
         "savedir": f"pretrained_models/{speechbrain_repository}",
         "run_opts": run_opts,
     }
-
-    if savedir is not None:
-        kwargs["savedir"] = savedir
 
     try:
         model_class = getattr(pretrained, speechbrain_pretrained_class_name)
