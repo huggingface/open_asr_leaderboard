@@ -20,7 +20,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=10
+        --max_eval_samples=-1
 
 
     python run_eval.py \
@@ -30,7 +30,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=10
+        --max_eval_samples=-1
 
     # Evaluate results
     RUNDIR=`pwd` && \
