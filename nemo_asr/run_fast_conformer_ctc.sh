@@ -4,14 +4,13 @@ export PYTHONPATH="..":$PYTHONPATH
 
 #considering FC-XL, FC-XXL CTC models
 MODEL_IDs=("nvidia/stt_en_fastconformer_ctc_xlarge" "nvidia/stt_en_fastconformer_ctc_xxlarge")
-BATCH_SIZES=(16 8)
+BATCH_SIZE=8
 
 num_models=${#MODEL_IDs[@]}
 
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
-    BATCH_SIZE=${BATCH_SIZES[$i]}
 
     python run_eval.py \
         --model_id=${MODEL_ID} \

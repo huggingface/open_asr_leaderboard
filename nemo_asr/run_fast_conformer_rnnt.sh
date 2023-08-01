@@ -4,14 +4,13 @@ export PYTHONPATH="..":$PYTHONPATH
 
 #considering FC-L, FC-XL, FC-XXL RNNT models
 MODEL_IDs=("nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_fastconformer_transducer_xlarge" "nvidia/stt_en_fastconformer_transducer_xxlarge")
-BATCH_SIZES=(32 16 8)
+BATCH_SIZE=8
 
 num_models=${#MODEL_IDs[@]}
 
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
-    BATCH_SIZE=${BATCH_SIZES[$i]}
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
