@@ -2,8 +2,11 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
+SOURCE="speechbrain/asr-wav2vec2-librispeech"
+
+
 python run_eval.py \
-	--source="asr-wav2vec2-librispeech" \
+	--source=$MODEL_ID \
     --speechbrain_pretrained_class_name="EncoderASR" \
 	--dataset_path="librispeech_asr" \
 	--dataset="clean" \

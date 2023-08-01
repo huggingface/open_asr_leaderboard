@@ -55,7 +55,7 @@ def get_model(
     run_opts = {**run_opt_defaults, **kwargs}
 
     kwargs = {
-        "source": f"speechbrain/{speechbrain_repository}",
+        "source": f"{speechbrain_repository}",
         "savedir": f"pretrained_models/{speechbrain_repository}",
         "run_opts": run_opts,
     }
