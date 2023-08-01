@@ -13,7 +13,7 @@ import speechbrain.pretrained as pretrained
 from speechbrain.utils.data_utils import batch_pad_right
 from datasets import Dataset
 from typing import List, Union
-
+import os 
 
 def get_model(
     speechbrain_repository: str,
@@ -160,7 +160,7 @@ def evaluate_dataset(
         disable=not verbose,
     ):
         buffer.append(sample)
-        references.append(data_utils.normalizer(sample["reference"]))
+        references.append(sample["reference"])
         if len(buffer) == batch_size:
             evaluate_batch(model, buffer, predictions, device)
 
@@ -196,11 +196,17 @@ def main(args):
         asr_model, dataset, device, args.batch_size, verbose=True
     )
 
+    # Write manifest results
+    manifest_path = data_utils.write_manifest(
+        references, predictions, args.source, args.dataset_path, args.dataset, args.split
+    )
+    print("Results saved at path:", os.path.abspath(manifest_path))
+    
     wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(references=references, predictions=predictions)
     wer = round(100 * wer, 2)
 
-    print("WER:", wer)
+    print("WER:", wer, "%")
 
 
 if __name__ == "__main__":

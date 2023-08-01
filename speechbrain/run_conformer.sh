@@ -9,4 +9,4 @@ python run_eval.py \
 	--dataset="other" \
 	--split="test" \
 	--device=0 \
-	--batch_size=16
+	--batch_size=1
