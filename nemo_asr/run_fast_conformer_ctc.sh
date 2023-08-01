@@ -2,9 +2,9 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-#considering FC-L, FC-XL, FC-XXL RNNT models
-MODEL_IDs=("nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_fastconformer_transducer_xlarge" "nvidia/stt_en_fastconformer_transducer_xxlarge")
-BATCH_SIZES=(32 16 8)
+#considering FC-XL, FC-XXL CTC models
+MODEL_IDs=("nvidia/stt_en_fastconformer_ctc_xlarge" "nvidia/stt_en_fastconformer_ctc_xxlarge")
+BATCH_SIZES=(16 8)
 
 num_models=${#MODEL_IDs[@]}
 
@@ -20,7 +20,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=10
 
 
     python run_eval.py \
@@ -30,7 +30,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=10
 
     # Evaluate results
     RUNDIR=`pwd` && \
