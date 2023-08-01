@@ -2,7 +2,7 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-SOURCE="speechbrain/asr-wav2vec2-librispeech"
+SOURCE="speechbrain/asr-wav2vec2-commonvoice-en"
 
 python run_eval.py \
 	--source=$SOURCE \
