@@ -2,8 +2,8 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-#considering FC-L, FC-XL, FC-XXL RNNT models
-MODEL_IDs=("nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_fastconformer_transducer_xlarge" "nvidia/stt_en_fastconformer_transducer_xxlarge")
+#considering FC-XL, FC-XXL CTC models
+MODEL_IDs=("nvidia/stt_en_fastconformer_ctc_xlarge" "nvidia/stt_en_fastconformer_ctc_xxlarge")
 BATCH_SIZE=8
 
 num_models=${#MODEL_IDs[@]}
