@@ -1,10 +1,9 @@
 import os
-import sys
 import glob
 import json
 
 import evaluate
-
+from collections import defaultdict
 
 def read_manifest(manifest_path: str):
     """
@@ -131,9 +130,21 @@ def score_results(directory: str, model_id: str = None):
     for k, v in results.items():
         print(f"{k}: WER = {v:0.2f} %")
 
-    composite_wer = sum(results.values()) / len(results)
+    # composite WER should be computed over all datasets and with the same key
+    composite_wer = defaultdict(float)
+    count_entries = defaultdict(int)
+    for k, v in results.items():
+        key = k.split("|")[0].strip()
+        composite_wer[key] += v
+        count_entries[key] += 1
+
+    # normalize scores & print
     print()
     print("*" * 80)
-    print(f"Composite WER: {composite_wer:0.2f} %")
-
+    print("Composite WER:")
+    print("*" * 80)
+    for k, v in composite_wer.items():
+        wer = v / count_entries[k]
+        print(f"{k}: WER = {wer:0.2f} %")
+    print("*" * 80)
     return composite_wer, results
