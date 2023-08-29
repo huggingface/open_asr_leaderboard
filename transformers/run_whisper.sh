@@ -2,7 +2,7 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("openai/whisper-tiny.en" "openai/whisper-tiny" "openai/whisper-small" "openai/whisper-small.en" "openai/whisper-base" "openai/whisper-base.en" "openai/whisper-medium" "openai/whisper-large" "openai/whisper-large-v2")
+MODEL_IDs=("openai/whisper-tiny.en" "openai/whisper-small.en" "openai/whisper-base.en" "openai/whisper-medium.en" "openai/whisper-large" "openai/whisper-large-v2")
 BATCH_SIZE=8
 
 num_models=${#MODEL_IDs[@]}
