@@ -43,7 +43,16 @@ do
         --model_id=${MODEL_ID} \
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="librispeech" \
-        --split="test" \
+        --split="test.clean" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=8
+
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset="librispeech" \
+        --split="test.other" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=8
