@@ -96,6 +96,6 @@ if __name__ == "__main__":
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
+    parser.set_defaults(streaming=False)
 
     main(args)
