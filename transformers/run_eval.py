@@ -34,11 +34,11 @@ def main(args):
         predictions.append(data_utils.normalizer(out["text"]))
         references.append(out["reference"][0])
 
-        # Write manifest results
-        manifest_path = data_utils.write_manifest(
-            references, predictions, args.model_id, args.dataset_path, args.dataset, args.split
-        )
-        print("Results saved at path:", os.path.abspath(manifest_path))
+    # Write manifest results
+    manifest_path = data_utils.write_manifest(
+        references, predictions, args.model_id, args.dataset_path, args.dataset, args.split
+    )
+    print("Results saved at path:", os.path.abspath(manifest_path))
 
     wer = wer_metric.compute(references=references, predictions=predictions)
     wer = round(100 * wer, 2)
