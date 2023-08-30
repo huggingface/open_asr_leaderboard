@@ -3,7 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=( "facebook/hubert-large-ls960-ft" "facebook/hubert-xlarge-ls960-ft" "patrickvonplaten/hubert-xlarge-ls960-ft-4-gram")
-BATCH_SIZE=8
+BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
 
@@ -18,7 +18,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
 
     python run_eval.py \
@@ -28,7 +28,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -37,7 +37,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -46,7 +46,7 @@ do
         --split="test.clean" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -55,7 +55,7 @@ do
         --split="test.other" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -64,7 +64,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -73,7 +73,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -82,7 +82,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -91,7 +91,7 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     # Evaluate results
     RUNDIR=`pwd` && \

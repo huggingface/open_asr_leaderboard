@@ -3,7 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=("facebook/wav2vec2-base-960h" "facebook/wav2vec2-large-960h" "facebook/wav2vec2-large-960h-lv60-self" "facebook/wav2vec2-large-robust-ft-libri-960h" "facebook/wav2vec2-conformer-rel-pos-large-960h-ft" "facebook/wav2vec2-conformer-rope-large-960h-ft")
-BATCH_SIZE=8
+BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
 
@@ -16,9 +16,9 @@ do
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="ami" \
         --split="test" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
 
     python run_eval.py \
@@ -26,72 +26,72 @@ do
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="earnings22" \
         --split="test" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="gigaspeech" \
         --split="test" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="librispeech" \
         --split="test.clean" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="librispeech" \
         --split="test.other" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="spgispeech" \
         --split="test" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="tedlium" \
         --split="test" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="voxpopuli" \
         --split="test" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="open-asr-leaderboard/datasets-test-only" \
         --dataset="common_voice" \
         --split="test" \
-        --device=0 \
+        --device=1 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=8
+        --max_eval_samples=-1
 
     # Evaluate results
     RUNDIR=`pwd` && \
