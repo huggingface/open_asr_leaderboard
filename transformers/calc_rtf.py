@@ -2,10 +2,29 @@ import time
 from transformers import pipeline
 import librosa
 
-device = "cpu"
+device = "cuda:0"
+# models = [
+#     "facebook/hubert-large-ls960-ft", 
+#     "facebook/hubert-xlarge-ls960-ft",
+#     "patrickvonplaten/hubert-xlarge-ls960-ft-4-gram",
+#     "facebook/wav2vec2-base-960h",
+#     "facebook/wav2vec2-large-960h",
+#     "facebook/wav2vec2-large-960h-lv60-self", 
+#     "facebook/wav2vec2-large-robust-ft-libri-960h", 
+#     "facebook/wav2vec2-conformer-rel-pos-large-960h-ft",
+#     "facebook/wav2vec2-conformer-rope-large-960h-ft",
+#     "openai/whisper-tiny.en",
+#     "openai/whisper-small.en",
+#     "openai/whisper-base.en",
+#     "openai/whisper-medium.en",
+#     "openai/whisper-large",
+#     "openai/whisper-large-v2",
+#     "facebook/mms-1b-all",
+#     "facebook/mms-1b-fl102"
+#     ]
 model = "openai/whisper-tiny.en"
-n_batches = 5
-warmup_batches = 3
+n_batches = 3
+warmup_batches = 5
 pipe = pipeline("automatic-speech-recognition", model=model, device=device)
 
 audio_file = "4469669.mp3"
