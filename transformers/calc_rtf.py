@@ -44,12 +44,13 @@ audio_dict, audio_len = pre_process_audio(audio_file, 16000, max_len)
 
 rtfs = []
 
-for model in models:
+for model in models[:1]:
     pipe = pipeline(
         "automatic-speech-recognition",
         model=model,
         device=device,
         torch_dtype=torch.float16,
+        batch_size=24,
     )
 
     for i in range(3):
@@ -72,6 +73,6 @@ for model in models:
         rtf = (total_time / n_batches) / (audio_len / 16000)
         rtfs.append(rtf)
 
-    print(f"all RTFs: {rtfs}")
+    print(f"all RTFs: {model}: {rtfs}")
     rtf_val = sum(rtfs) / len(rtfs)
     print(f"avg. RTF: {model}: {rtf_val}")
