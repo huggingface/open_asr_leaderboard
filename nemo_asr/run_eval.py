@@ -27,17 +27,19 @@ def dataset_iterator(dataset):
         }
 
 
-def write_audio(buffer) -> list:
-    if os.path.exists(DATA_CACHE_DIR):
-        shutil.rmtree(DATA_CACHE_DIR, ignore_errors=True)
+def write_audio(buffer, cache_prefix) -> list:
+    cache_dir = os.path.join(DATA_CACHE_DIR, cache_prefix)
 
-    os.makedirs(DATA_CACHE_DIR)
+    if os.path.exists(cache_dir):
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+    os.makedirs(cache_dir)
 
     data_paths = []
     for idx, data in enumerate(buffer):
         fn = os.path.basename(data['audio_filename'])
         fn = os.path.splitext(fn)[0]
-        path = os.path.join(DATA_CACHE_DIR, f"{idx}_{fn}.wav")
+        path = os.path.join(cache_dir, f"{idx}_{fn}.wav")
         data_paths.append(path)
 
         soundfile.write(path, data["array"], samplerate=data['sample_rate'])
@@ -52,14 +54,14 @@ def pack_results(results: list, buffer, transcriptions):
     return results
 
 
-def buffer_audio_and_transcribe(model: ASRModel, dataset, batch_size: int, verbose: bool = True):
+def buffer_audio_and_transcribe(model: ASRModel, dataset, batch_size: int, cache_prefix: str, verbose: bool = True):
     buffer = []
     results = []
     for sample in tqdm(dataset_iterator(dataset), desc='Evaluating: Sample id', unit='', disable=not verbose):
         buffer.append(sample)
 
         if len(buffer) == batch_size:
-            filepaths = write_audio(buffer)
+            filepaths = write_audio(buffer, cache_prefix)
             transcriptions = model.transcribe(filepaths, batch_size=batch_size, verbose=False)
             # if transcriptions form a tuple (from RNNT), extract just "best" hypothesis
             if type(transcriptions) == tuple and len(transcriptions) == 2:
@@ -68,7 +70,7 @@ def buffer_audio_and_transcribe(model: ASRModel, dataset, batch_size: int, verbo
             buffer.clear()
 
     if len(buffer) > 0:
-        filepaths = write_audio(buffer)
+        filepaths = write_audio(buffer, cache_prefix)
         transcriptions = model.transcribe(filepaths, batch_size=batch_size, verbose=False)
         # if transcriptions form a tuple (from RNNT), extract just "best" hypothesis
         if type(transcriptions) == tuple and len(transcriptions) == 2:
@@ -105,7 +107,9 @@ def main(args):
     references = []
 
     # run streamed inference
-    results = buffer_audio_and_transcribe(asr_model, dataset, args.batch_size, verbose=True)
+    cache_prefix = (f"{args.model_id.replace('/', '-')}-{args.dataset_path.replace('/', '')}-"
+                    f"{args.dataset.replace('/', '-')}-{args.split}")
+    results = buffer_audio_and_transcribe(asr_model, dataset, args.batch_size, cache_prefix, verbose=True)
     for sample in results:
         predictions.append(data_utils.normalizer(sample["pred_text"]))
         references.append(sample["reference"])
