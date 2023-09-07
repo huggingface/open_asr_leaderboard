@@ -1,3 +1,4 @@
 nemo_toolkit[all]
 tqdm
 soundfile
+librosa
