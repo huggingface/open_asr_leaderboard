@@ -1,3 +1,26 @@
+"""
+NeMo ASR Model Profiler
+
+This script performs a forward pass on an NeMo ASR models and measures its real-time factor (RTF).
+RTF is a metric used to evaluate the processing speed of ASR models.
+
+Parameters:
+    --model: ASR model name or path to the model checkpoint file.
+    --decoding_type: Type of decoding to use (ctc or rnnt).
+    --gpu: GPU device to use.
+    --batch_size: Batch size to use for inference.
+    --nbatches: Total number of batches to process.
+    --warmup_batches: Number of batches to skip as warmup.
+    --audio: Path to the input audio file for ASR.
+    --audio_maxlen: Maximum duration of audio to process (in seconds).
+    --precision: Model precision (16, 32, or bf16).
+    --cudnn_benchmark: Enable cuDNN benchmarking.
+    --log: Enable logging.
+
+Example:
+    python calculate_rtf.py --model stt_en_conformer_ctc_large --decoding_type ctc --gpu 0 --batch_size 1 --nbatches 5 --warmup_batches 5 --audio /path/to/audio.wav --audio_maxlen 600 --precision bf16 --cudnn_benchmark
+"""
+
 import time
 import argparse
 from tqdm import tqdm
