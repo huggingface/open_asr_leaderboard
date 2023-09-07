@@ -21,8 +21,7 @@ do
         --split="test" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
     
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -31,8 +30,7 @@ do
         --split="test" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -41,8 +39,7 @@ do
         --split="test" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -51,8 +48,7 @@ do
         --split="test.clean" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -61,8 +57,7 @@ do
         --split="test.other" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -71,8 +66,7 @@ do
         --split="test" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -81,8 +75,7 @@ do
         --split="test" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -91,8 +84,7 @@ do
         --split="test" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -101,8 +93,7 @@ do
         --split="test" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --no-streaming
+        --max_eval_samples=-1 
 
     # Evaluate results
     RUNDIR=`pwd` && \
