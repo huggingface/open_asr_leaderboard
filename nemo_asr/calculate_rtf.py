@@ -4,6 +4,8 @@ NeMo ASR Model Profiler
 This script performs a forward pass on an NeMo ASR models and measures its real-time factor (RTF).
 RTF is a metric used to evaluate the processing speed of ASR models.
 
+# audio has to be a mono wav file with 16kHz sample rate
+
 Parameters:
     --model: ASR model name or path to the model checkpoint file.
     --decoding_type: Type of decoding to use (ctc or rnnt).
