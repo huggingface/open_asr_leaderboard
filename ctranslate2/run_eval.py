@@ -29,6 +29,7 @@ def main(args) -> None:
     """Main function to run evaluation on a dataset."""
     asr_model = WhisperModel(
         model_size_or_path=args.model_id,
+        compute_type="float16",
         device="cuda",
         device_index=args.device
     )
