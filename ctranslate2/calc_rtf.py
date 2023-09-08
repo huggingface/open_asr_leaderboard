@@ -47,8 +47,8 @@ for model in models[:1]:
         for _ in range(n_batches + warmup_batches):
             print(f"batch_num -> {_}")
             start = time.time()
-            segment, _ = asr_model.transcribe(audio_dict["raw"], language="en")
-            _ = [segment._asdict() for segment in segment]  # Iterate over segments to run inference
+            segments, _ = asr_model.transcribe(audio_dict["raw"], language="en")
+            _ = [segment._asdict() for segment in segments]  # Iterate over segments to run inference
             end = time.time()
             if _ >= warmup_batches:
                 total_time += end - start
