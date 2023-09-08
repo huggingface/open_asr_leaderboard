@@ -1,0 +1,6 @@
+ctranslate2>=3.17
+datasets
+evaluate
+faster-whisper>=0.8.0
+jiwer
+librosa
