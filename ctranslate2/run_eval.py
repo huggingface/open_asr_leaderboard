@@ -26,7 +26,11 @@ def dataset_iterator(dataset) -> dict:
 
 def main(args) -> None:
     """Main function to run evaluation on a dataset."""
-    asr_model = WhisperModel(model_size_or_path=args.model_id, device=args.device)
+    asr_model = WhisperModel(
+        model_size_or_path=args.model_id,
+        device="cuda",
+        device_index=args.device
+    )
 
     dataset = data_utils.load_data(args)
 
@@ -41,6 +45,7 @@ def main(args) -> None:
 
     # Run inference
     for batch in dataset.batch(args.batch_size):
+        print(type(batch["audio"]))
         segment, _ = asr_model.transcribe(batch["audio"], language="en")
         predictions.extend(data_utils.normalizer(segment["text"]))
         references.extend(batch["reference"][0])
