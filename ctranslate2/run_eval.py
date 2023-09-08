@@ -51,8 +51,8 @@ def main(args) -> None:
         outputs = [segment._asdict() for segment in segments]
         predictions.extend(
             data_utils.normalizer(
-                "".join([segment["text"].strip() for segment in outputs])
-            )
+                "".join([segment["text"] for segment in outputs])
+            ).strip()
         )
         references.extend(batch["reference"][0])
 
