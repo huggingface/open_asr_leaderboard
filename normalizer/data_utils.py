@@ -43,7 +43,7 @@ def load_data(args):
         args.dataset,
         split=args.split,
         streaming=args.streaming,
-        use_auth_token=True,
+        token=True,
     )
 
     return dataset
