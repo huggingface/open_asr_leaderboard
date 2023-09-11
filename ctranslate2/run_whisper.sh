@@ -13,7 +13,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="ami" \
         --split="test" \
         --device=2 \
@@ -22,7 +22,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="earnings22" \
         --split="test" \
         --device=2 \
@@ -31,7 +31,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="gigaspeech" \
         --split="test" \
         --device=2 \
@@ -40,7 +40,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="librispeech" \
         --split="test.clean" \
         --device=2 \
@@ -49,7 +49,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="librispeech" \
         --split="test.other" \
         --device=2 \
@@ -58,7 +58,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="spgispeech" \
         --split="test" \
         --device=2 \
@@ -67,7 +67,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="tedlium" \
         --split="test" \
         --device=2 \
@@ -76,7 +76,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="voxpopuli" \
         --split="test" \
         --device=2 \
@@ -85,7 +85,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="https://huggingface.co/datasets/hf-audio/esb-datasets-test-only" \
         --dataset="common_voice" \
         --split="test" \
         --device=2 \
