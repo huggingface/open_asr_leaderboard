@@ -3,7 +3,8 @@ import librosa
 
 from faster_whisper import WhisperModel
 
-device = "cuda:0"
+device = "cuda"
+device_index = 0
 
 models = [
     "guillaumekln/faster-whisper-tiny.en",
@@ -34,7 +35,10 @@ rtfs = []
 
 for model in models[:1]:
     asr_model = WhisperModel(
-        model_size_or_path=model, device=device, compute_type="float16"
+        model_size_or_path=model,
+        device=device,
+        device_index=device_index,
+        compute_type="float16",
     )
 
     for i in range(3):
@@ -43,7 +47,8 @@ for model in models[:1]:
         for _ in range(n_batches + warmup_batches):
             print(f"batch_num -> {_}")
             start = time.time()
-            segment, _ = asr_model.transcribe(audio_dict["raw"], language="en")
+            segments, _ = asr_model.transcribe(audio_dict["raw"], language="en")
+            _ = [segment._asdict() for segment in segments]  # Iterate over segments to run inference
             end = time.time()
             if _ >= warmup_batches:
                 total_time += end - start

@@ -4,6 +4,7 @@ import os
 
 import evaluate
 from faster_whisper import WhisperModel
+from tqdm import tqdm
 
 from normalizer import data_utils
 
@@ -26,7 +27,12 @@ def dataset_iterator(dataset) -> dict:
 
 def main(args) -> None:
     """Main function to run evaluation on a dataset."""
-    asr_model = WhisperModel(model_size_or_path=args.model_id, device=args.device)
+    asr_model = WhisperModel(
+        model_size_or_path=args.model_id,
+        compute_type="float16",
+        device="cuda",
+        device_index=args.device
+    )
 
     dataset = data_utils.load_data(args)
 
@@ -40,9 +46,14 @@ def main(args) -> None:
     references = []
 
     # Run inference
-    for batch in dataset.batch(args.batch_size):
-        segment, _ = asr_model.transcribe(batch["audio"], language="en")
-        predictions.extend(data_utils.normalizer(segment["text"]))
+    for batch in tqdm(dataset_iterator(dataset), desc=f"Evaluating {args.model_id}"):
+        segments, _ = asr_model.transcribe(batch["array"], language="en")
+        outputs = [segment._asdict() for segment in segments]
+        predictions.extend(
+            data_utils.normalizer(
+                "".join([segment["text"] for segment in outputs])
+            ).strip()
+        )
         references.extend(batch["reference"][0])
 
     # Write manifest results

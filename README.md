@@ -10,7 +10,7 @@ Each library has its own set of requirements. We recommend using a clean conda e
 2) Install PyTorch by following the instructions here: https://pytorch.org/get-started/locally/
 3) Install the common requirements for all library by running `pip install -r requirements/requirements.txt`.
 4) Install the requirements for each library you wish to evalaute by running `pip install -r requirements/requirements_<library_name>.txt`.
-
+5) Connect your Hugging Face account by running `huggingface-cli login`.
 
 # Evaluate a model
 
