@@ -10,7 +10,7 @@ Each library has its own set of requirements. We recommend using a clean conda e
 2) Install PyTorch by following the instructions here: https://pytorch.org/get-started/locally/
 3) Install the common requirements for all library by running `pip install -r requirements/requirements.txt`.
 4) Install the requirements for each library you wish to evalaute by running `pip install -r requirements/requirements_<library_name>.txt`.
-
+5) Connect your Hugging Face account by running `huggingface-cli login`.
 
 # Evaluate a model
 
@@ -32,7 +32,7 @@ To add a new library for evalution in this benchmark, please follow the steps be
 4) Create one bash file per model type following the convesion `run_<model_type>.sh`.
     - The bash script should follow the same steps as other libraries.
     - Different model sizes of the same type should share the script. For example `Wav2Vec` and `Wav2Vec2` would be two separate scripts, but different size of `Wav2Vec2` would be part of the same script.
-5) (Optional) You could also add a `compute_rtf.py` script for your library to evaluate the Real Time Factor of the model.
+5) (Optional) You could also add a `calc_rtf.py` script for your library to evaluate the Real Time Factor of the model.
 6) Submit a PR for your changes.
 
 # Add a new model
