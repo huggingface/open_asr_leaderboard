@@ -3,7 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 #considering FC-XL, FC-XXL, FC-L, C-L, C-S CTC models
-MODEL_IDs=("nvidia/stt_en_fastconformer_ctc_xxlarge" "nvidia/stt_en_fastconformer_ctc_xlarge" "nvidia/stt_en_fastconformer_ctc_large" "nvidia/stt_en_conformer_ctc_large" "nvidia/stt_en_conformer_ctc_small")
+MODEL_IDs=("nvidia/parakeet-ctc-1.1b" "nvidia/parakeet-ctc-0.6b" "nvidia/stt_en_fastconformer_ctc_xxlarge" "nvidia/stt_en_fastconformer_ctc_xlarge" "nvidia/stt_en_fastconformer_ctc_large" "nvidia/stt_en_conformer_ctc_large" "nvidia/stt_en_conformer_ctc_small")
 BATCH_SIZE=8
 DEVICE_ID=0
 
