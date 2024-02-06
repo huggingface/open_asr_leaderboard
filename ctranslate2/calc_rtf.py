@@ -16,10 +16,10 @@ models = [
 ]
 
 n_batches = 3
-warmup_batches = 5
+warmup_batches = 3
 
-audio_file = "4469669.mp3"
-max_len = 600  # 10 minutes
+audio_file = "../data/sample_ami-es2015b.wav"
+max_len = 30  # 30 seconds
 
 
 def pre_process_audio(audio_file, sr, max_len):

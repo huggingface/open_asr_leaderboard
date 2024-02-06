@@ -22,15 +22,16 @@ models = [
     "openai/whisper-medium.en",
     "openai/whisper-large",
     "openai/whisper-large-v2",
+    "openai/whisper-large-v3",
     "facebook/mms-1b-all",
     "facebook/mms-1b-fl102",
 ]
 
 n_batches = 3
-warmup_batches = 5
+warmup_batches = 3
 
-audio_file = "4469669.mp3"
-max_len = 600  # 10 minutes
+audio_file = "../data/sample_ami-es2015b.wav"
+max_len = 30  # 30 seconds
 
 
 def pre_process_audio(audio_file, sr, max_len):
@@ -50,7 +51,7 @@ for model in models[:1]:
         model=model,
         device=device,
         torch_dtype=torch.float16,
-        batch_size=24,
+        batch_size=1,
     )
 
     for i in range(3):
