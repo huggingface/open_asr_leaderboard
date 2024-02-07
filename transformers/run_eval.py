@@ -16,7 +16,7 @@ def main(args):
     )
 
     if asr_pipe.model.can_generate():
-        gen_kwargs = {"max_new_tokens": 128}
+        gen_kwargs = {"max_new_tokens": 256}
         # for multilingual Whisper-checkpoints we see a definitive WER boost by setting the language and task args
         if getattr(asr_pipe.model.generation_config, "is_multilingual"):
             gen_kwargs["language"] = "en"
