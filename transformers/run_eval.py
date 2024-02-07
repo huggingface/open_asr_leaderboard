@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import torch
 from transformers import pipeline
 import evaluate
 from normalizer import data_utils
@@ -12,7 +13,11 @@ wer_metric = evaluate.load("wer")
 
 def main(args):
     asr_pipe = pipeline(
-        "automatic-speech-recognition", model=args.model_id, device=args.device, batch_size=args.batch_size
+        "automatic-speech-recognition",
+        model=args.model_id,
+        device=args.device,
+        batch_size=args.batch_size,
+        torch_dtype=torch.float16,
     )
 
     if asr_pipe.model.can_generate():
