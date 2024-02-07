@@ -44,29 +44,28 @@ parser.add_argument("--batch_size", default=1, type=int, help="batch size to use
 parser.add_argument("--nbatches", default=3, type=int, help="Total Number of batches to process")
 parser.add_argument("--warmup_batches", default=3, type=int, help="Number of batches to skip as warmup")
 parser.add_argument("--audio", default="../data/sample_ami-es2015b.wav", type=str, help="wav file to use")
-parser.add_argument("--audio_maxlen", default=30, type=float, help="calculate rtf for audio of this length")
+
+# parser.add_argument("--audio_maxlen", default=30, type=float, help="Multiple chunks of audio of this length is used to calculate RTFX")
 
 args = parser.parse_args()
 torch.backends.cudnn.benchmark=True
 
 WAV = args.audio
-audio_maxlen = args.audio_maxlen
+SAMPLING_RATE = 16000
+chunk_len = 30
+total_audio_len = 600
 MODEL = args.model
 batch_size = args.batch_size
 nbatches = args.nbatches
 warmup_batches = args.warmup_batches
 decoding_type = args.decoding_type
+total_chunks = int(total_audio_len / chunk_len)
 
 DEVICE=torch.device(args.gpu)
 
-logging.info(f'WAV: {WAV}')
-logging.info(f'AUDIO MAXLEN: {audio_maxlen}')
 logging.info(f'MODEL: {MODEL}')
-logging.info(f'batch_size: {batch_size}')
-logging.info(f'num batches: {nbatches}')
 
-
-def get_samples(audio_file, audio_maxlen, target_sr=16000):
+def get_samples(audio_file, total_audio_len, target_sr=16000):
     with sf.SoundFile(audio_file, 'r') as f:
         dtype = 'int16'
         sample_rate = f.samplerate
@@ -76,35 +75,19 @@ def get_samples(audio_file, audio_maxlen, target_sr=16000):
         samples = samples.astype('float32') / 32768
         samples = samples.transpose()
         sample_length = samples.shape[0]
-        if sample_length > audio_maxlen * target_sr:
-            logging.info(f'resizing audio sample from {sample_length / target_sr} to maxlen of {audio_maxlen}')
-            sample_length = int(audio_maxlen * target_sr)
+        if sample_length > total_audio_len * target_sr:
+            logging.info(f'resizing audio sample from {sample_length / target_sr} to maxlen of {total_audio_len}')
+            sample_length = int(total_audio_len * target_sr)
             samples = samples[:sample_length]
             logging.info(f'new sample lengh: {samples.shape[0]}')
         else:
-            pad_length = int(audio_maxlen * target_sr) - sample_length
-            logging.info(f'padding audio sample from {sample_length / target_sr} to maxlen of {audio_maxlen}')
+            pad_length = int(total_audio_len * target_sr) - sample_length
+            logging.info(f'padding audio sample from {sample_length / target_sr} to maxlen of {total_audio_len}')
             samples = np.pad(samples, (0, pad_length), 'constant', constant_values=(0, 0))
-            sample_length = int(audio_maxlen * target_sr)
+            sample_length = int(total_audio_len * target_sr)
             
         return samples, sample_length
 
-def preprocess_audio(preprocessor, audio, device):
-    audio_signal = torch.from_numpy(audio).unsqueeze_(0).to(device)
-
-    audio_signal_len = torch.Tensor([audio.shape[0]]).to(device)
-    processed_signal, processed_signal_length = preprocessor(
-        input_signal=audio_signal, length=audio_signal_len
-    )
-    return processed_signal, processed_signal_length
-
-def extract_preprocessor(model, device):
-    cfg = copy.deepcopy(model._cfg)
-    OmegaConf.set_struct(cfg.preprocessor, False)
-    cfg.preprocessor.dither = 0.0
-    cfg.preprocessor.pad_to = 0
-    preprocessor = model.from_config_dict(cfg.preprocessor)
-    return preprocessor.to(device)
 
 def main():
 
@@ -117,55 +100,58 @@ def main():
     asr_model.eval()
     asr_model._prepare_for_export()
 
-    input_example, input_example_length  = get_samples(WAV, audio_maxlen)
+    input_example, input_example_length  = get_samples(WAV, total_audio_len)
     input_example = torch.tensor(input_example).to(DEVICE)
-    input_example_length = torch.tensor(input_example_length).to(DEVICE)
     input_example = input_example.repeat(batch_size, 1)
-    input_example_length = input_example_length.repeat(batch_size)
     
+
     logging.info(f"running {nbatches} batches; with {warmup_batches} batches warmup; batch_size: {batch_size}")
-    rtfs=[]
+    rtfxs=[]
     for i in range(3): # average over 3 runs
         total_time = 0
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
             with torch.no_grad():
-                for i in tqdm(range(nbatches + warmup_batches)):
-                    start = time.time()
-                    if decoding_type == 'rnnt':
-                        enc_out, enc_len = asr_model.forward(input_signal=input_example, input_signal_length=input_example_length)
-                        dec_out, dec_len = asr_model.decoding.rnnt_decoder_predictions_tensor(
-                        encoder_output=enc_out, encoded_lengths=enc_len, return_hypotheses=False
-                        )
-                    elif decoding_type == 'ctc':
-                        enc_out, enc_len, greedy_predictions = asr_model.forward(input_signal=input_example, input_signal_length=input_example_length)
-                        dec_out, dec_len = asr_model.decoding.ctc_decoder_predictions_tensor(
-                        enc_out, decoder_lengths=enc_len, return_hypotheses=False
-                        )
-                    elif decoding_type == 'aed':
-                        log_probs, encoded_len, enc_states, enc_mask = asr_model.forward(input_signal=input_example, input_signal_length=input_example_length)
-                        beam_hypotheses = asr_model.decoding.decode_predictions_tensor(
-                            encoder_hidden_states=enc_states, 
-                            encoder_input_mask=enc_mask, 
-                            decoder_input_ids=None, #torch.tensor([[  3,   4,   8,   4,  11]]).to(DEVICE),
-                        return_hypotheses=False,
-                        )[0]
+                for i in tqdm(range(nbatches + warmup_batches), desc='Calculating RTF', unit='batch'):
+                    for idx in range(0, total_audio_len, chunk_len): # process audio in chunks
+                        chunk_singal = input_example[:, idx*SAMPLING_RATE:(idx+chunk_len)*SAMPLING_RATE]
+                        chunk_signal_length = torch.tensor(chunk_len * SAMPLING_RATE).to(DEVICE).repeat(batch_size)
+                        start = time.time()
+                        if decoding_type == 'rnnt':
+                            enc_out, enc_len = asr_model.forward(input_signal=chunk_singal, input_signal_length=chunk_signal_length)
+                            dec_out, dec_len = asr_model.decoding.rnnt_decoder_predictions_tensor(
+                            encoder_output=enc_out, encoded_lengths=enc_len, return_hypotheses=False
+                            )
+                        elif decoding_type == 'ctc':
+                            enc_out, enc_len, greedy_predictions = asr_model.forward(input_signal=chunk_singal, input_signal_length=chunk_signal_length)
+                            dec_out, dec_len = asr_model.decoding.ctc_decoder_predictions_tensor(
+                            enc_out, decoder_lengths=enc_len, return_hypotheses=False
+                            )
+                        elif decoding_type == 'aed':
+                            log_probs, encoded_len, enc_states, enc_mask = asr_model.forward(input_signal=chunk_singal, input_signal_length=chunk_signal_length)
+                            beam_hypotheses = asr_model.decoding.decode_predictions_tensor(
+                                encoder_hidden_states=enc_states, 
+                                encoder_input_mask=enc_mask, 
+                                decoder_input_ids=None, #torch.tensor([[  3,   4,   8,   4,  11]]).to(DEVICE),
+                            return_hypotheses=False,
+                            )[0]
 
-                        beam_hypotheses = [asr_model.decoding.strip_special_tokens(text) for text in beam_hypotheses]
-                    else:
-                        raise ValueError(f'Invalid decoding type: {decoding_type}')
-                    torch.cuda.synchronize()
-                    end = time.time()
-                    if i >= warmup_batches:
-                        total_time += end - start
+                            beam_hypotheses = [asr_model.decoding.strip_special_tokens(text) for text in beam_hypotheses]
+                        else:
+                            raise ValueError(f'Invalid decoding type: {decoding_type}')
+                        torch.cuda.synchronize()
+                        end = time.time()
+                        if i >= warmup_batches:
+                            total_time += end - start
 
+        
+        avg_time_per_chunk = total_time / total_chunks
+        rtf = (avg_time_per_chunk/nbatches) / (chunk_len)
+        rtfx = float((1/rtf))
+        rtfxs.append(rtfx)
     
-        rtf = (total_time/nbatches) / (input_example_length[0] / 16000)
-        rtf = rtf.cpu().numpy()
-        rtfs.append(rtf)
-    
-    print(f'RTF: {rtfs}')
-    rtf = sum(rtfs)/len(rtfs)
-    sys.stdout.write(f'{rtf:.4f}\n')
+    print(f'RTFX: {rtfxs}')
+    rtfx = int(sum(rtfxs)/len(rtfxs))
+    sys.stdout.write(f'{rtfx}\n')
 
 if __name__ == '__main__':
     main()
