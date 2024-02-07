@@ -5,8 +5,6 @@ import json
 import evaluate
 from collections import defaultdict
 
-EXPECTED_KEYS = ["transcriptions", "references", "audio_length", "transcription_time"]
-
 
 def read_manifest(manifest_path: str):
     """
