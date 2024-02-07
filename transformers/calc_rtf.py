@@ -27,8 +27,8 @@ models = [
     "facebook/mms-1b-fl102",
 ]
 
-n_batches = 1
-warmup_batches = 0
+n_batches = 3
+warmup_batches = 3
 
 audio_file = "../data/sample_ami-es2015b.wav"
 chunk_len = 30

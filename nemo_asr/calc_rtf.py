@@ -14,10 +14,9 @@ Parameters:
     --nbatches: Total number of batches to process.
     --warmup_batches: Number of batches to skip as warmup.
     --audio: Path to the input audio file for ASR.
-    --audio_maxlen: Maximum duration of audio to process (in seconds).
 
 Example:
-    python calc_rtf.py --model stt_en_conformer_ctc_large --decoding_type ctc --gpu 0 --batch_size 1 --nbatches 3 --warmup_batches 3 --audio ../data/sample_ami-es2015b.wav --audio_maxlen 30
+    python calc_rtf.py --model stt_en_conformer_ctc_large --decoding_type ctc
 """
 
 import time
