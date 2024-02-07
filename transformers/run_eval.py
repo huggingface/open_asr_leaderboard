@@ -10,11 +10,6 @@ from tqdm import tqdm
 wer_metric = evaluate.load("wer")
 
 
-def dataset_iterator(dataset):
-    for i, item in enumerate(dataset):
-        yield {**item["audio"], "reference": item["norm_text"]}
-
-
 def main(args):
     asr_pipe = pipeline(
         "automatic-speech-recognition", model=args.model_id, device=args.device, batch_size=args.batch_size
