@@ -45,8 +45,7 @@ def main(args):
         start_time = time.time()
         result = asr_pipe(batch["audio"], generate_kwargs=gen_kwargs)
         # normalize by minibatch size since we want the per-sample time
-        runtime = (time.time() - start_time) / minibatch_size
-        batch["transcription_time"] = [runtime for _ in range(minibatch_size)]
+        batch["transcription_time"] = minibatch_size * [(time.time() - start_time) / minibatch_size]
 
         # normalize transcriptions with English normalizer
         batch["predictions"] = [data_utils.normalizer(pred["text"]) for pred in result]
@@ -68,7 +67,7 @@ def main(args):
         for key in all_results:
             all_results[key].append(result[key])
 
-    # Write manifest results
+    # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],
@@ -90,7 +89,7 @@ def main(args):
     transcription_time = sum(all_results["transcription_time"])
     audio_length = sum(all_results["audio_length"])
     rtfx = audio_length / transcription_time
-    rtfx = round(rtfx, 4)
+    rtfx = round(rtfx, 2)
     print("RTFX:", rtfx)
 
 
