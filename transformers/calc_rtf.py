@@ -30,7 +30,7 @@ models = [
 n_batches = 3
 warmup_batches = 3
 
-audio_file = "../data/sample_ami-es2015b.wav"
+audio_file = "../data/sample_4469669.wav"
 chunk_len = 30
 total_audio_len = 600  # 10 min
 SAMPLE_RATE = 16000

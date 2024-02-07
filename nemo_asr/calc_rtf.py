@@ -23,8 +23,6 @@ import time
 import argparse
 from tqdm import tqdm
 import torch
-from omegaconf import OmegaConf
-import copy
 import sys
 import soundfile as sf
 import numpy as np
@@ -42,7 +40,7 @@ parser.add_argument("--gpu", default=0, type=int, help="GPU device to use")
 parser.add_argument("--batch_size", default=1, type=int, help="batch size to use")
 parser.add_argument("--nbatches", default=3, type=int, help="Total Number of batches to process")
 parser.add_argument("--warmup_batches", default=3, type=int, help="Number of batches to skip as warmup")
-parser.add_argument("--audio", default="../data/sample_ami-es2015b.wav", type=str, help="wav file to use")
+parser.add_argument("--audio", default="../data/sample_4469669.wav", type=str, help="wav file to use")
 
 # parser.add_argument("--audio_maxlen", default=30, type=float, help="Multiple chunks of audio of this length is used to calculate RTFX")
 
@@ -112,21 +110,21 @@ def main():
             with torch.no_grad():
                 for i in tqdm(range(nbatches + warmup_batches), desc='Calculating RTF', unit='batch'):
                     for idx in range(0, total_audio_len, chunk_len): # process audio in chunks
-                        chunk_singal = input_example[:, idx*SAMPLING_RATE:(idx+chunk_len)*SAMPLING_RATE]
+                        chunk_signal = input_example[:, idx*SAMPLING_RATE:(idx+chunk_len)*SAMPLING_RATE]
                         chunk_signal_length = torch.tensor(chunk_len * SAMPLING_RATE).to(DEVICE).repeat(batch_size)
                         start = time.time()
                         if decoding_type == 'rnnt':
-                            enc_out, enc_len = asr_model.forward(input_signal=chunk_singal, input_signal_length=chunk_signal_length)
+                            enc_out, enc_len = asr_model.forward(input_signal=chunk_signal, input_signal_length=chunk_signal_length)
                             dec_out, dec_len = asr_model.decoding.rnnt_decoder_predictions_tensor(
                             encoder_output=enc_out, encoded_lengths=enc_len, return_hypotheses=False
                             )
                         elif decoding_type == 'ctc':
-                            enc_out, enc_len, greedy_predictions = asr_model.forward(input_signal=chunk_singal, input_signal_length=chunk_signal_length)
+                            enc_out, enc_len, greedy_predictions = asr_model.forward(input_signal=chunk_signal, input_signal_length=chunk_signal_length)
                             dec_out, dec_len = asr_model.decoding.ctc_decoder_predictions_tensor(
                             enc_out, decoder_lengths=enc_len, return_hypotheses=False
                             )
                         elif decoding_type == 'aed':
-                            log_probs, encoded_len, enc_states, enc_mask = asr_model.forward(input_signal=chunk_singal, input_signal_length=chunk_signal_length)
+                            log_probs, encoded_len, enc_states, enc_mask = asr_model.forward(input_signal=chunk_signal, input_signal_length=chunk_signal_length)
                             beam_hypotheses = asr_model.decoding.decode_predictions_tensor(
                                 encoder_hidden_states=enc_states, 
                                 encoder_input_mask=enc_mask, 
