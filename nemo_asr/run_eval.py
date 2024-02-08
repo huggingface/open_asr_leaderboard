@@ -92,7 +92,10 @@ def main(args):
     else:
         device = torch.device("cpu")
 
-    asr_model = ASRModel.from_pretrained(args.model_id, map_location=device)  # type: ASRModel
+    if args.model_id.endswith(".nemo"):
+        asr_model = ASRModel.restore_from(args.model_id, map_location=device)
+    else:
+        asr_model = ASRModel.from_pretrained(args.model_id, map_location=device)  # type: ASRModel
     asr_model.freeze()
 
     dataset = data_utils.load_data(args)
