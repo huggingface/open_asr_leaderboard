@@ -143,7 +143,6 @@ def main():
     asr_model.eval()
     asr_model._prepare_for_export()        
 
-    preprocessor = extract_preprocessor(asr_model, DEVICE)
     input_example, input_example_length  = get_samples(WAV, total_audio_len)    
 
     frame_asr = None
@@ -182,15 +181,12 @@ def main():
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
             with torch.no_grad():
                 for i in tqdm(range(nbatches + warmup_batches)):
+                    frame_asr.reset()
                     start = time.time()
                     if decoding_type == 'ctc':
-                        frame_asr.reset()
                         setup_ctc_chunk_infer(frame_asr, input_example)
-                        hyp = frame_asr.transcribe()
                     elif decoding_type == 'rnnt':
-                        frame_asr.reset()
                         setup_rnnt_chunk_infer(frame_asr, input_example)
-                        hyp = frame_asr.transcribe()
                     elif decoding_type == 'aed':
                         meta = {
                             'audio_filepath': WAV,
@@ -201,12 +197,10 @@ def main():
                             'pnc': 'yes',
                             'answer': 'nvidia',
                         }
-                        frame_asr.reset()
                         setup_aed_chunk_infer(frame_asr, input_example, meta)
-                        hyp = frame_asr.transcribe()
                     else:
                         raise ValueError(f'Invalid decoding type: {decoding_type}')
-                    
+                    hyp = frame_asr.transcribe()
                     torch.cuda.synchronize()
                     end = time.time()
                     if i >= warmup_batches:
