@@ -54,7 +54,7 @@ def pack_results(results: list, buffer, transcriptions):
     return results
 
 
-def buffer_audio_and_transcribe(model: ASRModel, dataset, batch_size: int, cache_prefix: str, verbose: bool = True):
+def buffer_audio_and_transcribe(model: ASRModel, dataset, batch_size: int, pnc:bool, cache_prefix: str, verbose: bool = True):
     buffer = []
     results = []
     for sample in tqdm(dataset_iterator(dataset), desc='Evaluating: Sample id', unit='', disable=not verbose):
@@ -62,7 +62,11 @@ def buffer_audio_and_transcribe(model: ASRModel, dataset, batch_size: int, cache
 
         if len(buffer) == batch_size:
             filepaths = write_audio(buffer, cache_prefix)
-            transcriptions = model.transcribe(filepaths, batch_size=batch_size, verbose=False)
+
+            if pnc is not None:
+                transcriptions = model.transcribe(filepaths, batch_size=batch_size, pnc=False, verbose=False)
+            else:
+                transcriptions = model.transcribe(filepaths, batch_size=batch_size, verbose=False)
             # if transcriptions form a tuple (from RNNT), extract just "best" hypothesis
             if type(transcriptions) == tuple and len(transcriptions) == 2:
                 transcriptions = transcriptions[0]
@@ -71,7 +75,10 @@ def buffer_audio_and_transcribe(model: ASRModel, dataset, batch_size: int, cache
 
     if len(buffer) > 0:
         filepaths = write_audio(buffer, cache_prefix)
-        transcriptions = model.transcribe(filepaths, batch_size=batch_size, verbose=False)
+        if pnc is not None:
+            transcriptions = model.transcribe(filepaths, batch_size=batch_size, pnc=False, verbose=False)
+        else:
+            transcriptions = model.transcribe(filepaths, batch_size=batch_size, verbose=False)
         # if transcriptions form a tuple (from RNNT), extract just "best" hypothesis
         if type(transcriptions) == tuple and len(transcriptions) == 2:
             transcriptions = transcriptions[0]
@@ -112,7 +119,7 @@ def main(args):
     # run streamed inference
     cache_prefix = (f"{args.model_id.replace('/', '-')}-{args.dataset_path.replace('/', '')}-"
                     f"{args.dataset.replace('/', '-')}-{args.split}")
-    results = buffer_audio_and_transcribe(asr_model, dataset, args.batch_size, cache_prefix, verbose=True)
+    results = buffer_audio_and_transcribe(asr_model, dataset, args.batch_size, args.pnc, cache_prefix, verbose=True)
     for sample in results:
         predictions.append(data_utils.normalizer(sample["pred_text"]))
         references.append(sample["reference"])
@@ -165,6 +172,12 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
+    )
+    parser.add_argument(
+        "--pnc",
+        type=bool,
+        default=None,
+        help="flag to indicate inferene in pnc mode for models that support punctuation and capitalization",
     )
     parser.add_argument(
         "--no-streaming",
