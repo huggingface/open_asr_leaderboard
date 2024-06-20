@@ -86,13 +86,8 @@ def main(args):
         references=all_results["references"], predictions=all_results["predictions"]
     )
     wer = round(100 * wer, 2)
-    print("WER:", wer, "%")
-
-    transcription_time = sum(all_results["transcription_time"])
-    audio_length = sum(all_results["audio_length"])
-    rtfx = audio_length / transcription_time
-    rtfx = round(rtfx, 2)
-    print("RTFX:", rtfx)
+    rtfx = round(sum(all_results["audio_length"]) / sum(all_results["transcription_time"]), 2)
+    print("WER:", wer, "%", "RTFx:", rtfx)
 
 
 if __name__ == "__main__":
