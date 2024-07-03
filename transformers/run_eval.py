@@ -2,7 +2,7 @@ import argparse
 import os
 
 import torch
-from transformers import pipeline
+from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForCTC, AutoProcessor, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING
 import evaluate
 from normalizer import data_utils
 import time
@@ -12,22 +12,18 @@ wer_metric = evaluate.load("wer")
 
 
 def main(args):
-    asr_pipe = pipeline(
-        "automatic-speech-recognition",
-        model=args.model_id,
-        device=args.device,
-        batch_size=args.batch_size,
-        torch_dtype=torch.float16,
-    )
+    config = AutoConfig.from_pretrained(args.model_id)
+    cls_model = AutoModelForSpeechSeq2Seq if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else AutoModelForCTC
+    model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.float16).to(args.device)
+    processor = AutoProcessor.from_pretrained(args.model_id)
+    model_input_name = processor.model_input_names[0]
 
-    if asr_pipe.model.can_generate():
+    if model.can_generate():
         gen_kwargs = {"max_new_tokens": 256}
         # for multilingual Whisper-checkpoints we see a definitive WER boost by setting the language and task args
-        if getattr(asr_pipe.model.generation_config, "is_multilingual"):
+        if getattr(model.generation_config, "is_multilingual"):
             gen_kwargs["language"] = "en"
             gen_kwargs["task"] = "transcribe"
-    else:
-        gen_kwargs = None
 
     dataset = data_utils.load_data(args)
 
@@ -38,19 +34,52 @@ def main(args):
     dataset = data_utils.prepare_data(dataset)
 
     def benchmark(batch):
-        # get audio stats
-        audio = [sample["array"] for sample in batch["audio"]]
-        batch["audio_length"] = [len(sample) / 16_000 for sample in audio]
-        minibatch_size = len(audio)
+        # Load audio inputs
+        audios = [audio["array"] for audio in batch["audio"]]
+        minibatch_size = len(audios)
 
-        # timing step
+        # START TIMING
         start_time = time.time()
-        result = asr_pipe(batch["audio"], generate_kwargs=gen_kwargs)
+
+        # 1. Pre-Processing
+        if not model.can_generate() or len(audios[0]) > processor.feature_extractor.n_samples:
+            # 1.1 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
+            inputs = processor(
+                audios,
+                sampling_rate=16_000,
+                truncation=False,
+                padding="longest",
+                return_tensors="pt",
+                return_attention_mask=True,
+            )
+        else:
+            # 1.2 Standard Whisper processing: pad audios to 30-seconds and converted to log-mel
+            inputs = processor(audios, sampling_rate=16_000, return_tensors="pt")
+
+        inputs = inputs.to(args.device)
+        inputs[model_input_name] = inputs[model_input_name].to(torch.float16)
+
+        # 2. Model Inference
+        if model.can_generate():
+            # 2.1 Auto-regressive generation for encoder-decoder models
+            pred_ids = model.generate(**inputs, **gen_kwargs)
+        else:
+            # 2.2. Single forward pass for CTC
+            with torch.no_grad():
+                logits = model(**inputs)
+                pred_ids = logits.argmax(-1)
+
+        # 3. Post-processing: convert token ids to text transcription
+        pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+
+        # END TIMING
+        runtime = time.time() - start_time
+
         # normalize by minibatch size since we want the per-sample time
-        batch["transcription_time"] = minibatch_size * [(time.time() - start_time) / minibatch_size]
+        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # normalize transcriptions with English normalizer
-        batch["predictions"] = [data_utils.normalizer(pred["text"]) for pred in result]
+        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
         batch["references"] = batch["norm_text"]
         return batch
 
@@ -59,8 +88,8 @@ def main(args):
     )
 
     all_results = {
-        "audio_length": [],
-        "transcription_time": [],
+        "audio_length_s": [],
+        "transcription_time_s": [],
         "predictions": [],
         "references": [],
     }
@@ -77,8 +106,8 @@ def main(args):
         args.dataset_path,
         args.dataset,
         args.split,
-        audio_length=all_results["audio_length"],
-        transcription_time=all_results["transcription_time"],
+        audio_length=all_results["audio_length_s"],
+        transcription_time=all_results["transcription_time_s"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
@@ -86,7 +115,7 @@ def main(args):
         references=all_results["references"], predictions=all_results["predictions"]
     )
     wer = round(100 * wer, 2)
-    rtfx = round(sum(all_results["audio_length"]) / sum(all_results["transcription_time"]), 2)
+    rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print("WER:", wer, "%", "RTFx:", rtfx)
 
 
