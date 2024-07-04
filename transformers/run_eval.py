@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import numpy as np
 import torch
 from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForCTC, AutoProcessor, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING
 import evaluate
@@ -25,6 +26,12 @@ def main(args):
             gen_kwargs["language"] = "en"
             gen_kwargs["task"] = "transcribe"
 
+    if args.torch_compile:
+        model.forward = torch.compile(model.forward, mode=args.compile_mode, fullgraph=True)
+        if model.can_generate():
+            # enable static k/v cache for autoregressive models
+            model.generation_config.cache_implementation = "static"
+
     dataset = data_utils.load_data(args)
 
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
@@ -42,8 +49,15 @@ def main(args):
         start_time = time.time()
 
         # 1. Pre-Processing
+        # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
+        padding_size = None
+        if minibatch_size != args.batch_size and args.torch_compile:
+            padding_size = args.batch_size - minibatch_size
+            padding_audios = [np.zeros_like(audios[-1]) for _ in range(padding_size)]
+            audios.extend(padding_audios)
+
         if not model.can_generate() or len(audios[0]) > processor.feature_extractor.n_samples:
-            # 1.1 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
+            # 1.2 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
             inputs = processor(
                 audios,
                 sampling_rate=16_000,
@@ -53,7 +67,7 @@ def main(args):
                 return_attention_mask=True,
             )
         else:
-            # 1.2 Standard Whisper processing: pad audios to 30-seconds and converted to log-mel
+            # 1.3 Standard Whisper processing: pad audios to 30-seconds and converted to log-mel
             inputs = processor(audios, sampling_rate=16_000, return_tensors="pt")
 
         inputs = inputs.to(args.device)
@@ -69,7 +83,12 @@ def main(args):
                 logits = model(**inputs)
                 pred_ids = logits.argmax(-1)
 
-        # 3. Post-processing: convert token ids to text transcription
+        # 3. Post-processing
+        # 3.1 Strip padded ids from predictions
+        if padding_size is not None:
+            pred_ids = pred_ids[:-padding_size, ...]
+
+        # 3.2 Convert token ids to text transcription
         pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 
         # END TIMING
@@ -83,8 +102,19 @@ def main(args):
         batch["references"] = batch["norm_text"]
         return batch
 
+    if args.warmup_steps is not None:
+        num_warmup_samples = args.warmup_steps * args.batch_size
+        if args.streaming:
+            warmup_dataset = dataset.take(num_warmup_samples)
+        else:
+            warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
+
+        for _ in tqdm(warmup_dataset, desc="Warming up..."):
+            continue
+
     dataset = dataset.map(
-        benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"]
+        benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"],
     )
 
     all_results = {
@@ -94,7 +124,7 @@ def main(args):
         "references": [],
     }
     result_iter = iter(dataset)
-    for result in tqdm(result_iter, desc="Samples"):
+    for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
             all_results[key].append(result[key])
 
@@ -170,6 +200,23 @@ if __name__ == "__main__":
         dest="streaming",
         action="store_false",
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+    )
+    parser.add_argument(
+        "--torch_compile",
+        action="store_true",
+        help="Whether to JIT compile the forward pass of the model.",
+    )
+    parser.add_argument(
+        "--compile_mode",
+        type=str,
+        default="default",
+        help="Mode for torch compiling model forward pass. Can be either 'default', 'reduce-overhead', 'max-autotune' or 'max-autotune-no-cudagraphs'.",
+    )
+    parser.add_argument(
+        "--warmup_steps",
+        type=int,
+        default=5,
+        help="Number of warm-up steps to run before launching the timed runs.",
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=False)
