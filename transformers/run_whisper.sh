@@ -18,6 +18,7 @@ do
         --split="test" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -27,6 +28,7 @@ do
         --split="test" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -36,6 +38,7 @@ do
         --split="test" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -45,6 +48,7 @@ do
         --split="test.clean" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -54,6 +58,7 @@ do
         --split="test.other" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -63,6 +68,7 @@ do
         --split="test" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -72,6 +78,7 @@ do
         --split="test" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -81,6 +88,7 @@ do
         --split="test" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -90,6 +98,7 @@ do
         --split="test" \
         --device=2 \
         --batch_size=${BATCH_SIZE} \
+        --torch_compile \
         --max_eval_samples=-1
 
     # Evaluate results
