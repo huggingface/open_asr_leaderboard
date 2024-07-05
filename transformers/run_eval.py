@@ -63,6 +63,7 @@ def main(args):
                 sampling_rate=16_000,
                 truncation=False,
                 padding="longest",
+                pad_to_multiple_of=30*16_000 if args.torch_compile else None,
                 return_tensors="pt",
                 return_attention_mask=True,
             )
