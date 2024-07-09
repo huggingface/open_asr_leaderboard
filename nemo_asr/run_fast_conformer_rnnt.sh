@@ -3,8 +3,8 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 #considering FC-L, FC-XL, FC-XXL, C-L and C-S RNNT models
-MODEL_IDs=("nvidia/parakeet-rnnt-1.1b" "nvidia/parakeet-rnnt-0.6b" "nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_fastconformer_transducer_xlarge" "nvidia/stt_en_fastconformer_transducer_xxlarge" "nvidia/stt_en_conformer_transducer_large" "stt_en_conformer_transducer_small")
-BATCH_SIZE=8
+MODEL_IDs=("nvidia/parakeet-tdt-1.1b" "nvidia/parakeet-rnnt-1.1b" "nvidia/parakeet-rnnt-0.6b" "nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_conformer_transducer_large" "stt_en_conformer_transducer_small")
+BATCH_SIZE=64
 DEVICE_ID=0
 
 num_models=${#MODEL_IDs[@]}

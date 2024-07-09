@@ -3,8 +3,8 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 #considering FC-XL, FC-XXL, FC-L, C-L, C-S CTC models
-MODEL_IDs=("nvidia/parakeet-ctc-1.1b" "nvidia/parakeet-ctc-0.6b" "nvidia/stt_en_fastconformer_ctc_xxlarge" "nvidia/stt_en_fastconformer_ctc_xlarge" "nvidia/stt_en_fastconformer_ctc_large" "nvidia/stt_en_conformer_ctc_large" "nvidia/stt_en_conformer_ctc_small")
-BATCH_SIZE=8
+MODEL_IDs=("nvidia/parakeet-ctc-1.1b" "nvidia/parakeet-ctc-0.6b" "nvidia/stt_en_fastconformer_ctc_large" "nvidia/stt_en_conformer_ctc_large" "nvidia/stt_en_conformer_ctc_small")
+BATCH_SIZE=64
 DEVICE_ID=0
 
 num_models=${#MODEL_IDs[@]}
@@ -48,7 +48,7 @@ do
         --split="test.clean" \
         --device=${DEVICE_ID} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
