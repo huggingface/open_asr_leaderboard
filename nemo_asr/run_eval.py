@@ -8,131 +8,142 @@ import soundfile
 
 from tqdm import tqdm
 from normalizer import data_utils
+import numpy as np
 
 from nemo.collections.asr.models import ASRModel
+import time
 
-DATA_CACHE_DIR = os.path.join(os.getcwd(), "audio_cache")
 
 wer_metric = evaluate.load("wer")
 
 
-def dataset_iterator(dataset):
-    for i, item in enumerate(dataset):
-        yield {
-            **item["audio"],
-            "reference": item["norm_text"],
-            "audio_filename": f"file_{i}",
-            "sample_rate": 16_000,
-            "sample_id": i,
-        }
-
-
-def write_audio(buffer, cache_prefix) -> list:
-    cache_dir = os.path.join(DATA_CACHE_DIR, cache_prefix)
-
-    if os.path.exists(cache_dir):
-        shutil.rmtree(cache_dir, ignore_errors=True)
-
-    os.makedirs(cache_dir)
-
-    data_paths = []
-    for idx, data in enumerate(buffer):
-        fn = os.path.basename(data['audio_filename'])
-        fn = os.path.splitext(fn)[0]
-        path = os.path.join(cache_dir, f"{idx}_{fn}.wav")
-        data_paths.append(path)
-
-        soundfile.write(path, data["array"], samplerate=data['sample_rate'])
-
-    return data_paths
-
-
-def pack_results(results: list, buffer, transcriptions):
-    for sample, transcript in zip(buffer, transcriptions):
-        result = {'reference': sample['reference'], 'pred_text': transcript}
-        results.append(result)
-    return results
-
-
-def buffer_audio_and_transcribe(model: ASRModel, dataset, batch_size: int, pnc:bool, cache_prefix: str, verbose: bool = True):
-    buffer = []
-    results = []
-    for sample in tqdm(dataset_iterator(dataset), desc='Evaluating: Sample id', unit='', disable=not verbose):
-        buffer.append(sample)
-
-        if len(buffer) == batch_size:
-            filepaths = write_audio(buffer, cache_prefix)
-
-            if pnc is not None:
-                transcriptions = model.transcribe(filepaths, batch_size=batch_size, pnc=False, verbose=False)
-            else:
-                transcriptions = model.transcribe(filepaths, batch_size=batch_size, verbose=False)
-            # if transcriptions form a tuple (from RNNT), extract just "best" hypothesis
-            if type(transcriptions) == tuple and len(transcriptions) == 2:
-                transcriptions = transcriptions[0]
-            results = pack_results(results, buffer, transcriptions)
-            buffer.clear()
-
-    if len(buffer) > 0:
-        filepaths = write_audio(buffer, cache_prefix)
-        if pnc is not None:
-            transcriptions = model.transcribe(filepaths, batch_size=batch_size, pnc=False, verbose=False)
-        else:
-            transcriptions = model.transcribe(filepaths, batch_size=batch_size, verbose=False)
-        # if transcriptions form a tuple (from RNNT), extract just "best" hypothesis
-        if type(transcriptions) == tuple and len(transcriptions) == 2:
-            transcriptions = transcriptions[0]
-        results = pack_results(results, buffer, transcriptions)
-        buffer.clear()
-
-    # Delete temp cache dir
-    if os.path.exists(DATA_CACHE_DIR):
-        shutil.rmtree(DATA_CACHE_DIR)
-
-    return results
-
-
 def main(args):
+
+    DATA_CACHE_DIR = os.path.join(os.getcwd(), "audio_cache")
+    DATASET_NAME = args.dataset
+    SPLIT_NAME = args.split
+
+    CACHE_DIR = os.path.join(DATA_CACHE_DIR, DATASET_NAME, SPLIT_NAME)
+    if not os.path.exists(CACHE_DIR):
+        os.makedirs(CACHE_DIR)
 
     if args.device >= 0:
         device = torch.device(f"cuda:{args.device}")
+        compute_dtype=torch.bfloat16
     else:
         device = torch.device("cpu")
+        compute_dtype=torch.float32
+        
 
     if args.model_id.endswith(".nemo"):
         asr_model = ASRModel.restore_from(args.model_id, map_location=device)
     else:
         asr_model = ASRModel.from_pretrained(args.model_id, map_location=device)  # type: ASRModel
-    asr_model.freeze()
+    
+    asr_model.to(compute_dtype)
+    asr_model.eval()
 
     dataset = data_utils.load_data(args)
+
+    def download_audio_files(batch):
+
+        # download audio files and write the paths, transcriptions and durations to a manifest file
+        audio_paths = []
+        durations = []
+
+        for id, sample in zip(batch["id"], batch["audio"]):
+            audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
+            os.makedirs(os.path.dirname(audio_path), exist_ok=True)
+            if not os.path.exists(audio_path):
+                soundfile.write(audio_path, np.float32(sample["array"]), 16_000)
+            audio_paths.append(audio_path)
+            durations.append(len(sample["array"]) / 16_000)
+
+        
+        batch["references"] = batch["norm_text"]
+        batch["audio_filepaths"] = audio_paths
+        batch["durations"] = durations
+
+        return batch
+
 
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         print(f"Subsampling dataset to first {args.max_eval_samples} samples !")
         dataset = dataset.take(args.max_eval_samples)
 
     dataset = data_utils.prepare_data(dataset)
+    if asr_model.cfg.decoding.strategy != "beam":
+        asr_model.cfg.decoding.strategy = "greedy_batch"
+        asr_model.change_decoding_strategy(asr_model.cfg.decoding)
+    
+    # prepraing the offline dataset
+    dataset = dataset.map(download_audio_files, batch_size=args.batch_size, batched=True, remove_columns=["audio"])
 
-    predictions = []
-    references = []
+    # Write manifest from daraset batch using json and keys audio_filepath, duration, text
 
-    # run streamed inference
-    cache_prefix = (f"{args.model_id.replace('/', '-')}-{args.dataset_path.replace('/', '')}-"
-                    f"{args.dataset.replace('/', '-')}-{args.split}")
-    results = buffer_audio_and_transcribe(asr_model, dataset, args.batch_size, args.pnc, cache_prefix, verbose=True)
-    for sample in results:
-        predictions.append(data_utils.normalizer(sample["pred_text"]))
-        references.append(sample["reference"])
+    all_data = {
+        "audio_filepaths": [],
+        "durations": [],
+        "references": [],
+    }
 
-    # Write manifest results
+    data_itr = iter(dataset)
+    for data in tqdm(data_itr, desc="Downloading Samples"):
+        # import ipdb; ipdb.set_trace()
+        for key in all_data:
+            all_data[key].append(data[key])
+    
+    # Sort audio_filepaths and references based on durations values
+    sorted_indices = sorted(range(len(all_data["durations"])), key=lambda k: all_data["durations"][k], reverse=True)
+    all_data["audio_filepaths"] = [all_data["audio_filepaths"][i] for i in sorted_indices]
+    all_data["references"] = [all_data["references"][i] for i in sorted_indices]
+    all_data["durations"] = [all_data["durations"][i] for i in sorted_indices]
+    
+    
+    total_time = 0
+    for _ in range(2): # warmup once and calculate rtf 
+        start_time = time.time()
+        with torch.cuda.amp.autocast(enabled=False, dtype=compute_dtype):
+            with torch.no_grad():
+                if 'canary' in args.model_id:
+                    transcriptions = asr_model.transcribe(all_data["audio_filepaths"], batch_size=args.batch_size, verbose=False, pnc='no', num_workers=1)
+                else:
+                    transcriptions = asr_model.transcribe(all_data["audio_filepaths"], batch_size=args.batch_size, verbose=False, num_workers=1)
+        end_time = time.time()
+        if _ == 1:
+            total_time += end_time - start_time
+    total_time = total_time
+
+    # normalize transcriptions with English normalizer
+    if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
+        transcriptions = transcriptions[0]
+    predictions = [data_utils.normalizer(pred) for pred in transcriptions]
+
+    avg_time = total_time / len(all_data["audio_filepaths"])
+
+    # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
-        references, predictions, args.model_id, args.dataset_path, args.dataset, args.split
+        all_data["references"],
+        predictions,
+        args.model_id,
+        args.dataset_path,
+        args.dataset,
+        args.split,
+        audio_length=all_data["durations"],
+        transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
     )
+
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(references=references, predictions=predictions)
+    wer = wer_metric.compute(references=all_data['references'], predictions=predictions)
     wer = round(100 * wer, 2)
 
+    # transcription_time = sum(all_results["transcription_time"])
+    audio_length = sum(all_data["durations"])
+    rtfx = audio_length / total_time
+    rtfx = round(rtfx, 2)
+
+    print("RTFX:", rtfx)
     print("WER:", wer, "%")
 
 
@@ -172,12 +183,6 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
-    )
-    parser.add_argument(
-        "--pnc",
-        type=bool,
-        default=None,
-        help="flag to indicate inferene in pnc mode for models that support punctuation and capitalization",
     )
     parser.add_argument(
         "--no-streaming",
