@@ -3,7 +3,6 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=("nvidia/canary-1b")
-PNC=False
 BATCH_SIZE=64
 DEVICE_ID=0
 
@@ -20,7 +19,6 @@ do
         --dataset="ami" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
     
@@ -30,7 +28,6 @@ do
         --dataset="earnings22" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
@@ -40,7 +37,6 @@ do
         --dataset="gigaspeech" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
@@ -50,7 +46,6 @@ do
         --dataset="librispeech" \
         --split="test.clean" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
@@ -60,7 +55,6 @@ do
         --dataset="librispeech" \
         --split="test.other" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
@@ -70,7 +64,6 @@ do
         --dataset="spgispeech" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
@@ -80,7 +73,6 @@ do
         --dataset="tedlium" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
@@ -90,7 +82,6 @@ do
         --dataset="voxpopuli" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
@@ -100,7 +91,6 @@ do
         --dataset="common_voice" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
