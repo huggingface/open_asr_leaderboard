@@ -53,8 +53,8 @@ def main(args):
 
         for id, sample in zip(batch["id"], batch["audio"]):
             audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
-            os.makedirs(os.path.dirname(audio_path), exist_ok=True)
             if not os.path.exists(audio_path):
+                os.makedirs(os.path.dirname(audio_path), exist_ok=True)
                 soundfile.write(audio_path, np.float32(sample["array"]), 16_000)
             audio_paths.append(audio_path)
             durations.append(len(sample["array"]) / 16_000)
