@@ -13,7 +13,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="ami" \
         --split="test" \
         --device=1 \
@@ -23,7 +23,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="earnings22" \
         --split="test" \
         --device=1 \
@@ -32,7 +32,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="gigaspeech" \
         --split="test" \
         --device=1 \
@@ -41,7 +41,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
         --split="test.clean" \
         --device=1 \
@@ -50,7 +50,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
         --split="test.other" \
         --device=1 \
@@ -59,7 +59,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="spgispeech" \
         --split="test" \
         --device=1 \
@@ -68,7 +68,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="tedlium" \
         --split="test" \
         --device=1 \
@@ -77,7 +77,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="voxpopuli" \
         --split="test" \
         --device=1 \
@@ -86,7 +86,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="common_voice" \
         --split="test" \
         --device=1 \
