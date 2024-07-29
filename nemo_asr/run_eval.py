@@ -1,7 +1,6 @@
 import argparse
 
 import os
-import shutil
 import torch
 import evaluate
 import soundfile
@@ -89,7 +88,6 @@ def main(args):
 
     data_itr = iter(dataset)
     for data in tqdm(data_itr, desc="Downloading Samples"):
-        # import ipdb; ipdb.set_trace()
         for key in all_data:
             all_data[key].append(data[key])
     
@@ -101,14 +99,17 @@ def main(args):
     
     
     total_time = 0
-    for _ in range(2): # warmup once and calculate rtf 
+    for _ in range(2): # warmup once and calculate rtf
+        if _ == 0:
+            audio_files = all_data["audio_filepaths"][:256] # warmup with 4 batches
+        else:
+            audio_files = all_data["audio_filepaths"]
         start_time = time.time()
-        with torch.cuda.amp.autocast(enabled=False, dtype=compute_dtype):
-            with torch.no_grad():
-                if 'canary' in args.model_id:
-                    transcriptions = asr_model.transcribe(all_data["audio_filepaths"], batch_size=args.batch_size, verbose=False, pnc='no', num_workers=1)
-                else:
-                    transcriptions = asr_model.transcribe(all_data["audio_filepaths"], batch_size=args.batch_size, verbose=False, num_workers=1)
+        with torch.cuda.amp.autocast(enabled=False, dtype=compute_dtype), torch.inference_mode(), torch.no_grad():
+            if 'canary' in args.model_id:
+                transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, pnc='no', num_workers=1)
+            else:
+                transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, num_workers=1)
         end_time = time.time()
         if _ == 1:
             total_time += end_time - start_time
