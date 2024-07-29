@@ -3,7 +3,6 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=("nvidia/canary-1b")
-PNC=False
 BATCH_SIZE=64
 DEVICE_ID=0
 
@@ -16,91 +15,82 @@ do
     
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="ami" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
     
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="earnings22" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="gigaspeech" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
         --split="test.clean" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
         --split="test.other" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="spgispeech" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="tedlium" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="voxpopuli" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="open-asr-leaderboard/datasets-test-only" \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="common_voice" \
         --split="test" \
         --device=${DEVICE_ID} \
-        --pnc=${PNC} \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
