@@ -49,12 +49,12 @@ def main(args) -> None:
     for batch in tqdm(dataset_iterator(dataset), desc=f"Evaluating {args.model_id}"):
         segments, _ = asr_model.transcribe(batch["array"], language="en")
         outputs = [segment._asdict() for segment in segments]
-        predictions.extend(
-            data_utils.normalizer(
-                "".join([segment["text"] for segment in outputs])
-            ).strip()
-        )
-        references.extend(batch["reference"][0])
+        transcription = data_utils.normalizer(
+            "".join([segment["text"] for segment in outputs])
+        ).strip()
+
+        predictions.append(transcription)
+        references.append(batch["reference"])
 
     # Write manifest results
     manifest_path = data_utils.write_manifest(
