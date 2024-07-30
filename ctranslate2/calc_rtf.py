@@ -7,12 +7,13 @@ device = "cuda"
 device_index = 0
 
 models = [
-    "guillaumekln/faster-whisper-tiny.en",
-    "guillaumekln/faster-whisper-small.en",
-    "guillaumekln/faster-whisper-base.en",
-    "guillaumekln/faster-whisper-medium.en",
-    "guillaumekln/faster-whisper-large-v1",
-    "guillaumekln/faster-whisper-large-v2",
+    "tiny.en",
+    "small.en",
+    "base.en",
+    "medium.en",
+    "large-v1",
+    "large-v2",
+    "large-v3"
 ]
 
 n_batches = 3
