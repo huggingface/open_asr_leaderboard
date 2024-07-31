@@ -44,13 +44,13 @@ for model in models[:1]:
     for i in range(3):
         print(f"outer_loop -> {i}")
         total_time = 0.0
-        for _ in range(n_batches + warmup_batches):
-            print(f"batch_num -> {_}")
+        for batch in range(n_batches + warmup_batches):
+            print(f"batch_num -> {batch}")
             start = time.time()
             segments, _ = asr_model.transcribe(audio_dict["raw"], language="en")
             _ = [segment._asdict() for segment in segments]  # Iterate over segments to run inference
             end = time.time()
-            if _ >= warmup_batches:
+            if batch >= warmup_batches:
                 total_time += end - start
 
         rtf = (total_time / n_batches) / (audio_len / 16000)
