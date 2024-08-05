@@ -2,6 +2,7 @@ import argparse
 import os
 
 import torch
+from torch.nn.attention import sdpa_kernel, SDPBackend
 from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForCTC, AutoProcessor, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING
 import evaluate
 from normalizer import data_utils
@@ -10,11 +11,14 @@ from tqdm import tqdm
 
 wer_metric = evaluate.load("wer")
 
+torch.set_float32_matmul_precision('high')
+torch._logging.set_logs(graph_breaks=True, recompiles=True)
+
 
 def main(args):
     config = AutoConfig.from_pretrained(args.model_id)
     cls_model = AutoModelForSpeechSeq2Seq if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else AutoModelForCTC
-    model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.float16).to(args.device)
+    model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
     processor = AutoProcessor.from_pretrained(args.model_id)
     model_input_name = processor.model_input_names[0]
 
@@ -25,13 +29,11 @@ def main(args):
             gen_kwargs["language"] = "en"
             gen_kwargs["task"] = "transcribe"
 
-    dataset = data_utils.load_data(args)
-
-    if args.max_eval_samples is not None and args.max_eval_samples > 0:
-        print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
-        dataset = dataset.take(args.max_eval_samples)
-
-    dataset = data_utils.prepare_data(dataset)
+    if args.torch_compile:
+        model.forward = torch.compile(model.forward, mode=args.compile_mode, fullgraph=True)
+        if model.can_generate():
+            # enable static k/v cache for autoregressive models
+            model.generation_config.cache_implementation = "static"
 
     def benchmark(batch):
         # Load audio inputs
@@ -42,8 +44,15 @@ def main(args):
         start_time = time.time()
 
         # 1. Pre-Processing
-        if not model.can_generate() or len(audios[0]) > processor.feature_extractor.n_samples:
-            # 1.1 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
+        # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
+        padding_size = None
+        if minibatch_size != args.batch_size and args.torch_compile:
+            padding_size = args.batch_size - minibatch_size
+            padding_audios = [audios[-1] for _ in range(padding_size)]
+            audios.extend(padding_audios)
+
+        if not model.can_generate(): #or len(audios[0]) > processor.feature_extractor.n_samples:
+            # 1.2 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
             inputs = processor(
                 audios,
                 sampling_rate=16_000,
@@ -53,23 +62,29 @@ def main(args):
                 return_attention_mask=True,
             )
         else:
-            # 1.2 Standard Whisper processing: pad audios to 30-seconds and converted to log-mel
-            inputs = processor(audios, sampling_rate=16_000, return_tensors="pt")
+            # 1.3 Standard Whisper processing: pad audios to 30-seconds and converted to log-mel
+            inputs = processor(audios, sampling_rate=16_000, return_tensors="pt", device=args.device)
 
         inputs = inputs.to(args.device)
-        inputs[model_input_name] = inputs[model_input_name].to(torch.float16)
+        inputs[model_input_name] = inputs[model_input_name].to(torch.bfloat16)
 
         # 2. Model Inference
-        if model.can_generate():
-            # 2.1 Auto-regressive generation for encoder-decoder models
-            pred_ids = model.generate(**inputs, **gen_kwargs)
-        else:
-            # 2.2. Single forward pass for CTC
-            with torch.no_grad():
-                logits = model(**inputs)
-                pred_ids = logits.argmax(-1)
+        with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
+            if model.can_generate():
+                # 2.1 Auto-regressive generation for encoder-decoder models
+                pred_ids = model.generate(**inputs, **gen_kwargs)
+            else:
+                # 2.2. Single forward pass for CTC
+                with torch.no_grad():
+                    logits = model(**inputs).logits
+                    pred_ids = logits.argmax(-1)
 
-        # 3. Post-processing: convert token ids to text transcription
+        # 3. Post-processing
+        # 3.1 Strip padded ids from predictions
+        if padding_size is not None:
+            pred_ids = pred_ids[:-padding_size, ...]
+
+        # 3.2 Convert token ids to text transcription
         pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 
         # END TIMING
@@ -83,8 +98,31 @@ def main(args):
         batch["references"] = batch["norm_text"]
         return batch
 
+    if args.warmup_steps is not None:
+        dataset = data_utils.load_data(args)
+        dataset = data_utils.prepare_data(dataset)
+
+        num_warmup_samples = args.warmup_steps * args.batch_size
+        if args.streaming:
+            warmup_dataset = dataset.take(num_warmup_samples)
+        else:
+            warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
+
+        for _ in tqdm(warmup_dataset, desc="Warming up..."):
+            continue
+
+    dataset = data_utils.load_data(args)
+    if args.max_eval_samples is not None and args.max_eval_samples > 0:
+        print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
+        if args.streaming:
+            dataset = dataset.take(args.max_eval_samples)
+        else:
+            dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
+    dataset = data_utils.prepare_data(dataset)
+
     dataset = dataset.map(
-        benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"]
+        benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"],
     )
 
     all_results = {
@@ -94,7 +132,7 @@ def main(args):
         "references": [],
     }
     result_iter = iter(dataset)
-    for result in tqdm(result_iter, desc="Samples"):
+    for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
             all_results[key].append(result[key])
 
@@ -170,6 +208,23 @@ if __name__ == "__main__":
         dest="streaming",
         action="store_false",
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+    )
+    parser.add_argument(
+        "--torch_compile",
+        action="store_true",
+        help="Whether to JIT compile the forward pass of the model.",
+    )
+    parser.add_argument(
+        "--compile_mode",
+        type=str,
+        default="max-autotune",
+        help="Mode for torch compiling model forward pass. Can be either 'default', 'reduce-overhead', 'max-autotune' or 'max-autotune-no-cudagraphs'.",
+    )
+    parser.add_argument(
+        "--warmup_steps",
+        type=int,
+        default=10,
+        help="Number of warm-up steps to run before launching the timed runs.",
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=False)
