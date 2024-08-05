@@ -84,15 +84,6 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="common_voice" \
-        --split="test" \
-        --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
     # Evaluate results
     RUNDIR=`pwd` && \
     cd ../normalizer && \
