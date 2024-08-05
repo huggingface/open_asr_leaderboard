@@ -16,7 +16,7 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="ami" \
         --split="test" \
-        --device=2 \
+        --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
@@ -25,7 +25,7 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="earnings22" \
         --split="test" \
-        --device=2 \
+        --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
@@ -34,7 +34,7 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="gigaspeech" \
         --split="test" \
-        --device=2 \
+        --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
@@ -43,7 +43,7 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
         --split="test.clean" \
-        --device=2 \
+        --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
@@ -52,7 +52,7 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
         --split="test.other" \
-        --device=2 \
+        --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
@@ -61,7 +61,7 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="spgispeech" \
         --split="test" \
-        --device=2 \
+        --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
@@ -70,7 +70,7 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="tedlium" \
         --split="test" \
-        --device=2 \
+        --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
@@ -79,16 +79,7 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="voxpopuli" \
         --split="test" \
-        --device=2 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="common_voice" \
-        --split="test" \
-        --device=2 \
+        --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
