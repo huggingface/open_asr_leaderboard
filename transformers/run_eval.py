@@ -1,6 +1,5 @@
 import argparse
 import os
-
 import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
 from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForCTC, AutoProcessor, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING
@@ -10,10 +9,7 @@ import time
 from tqdm import tqdm
 
 wer_metric = evaluate.load("wer")
-
 torch.set_float32_matmul_precision('high')
-torch._logging.set_logs(graph_breaks=True, recompiles=True)
-
 
 def main(args):
     config = AutoConfig.from_pretrained(args.model_id)
@@ -23,11 +19,13 @@ def main(args):
     model_input_name = processor.model_input_names[0]
 
     if model.can_generate():
-        gen_kwargs = {"max_new_tokens": 256}
+        gen_kwargs = {"max_new_tokens": args.max_new_tokens}
         # for multilingual Whisper-checkpoints we see a definitive WER boost by setting the language and task args
         if getattr(model.generation_config, "is_multilingual"):
             gen_kwargs["language"] = "en"
             gen_kwargs["task"] = "transcribe"
+    elif args.max_new_tokens:
+        raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
     if args.torch_compile:
         model.forward = torch.compile(model.forward, mode=args.compile_mode, fullgraph=True)
@@ -35,7 +33,7 @@ def main(args):
             # enable static k/v cache for autoregressive models
             model.generation_config.cache_implementation = "static"
 
-    def benchmark(batch):
+    def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
@@ -72,7 +70,7 @@ def main(args):
         with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
             if model.can_generate():
                 # 2.1 Auto-regressive generation for encoder-decoder models
-                pred_ids = model.generate(**inputs, **gen_kwargs)
+                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
             else:
                 # 2.2. Single forward pass for CTC
                 with torch.no_grad():
@@ -107,7 +105,7 @@ def main(args):
             warmup_dataset = dataset.take(num_warmup_samples)
         else:
             warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
@@ -208,6 +206,12 @@ if __name__ == "__main__":
         dest="streaming",
         action="store_false",
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=None,
+        help="Maximum number of tokens to generate (for auto-regressive models).",
     )
     parser.add_argument(
         "--torch_compile",
