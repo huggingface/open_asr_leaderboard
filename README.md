@@ -9,8 +9,9 @@ Each library has its own set of requirements. We recommend using a clean conda e
 1) Clone this repository.
 2) Install PyTorch by following the instructions here: https://pytorch.org/get-started/locally/
 3) Install the common requirements for all library by running `pip install -r requirements/requirements.txt`.
-4) Install the requirements for each library you wish to evalaute by running `pip install -r requirements/requirements_<library_name>.txt`.
-5) Connect your Hugging Face account by running `huggingface-cli login`.
+4) If you wish to run NeMo, note that the benchmark currently needs CUDA 12.6 (`nvidia-smi` should output "CUDA Version: 12.6" or higher), to fix a problem in previous drivers for RNN-T inference with cooperative kernels inside of conditional nodes (see here: https://github.com/NVIDIA/NeMo/pull/9869)
+5) Install the requirements for each library you wish to evalaute by running `pip install -r requirements/requirements_<library_name>.txt`.
+6) Connect your Hugging Face account by running `huggingface-cli login`.
 
 # Evaluate a model
 
