@@ -1,4 +1,6 @@
-git+https://github.com/NVIDIA/NeMo.git@r2.0.0rc1#egg=nemo_toolkit[all]
+git+https://github.com/NVIDIA/NeMo.git@7cfca95d52eb6411bd43fc6054a7828c0fa78ce5#egg=nemo_toolkit[all] # This commit hash is a recent version of main at the time of testing.
 tqdm
 soundfile
 librosa
+IPython # Workaround for https://github.com/NVIDIA/NeMo/pull/9890#discussion_r1701028427
+cuda-python>=12.4 # Used for fast TDT and RNN-T inference
