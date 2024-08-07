@@ -148,7 +148,7 @@ def main(args):
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],
-        args.model_id,
+        args.source,
         args.dataset_path,
         args.dataset,
         args.split,
@@ -186,7 +186,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="esb/datasets",
+        default="hf-audio/esb-datasets-test-only-sorted",
         help="Dataset path. By default, it is `esb/datasets`",
     )
     parser.add_argument(
