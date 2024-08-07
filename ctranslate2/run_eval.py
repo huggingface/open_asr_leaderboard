@@ -23,7 +23,7 @@ def main(args) -> None:
 
     def benchmark(batch):
         start_time = time.time()
-        segments, _ = asr_model.transcribe(batch["array"], language="en")
+        segments, _ = asr_model.transcribe(batch["audio"]["array"], language="en")
         outputs = [segment._asdict() for segment in segments]
         batch["transcription_time_s"] = time.time() - start_time
         batch["predictions"] = data_utils.normalizer("".join([segment["text"] for segment in outputs])).strip()
@@ -116,12 +116,6 @@ if __name__ == "__main__":
         type=int,
         default=-1,
         help="The device to run the pipeline on. -1 for CPU (default), 0 for the first GPU and so on.",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=16,
-        help="Number of samples to go through each streamed batch.",
     )
     parser.add_argument(
         "--max_eval_samples",
