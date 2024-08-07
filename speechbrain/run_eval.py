@@ -2,18 +2,18 @@
 
 Authors
 * Adel Moumen 2023 <adel.moumen@univ-avignon.fr>
+* Sanchit Gandhi 2024 <sanchit@huggingface.co>
 """
 import argparse
+import time
 
 import evaluate
 from normalizer import data_utils
 from tqdm import tqdm
 import torch
-import speechbrain.pretrained as pretrained
+import speechbrain.inference.ASR as ASR
 from speechbrain.utils.data_utils import batch_pad_right
-from datasets import Dataset
-from typing import List, Union
-import os 
+import os
 
 def get_model(
     speechbrain_repository: str,
@@ -61,107 +61,13 @@ def get_model(
     }
 
     try:
-        model_class = getattr(pretrained, speechbrain_pretrained_class_name)
+        model_class = getattr(ASR, speechbrain_pretrained_class_name)
     except AttributeError:
         raise AttributeError(
             f"SpeechBrain Pretrained class: {speechbrain_pretrained_class_name} not found in pretrained.py"
         )
 
     return model_class.from_hparams(**kwargs)
-
-
-def dataset_iterator(dataset: Dataset):
-    """Iterate over the dataset and yield the audio and reference text.
-
-    Arguments
-    ---------
-    dataset : Dataset
-        The dataset to iterate over.
-
-    Yields
-    ------
-    dict
-        A dictionary containing the audio and reference text.
-    """
-    for i, item in enumerate(dataset):
-        yield {
-            **item["audio"],
-            "reference": item["norm_text"],
-            "audio_filename": f"file_{i}",
-            "sample_rate": 16_000,
-            "sample_id": i,
-        }
-
-
-def evaluate_batch(model, buffer: List, predictions: List, device: str) -> None:
-    """Evaluate a batch of audio samples.
-
-    Arguments
-    ---------
-    model : Pretrained
-        The SpeechBrain pretrained model.
-    buffer : List
-        A list of audio samples.
-    predictions : List
-        A list of predictions.
-    device : str
-        The device to run the model on.
-    """
-    wavs = [torch.from_numpy(sample["array"]) for sample in buffer]
-    wavs, wav_lens = batch_pad_right(wavs)
-    wavs = wavs.to(device)
-    wav_lens = wav_lens.to(device)
-    predicted_words, _ = model.transcribe_batch(wavs, wav_lens)
-
-    for result in predicted_words:
-        result = data_utils.normalizer(result)
-        predictions.append(result)
-    buffer.clear()
-
-
-def evaluate_dataset(
-    model, dataset: Dataset, device: str, batch_size: int, verbose: bool = True
-) -> Union[List, List]:
-    """Evaluate a dataset the SpeechBrain pretrained model.
-
-    Arguments
-    ---------
-    model : Pretrained
-        The SpeechBrain pretrained model.
-    dataset : Dataset
-        The dataset to evaluate.
-    device : str
-        The device to run the model on.
-    batch_size : int
-        The batch size to use.
-    verbose : bool, optional
-        Whether to print progress information.
-
-    Returns
-    -------
-    references : List
-        A list of references.
-    predictions : List
-        A list of predictions.
-    """
-    references = []
-    predictions = []
-    buffer = []
-    for sample in tqdm(
-        dataset_iterator(dataset),
-        desc="Evaluating: Sample id",
-        unit="",
-        disable=not verbose,
-    ):
-        buffer.append(sample)
-        references.append(sample["reference"])
-        if len(buffer) == batch_size:
-            evaluate_batch(model, buffer, predictions, device)
-
-    if len(buffer) > 0:
-        evaluate_batch(model, buffer, predictions, device)
-
-    return references, predictions
 
 
 def main(args):
@@ -171,36 +77,93 @@ def main(args):
     else:
         device = f"cuda:{args.device}"
 
-    asr_model = get_model(
+    model = get_model(
         args.source, args.speechbrain_pretrained_class_name, device=device
     )
 
+    def benchmark(batch):
+        # Load audio inputs
+        audios = [torch.from_numpy(sample["array"]) for sample in batch["audio"]]
+        minibatch_size = len(audios)
+
+        # START TIMING
+        start_time = time.time()
+
+        audios, audio_lens = batch_pad_right(audios)
+        audios = audios.to(device)
+        audio_lens = audio_lens.to(device)
+        predictions, _ = model.transcribe_batch(audios, audio_lens)
+
+        # END TIMING
+        runtime = time.time() - start_time
+
+        # normalize by minibatch size since we want the per-sample time
+        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
+
+        # normalize transcriptions with English normalizer
+        batch["predictions"] = [data_utils.normalizer(pred) for pred in predictions]
+        batch["references"] = batch["norm_text"]
+        return batch
+
+
+    if args.warmup_steps is not None:
+        dataset = data_utils.load_data(args)
+        dataset = data_utils.prepare_data(dataset)
+
+        num_warmup_samples = args.warmup_steps * args.batch_size
+        if args.streaming:
+            warmup_dataset = dataset.take(num_warmup_samples)
+        else:
+            warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
+
+        for _ in tqdm(warmup_dataset, desc="Warming up..."):
+            continue
+
     dataset = data_utils.load_data(args)
-
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
-        print(f"Subsampling dataset to first {args.max_eval_samples} samples !")
-        dataset = dataset.take(args.max_eval_samples)
-
+        print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
+        if args.streaming:
+            dataset = dataset.take(args.max_eval_samples)
+        else:
+            dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
     dataset = data_utils.prepare_data(dataset)
 
-    predictions = []
-    references = []
-
-    references, predictions = evaluate_dataset(
-        asr_model, dataset, device, args.batch_size, verbose=True
+    dataset = dataset.map(
+        benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"],
     )
 
-    # Write manifest results
+    all_results = {
+        "audio_length_s": [],
+        "transcription_time_s": [],
+        "predictions": [],
+        "references": [],
+    }
+    result_iter = iter(dataset)
+    for result in tqdm(result_iter, desc="Samples..."):
+        for key in all_results:
+            all_results[key].append(result[key])
+
+    # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
-        references, predictions, args.source, args.dataset_path, args.dataset, args.split
+        all_results["references"],
+        all_results["predictions"],
+        args.model_id,
+        args.dataset_path,
+        args.dataset,
+        args.split,
+        audio_length=all_results["audio_length_s"],
+        transcription_time=all_results["transcription_time_s"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
-    
-    wer_metric = evaluate.load("wer")
-    wer = wer_metric.compute(references=references, predictions=predictions)
-    wer = round(100 * wer, 2)
 
-    print("WER:", wer, "%")
+    wer_metric = evaluate.load("wer")
+    wer = wer_metric.compute(
+        references=all_results["references"], predictions=all_results["predictions"]
+    )
+    wer = round(100 * wer, 2)
+    rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
+    print("WER:", wer, "%", "RTFx:", rtfx)
 
 
 if __name__ == "__main__":
@@ -262,6 +225,12 @@ if __name__ == "__main__":
         dest="streaming",
         action="store_false",
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+    )
+    parser.add_argument(
+        "--warmup_steps",
+        type=int,
+        default=5,
+        help="Number of warm-up steps to run before launching the timed runs.",
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=True)
