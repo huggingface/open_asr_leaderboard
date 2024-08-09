@@ -3,7 +3,6 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=("tiny.en" "small.en" "base.en" "medium.en" "large-v1" "large-v2" "large-v3")
-BATCH_SIZE=1
 DEVICE_INDEX=0
 
 num_models=${#MODEL_IDs[@]}
@@ -18,7 +17,6 @@ do
         --dataset="ami" \
         --split="test" \
         --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -27,7 +25,6 @@ do
         --dataset="earnings22" \
         --split="test" \
         --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -36,7 +33,6 @@ do
         --dataset="gigaspeech" \
         --split="test" \
         --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -45,7 +41,6 @@ do
         --dataset="librispeech" \
         --split="test.clean" \
         --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -54,7 +49,6 @@ do
         --dataset="librispeech" \
         --split="test.other" \
         --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -63,7 +57,6 @@ do
         --dataset="spgispeech" \
         --split="test" \
         --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -72,7 +65,6 @@ do
         --dataset="tedlium" \
         --split="test" \
         --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python run_eval.py \
@@ -81,7 +73,6 @@ do
         --dataset="voxpopuli" \
         --split="test" \
         --device=${DEVICE_INDEX} \
-        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     # Evaluate results
