@@ -14,12 +14,20 @@ do
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="ami" \
+        --dataset="voxpopuli" \
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="ami" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -70,15 +78,6 @@ do
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="tedlium" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="voxpopuli" \
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
