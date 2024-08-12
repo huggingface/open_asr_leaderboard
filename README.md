@@ -215,6 +215,7 @@ if __name__ == "__main__":
 4) Create one bash file per model type following the conversion `run_<model_type>.sh`.
     - The bash script should follow the same steps as other libraries. You can copy the example for [run_whisper.sh](./transformers/run_whisper.sh) and update it to your library
     - Different model sizes of the same type should share the script. For example `Wav2Vec` and `Wav2Vec2` would be two separate scripts, but different size of `Wav2Vec2` would be part of the same script.
+    - **Important:** for a given model, you can tune decoding hyper-parameters to maximize benchmark performance (e.g. batch size, beam size, etc.). However, you must use the **same decoding hyper-parameters** for each dataset in the benchmark. For more details, refer to the [ESB paper](https://arxiv.org/abs/2210.13352).
 5) Submit a PR for your changes.
 
 # Add a new model
