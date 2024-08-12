@@ -2,8 +2,8 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("openai/whisper-tiny.en" "openai/whisper-small.en" "openai/whisper-base.en" "openai/whisper-medium.en" "openai/whisper-large" "openai/whisper-large-v2" "openai/whisper-large-v3" "distil-whisper/distil-medium.en" "distil-whisper/distil-large-v2" "distil-whisper/distil-large-v3")
-BATCH_SIZE=64
+MODEL_IDs=("facebook/wav2vec2-conformer-rel-pos-large-960h-ft" "facebook/wav2vec2-conformer-rope-large-960h-ft")
+BATCH_SIZE=32
 
 num_models=${#MODEL_IDs[@]}
 
