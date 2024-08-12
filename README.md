@@ -12,7 +12,7 @@ Each library has its own set of requirements. We recommend using a clean conda e
 4) Install the requirements for each library you wish to evaluate by running `pip install -r requirements/requirements_<library_name>.txt`.
 5) Connect your Hugging Face account by running `huggingface-cli login`.
 
-**Note:** If you wish to run NeMo, note that the benchmark currently needs CUDA 12.6 (`nvidia-smi` should output "CUDA Version: 12.6" or higher), to fix a problem in previous drivers for RNN-T inference with cooperative kernels inside conditional nodes (see here: https://github.com/NVIDIA/NeMo/pull/9869).
+**Note:** If you wish to run NeMo, the benchmark currently needs CUDA 12.6 to fix a problem in previous drivers for RNN-T inference with cooperative kernels inside conditional nodes (see here: https://github.com/NVIDIA/NeMo/pull/9869). Running `nvidia-smi` should output "CUDA Version: 12.6" or higher.
 
 # Evaluate a model
 
