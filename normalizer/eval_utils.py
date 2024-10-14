@@ -1,9 +1,10 @@
 import os
 import glob
 import json
+import os
 
 import evaluate
-from collections import defaultdict
+import pandas as pd
 
 
 def read_manifest(manifest_path: str):
@@ -98,6 +99,21 @@ def write_manifest(
     return manifest_path
 
 
+# Utility function to parse the file path and extract model id, dataset path, dataset name and split
+
+
+def parse_filepath(fp: str):
+    model_index = fp.find("MODEL_")
+    fp = fp[model_index:]
+    ds_index = fp.find("DATASET_")
+    model_id = fp[:ds_index].replace("MODEL_", "").rstrip("_")
+    author_index = model_id.find("-")
+    model_id = model_id[:author_index] + "/" + model_id[author_index + 1 :]
+    ds_fp = fp[ds_index:]
+    dataset_id = ds_fp.replace("DATASET_", "").rstrip(".jsonl")
+    return model_id, dataset_id
+
+
 def score_results(directory: str, model_id: str = None):
     """
     Scores all result files in a directory and returns a composite score over all evaluated datasets.
@@ -128,26 +144,25 @@ def score_results(directory: str, model_id: str = None):
     if len(result_files) == 0:
         raise ValueError(f"No result files found in {directory}")
 
-    # Utility function to parse the file path and extract model id, dataset path, dataset name and split
-    def parse_filepath(fp: str):
-        model_index = fp.find("MODEL_")
-        fp = fp[model_index:]
-        ds_index = fp.find("DATASET_")
-        model_id = fp[:ds_index].replace("MODEL_", "").rstrip("_")
-        author_index = model_id.find("-")
-        model_id = model_id[:author_index] + "/" + model_id[author_index + 1 :]
-
-        ds_fp = fp[ds_index:]
-        dataset_id = ds_fp.replace("DATASET_", "").rstrip(".jsonl")
-        return model_id, dataset_id
-
     # Compute WER results per dataset, and RTFx over all datasets
-    results = {}
     wer_metric = evaluate.load("wer")
 
+    results_df = pd.DataFrame()
     for result_file in result_files:
         manifest = read_manifest(result_file)
-        model_id_of_file, dataset_id = parse_filepath(result_file)
+
+        model_id, dataset_id = parse_filepath(result_file)
+
+        # if dataset_id not in results_df.columns:
+        wer_column = dataset_id + "_wer"
+        rtfx_column = dataset_id + "_RTFx"
+
+        results_df[wer_column] = (
+            None if wer_column not in results_df.columns else results_df[wer_column]
+        )
+        results_df[rtfx_column] = (
+            None if rtfx_column not in results_df.columns else results_df[rtfx_column]
+        )
 
         references = [datum["text"] for datum in manifest]
         predictions = [datum["pred_text"] for datum in manifest]
@@ -156,55 +171,19 @@ def score_results(directory: str, model_id: str = None):
         duration = [datum["duration"] for datum in manifest]
         compute_rtfx = all(time) and all(duration)
 
+        rtfx = round(sum(duration) / sum(time), 4) if compute_rtfx else None
+
         wer = wer_metric.compute(references=references, predictions=predictions)
         wer = round(100 * wer, 2)
 
-        if compute_rtfx:
-            audio_length = sum(duration)
-            inference_time = sum(time)
-            rtfx = round(sum(duration) / sum(time), 4)
-        else:
-            audio_length = inference_time = rtfx = None
+        results_df.loc[model_id, wer_column] = wer
+        results_df.loc[model_id, rtfx_column] = rtfx
 
-        result_key = f"{model_id_of_file} | {dataset_id}"
-        results[result_key] = {"wer": wer, "audio_length": audio_length, "inference_time": inference_time, "rtfx": rtfx}
+    results_df["average_wer"] = round(results_df.filter(like="_wer").mean(axis=1), 2)
+    results_df["average_rtfx"] = round(results_df.filter(like="_RTFx").mean(axis=1), 2)
 
-    print("*" * 80)
-    print("Results per dataset:")
-    print("*" * 80)
+    results_df.to_csv("eval_results.csv")
 
-    for k, v in results.items():
-        metrics = f"{k}: WER = {v['wer']:0.2f} %"
-        if v["rtfx"] is not None:
-            metrics += f", RTFx = {v['rtfx']:0.2f}"
-        print(metrics)
-
-    # composite WER should be computed over all datasets and with the same key
-    composite_wer = defaultdict(float)
-    composite_audio_length = defaultdict(float)
-    composite_inference_time = defaultdict(float)
-    count_entries = defaultdict(int)
-    for k, v in results.items():
-        key = k.split("|")[0].strip()
-        composite_wer[key] += v["wer"]
-        if v["rtfx"] is not None:
-            composite_audio_length[key] += v["audio_length"]
-            composite_inference_time[key] += v["inference_time"]
-        else:
-            composite_audio_length[key] = composite_inference_time[key] = None
-        count_entries[key] += 1
-
-    # normalize scores & print
-    print()
-    print("*" * 80)
-    print("Composite Results:")
-    print("*" * 80)
-    for k, v in composite_wer.items():
-        wer = v / count_entries[k]
-        print(f"{k}: WER = {wer:0.2f} %")
-    for k in composite_audio_length:
-        if composite_audio_length[k] is not None:
-            rtfx = composite_audio_length[k] / composite_inference_time[k]
-            print(f"{k}: RTFx = {rtfx:0.2f}")
-    print("*" * 80)
-    return composite_wer, results
+    eval_filename = "eval_results.csv"
+    
+    print(f"Results saved to {eval_filename}")
