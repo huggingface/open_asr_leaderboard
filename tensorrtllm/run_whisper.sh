@@ -25,11 +25,11 @@ build_model() {
     echo "Converting checkpoint for model: $model_id"
     python3 convert_checkpoint.py \
         --output_dir "$checkpoint_dir" \
-        --model_name "$model_id"
-
+        --model_name "$model_id" 
     local INFERENCE_PRECISION=float16
     local MAX_BEAM_WIDTH=4
-    local MAX_BATCH_SIZE=64
+    local MAX_BATCH_SIZE=256
+
     echo "Building encoder for model: $model_id"
     trtllm-build --checkpoint_dir "${checkpoint_dir}/encoder" \
                   --output_dir "${output_dir}/encoder" \
@@ -57,6 +57,7 @@ build_model() {
 
 MODEL_IDs=("large-v3-turbo" "large-v3")
 DEVICE_INDEX=0
+BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
 
@@ -68,28 +69,31 @@ do
     download_model $MODEL_ID
     build_model $MODEL_ID
 
-    python run_eval.py \
+    python3 run_eval.py \
         --model_id=whisper_${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="ami" \
         --split="test" \
         --device=${DEVICE_INDEX} \
+        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python3 run_eval.py \
         --model_id=whisper_${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="earnings22" \
         --split="test" \
         --device=${DEVICE_INDEX} \
+        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python3 run_eval.py \
         --model_id=whisper_${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="gigaspeech" \
         --split="test" \
         --device=${DEVICE_INDEX} \
+        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python3 run_eval.py \
@@ -98,22 +102,25 @@ do
         --dataset="librispeech" \
         --split="test.clean" \
         --device=${DEVICE_INDEX} \
+        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python3 run_eval.py \
         --model_id=whisper_${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
         --split="test.other" \
         --device=${DEVICE_INDEX} \
+        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python3 run_eval.py \
         --model_id=whisper_${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="spgispeech" \
         --split="test" \
         --device=${DEVICE_INDEX} \
+        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     python3 run_eval.py \
@@ -122,20 +129,22 @@ do
         --dataset="tedlium" \
         --split="test" \
         --device=${DEVICE_INDEX} \
+        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python3 run_eval.py \
         --model_id=whisper_${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="voxpopuli" \
         --split="test" \
         --device=${DEVICE_INDEX} \
+        --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
     # Evaluate results
     RUNDIR=`pwd` && \
     cd ../normalizer && \
-    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')" && \
+    python3 -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')" > log.txt && \
     cd $RUNDIR
 
 done

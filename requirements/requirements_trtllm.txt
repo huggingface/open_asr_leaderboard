@@ -1,3 +1,6 @@
 tiktoken
 jiwer
 tensorrt-llm==0.15.0.dev2024101500
+soundfile
+librosa
+pyannote.audio

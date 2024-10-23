@@ -227,7 +227,7 @@ def log_mel_spectrogram(
     torch.Tensor, shape = (80 or 128, n_frames)
         A Tensor that contains the Mel spectrogram
     """
-    assert torch.is_tensor(audio)
+    assert torch.is_tensor(audio), f"Unsupported audio type: {type(audio)}"
 
     if device is not None:
         audio = audio.to(device)
