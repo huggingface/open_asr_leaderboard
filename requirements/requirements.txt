@@ -3,4 +3,5 @@ transformers
 evaluate
 datasets
 librosa
+pandas
 jiwer
