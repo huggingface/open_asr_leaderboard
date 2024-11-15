@@ -5,7 +5,6 @@ from tensorrt_llm.runtime import ModelRunnerCpp
 from tensorrt_llm.bindings import GptJsonConfig
 import numpy as np
 
-from vad.pyannote import Pyannote
 from whisper_utils import log_mel_spectrogram, get_tokenizer
 import evaluate
 from normalizer import data_utils
@@ -102,40 +101,56 @@ class WhisperTRTLLM(object):
         
         return texts_list
 
+def longest_common_substring(s1, s2):
+    len1, len2 = len(s1), len(s2)
+    dp = [[0] * (len2 + 1) for _ in range(len1 + 1)]
+    
+    longest_length = 0  
+    end_index_s1 = 0 
+
+    for i in range(1, len1 + 1):
+        for j in range(1, len2 + 1):
+            if s1[i - 1] == s2[j - 1]: 
+                dp[i][j] = dp[i - 1][j - 1] + 1
+                if dp[i][j] > longest_length:
+                    longest_length = dp[i][j]
+                    end_index_s1 = i  
+            else:
+                dp[i][j] = 0 
+
+    return s1[end_index_s1 - longest_length:end_index_s1]
+
+def chunk_audio(audio, chunk_length, overlap_length, sample_rate):
+    chunk_size = int(chunk_length * sample_rate)
+    overlap_size = int(overlap_length * sample_rate)
+    
+    chunks = []
+    start = 0
+    
+    while start < len(audio):
+        end = min(start + chunk_size, len(audio))
+        chunks.append(audio[start:end])
+        start += chunk_size - overlap_size
+    
+    return chunks
+
 def main(args):
     asr_model = WhisperTRTLLM(engine_dir=args.model_id)
-    default_vad_options = {
-        "chunk_size": 30,
-        "vad_onset": 0.500,
-        "vad_offset": 0.363
-    }
-    # vad model copied from https://github.com/m-bain/whisperX/pull/888
-    vad_model = Pyannote(torch.device('cuda'), use_auth_token="", **default_vad_options)
+
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
         max_duration, sample_rate, max_batch_size = 30, 16000, 64
-        default_vad_options = {
-            "chunk_size": 30,
-            "vad_onset": 0.500,
-            "vad_offset": 0.363
-        }
         audios_origin = [audio["array"].astype(np.float32) for audio in batch["audio"]]
         minibatch_size = len(audios_origin)
         audios, audio_index = [], []
+
+        chunk_length = 25
+        overlap_length = 5 
         for i, audio in enumerate(audios_origin):
             if len(audio) > max_duration * sample_rate:
-                waveform = vad_model.preprocess_audio(audio)
-                vad_segments = vad_model({"waveform": waveform, "sample_rate": sample_rate})
-                vad_segments = vad_model.merge_chunks(
-                    vad_segments,
-                    default_vad_options["chunk_size"],
-                    onset=default_vad_options["vad_onset"],
-                    offset=default_vad_options["vad_offset"]
-                )
-                for seg in vad_segments:
-                    f1 = int(seg['start'] * sample_rate)
-                    f2 = int(seg['end'] * sample_rate)
-                    audios.append(audio[f1:f2])
+                audio_chunks = chunk_audio(audio, chunk_length, overlap_length, sample_rate)
+                for chunk in audio_chunks:
+                    audios.append(chunk)
                     audio_index.append(i)
             else:
                 audios.append(audio)
@@ -160,15 +175,22 @@ def main(args):
 
         texts_origin = asr_model.process_batch(features, features_input_lengths, num_threads=4)
 
-        # merge the transcriptions of the same audio
         texts = []
         for i in range(minibatch_size):
-            text = []
+            text_chunks = []
             for j in range(len(texts_origin)):
                 if audio_index[j] == i:
-                    text.append(texts_origin[j])
-            text = " ".join(text)
-            texts.append(text)
+                    text_chunks.append(texts_origin[j])
+            
+            if len(text_chunks) > 1:
+                merged_text = text_chunks[0]
+                for t in text_chunks[1:]:
+                    lcs = longest_common_substring(merged_text, t)
+                    merged_text += t[len(lcs):]
+                    
+                texts.append(merged_text)
+            else:
+                texts.append(text_chunks[0])
         # END TIMING
         runtime = time.time() - start_time
 
@@ -301,7 +323,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=1,
+        default=10,
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     args = parser.parse_args()
