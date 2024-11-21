@@ -1,17 +1,13 @@
 #!/bin/bash
 
 export PYTHONPATH="..":$PYTHONPATH
-# Download Models https://github.com/openai/whisper/blob/main/whisper/__init__.py#L17
-declare -A MODELS=(
-    ["large-v3"]="https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt"
-    ["large-v3-turbo"]="https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt"
-)
 
 download_model() {
     local MODEL_ID=$1
-    local URL=${MODELS[$MODEL_ID]}
-    
-    echo "Downloading $MODEL_ID from $URL..."
+    local MODEL_TRT_LLM=${MODEL_ID}_tllm_checkpoint
+    echo "Downloading $MODEL_ID from Hugging Face"
+    mkdir -p $MODEL_TRT_LLM
+    huggingface-cli download --local-dir whisper-${MODEL_ID}-trt-llm-checkpoint yuekai/whisper-${MODEL_ID}-trt-llm-checkpoint
     wget -nc --directory-prefix=assets "$URL"
     wget -nc --directory-prefix=assets assets/mel_filters.npz https://raw.githubusercontent.com/openai/whisper/main/whisper/assets/mel_filters.npz
     wget -nc --directory-prefix=assets https://raw.githubusercontent.com/openai/whisper/main/whisper/assets/multilingual.tiktoken
@@ -20,12 +16,9 @@ download_model() {
 
 build_model() {
     local model_id=$1
-    local checkpoint_dir="${model_id}_tllm_checkpoint"
+    local checkpoint_dir="whisper-${model_id}-trt-llm-checkpoint"
     local output_dir="whisper_${model_id}"
-    echo "Converting checkpoint for model: $model_id"
-    python3 convert_checkpoint.py \
-        --output_dir "$checkpoint_dir" \
-        --model_name "$model_id" 
+
     local INFERENCE_PRECISION=float16
     local MAX_BEAM_WIDTH=4
     local MAX_BATCH_SIZE=256
