@@ -137,7 +137,7 @@ do
     # Evaluate results
     RUNDIR=`pwd` && \
     cd ../normalizer && \
-    python3 -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')" > log.txt && \
+    python3 -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')" > log_${MODEL_ID}.txt && \
     cd $RUNDIR
 
 done

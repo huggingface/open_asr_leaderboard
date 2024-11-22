@@ -139,7 +139,7 @@ def main(args):
 
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
-        max_duration, sample_rate, max_batch_size = 30, 16000, 64
+        max_duration, sample_rate = 30, 16000
         audios_origin = [audio["array"].astype(np.float32) for audio in batch["audio"]]
         minibatch_size = len(audios_origin)
         audios, audio_index = [], []
