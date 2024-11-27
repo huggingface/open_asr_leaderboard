@@ -49,7 +49,7 @@ build_model() {
                   --gpt_attention_plugin "$INFERENCE_PRECISION"
 }
 
-MODEL_IDs=("large-v3-turbo" "large-v3")
+MODEL_IDs=("large-v3-turbo" "large-v3" "large-v2" "large-v1" "medium" "base" "small" "tiny" "medium.en" "base.en" "small.en" "tiny.en")
 DEVICE_INDEX=0
 BATCH_SIZE=64
 
