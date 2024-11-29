@@ -7,12 +7,16 @@ download_model() {
     local MODEL_TRT_LLM=${MODEL_ID}_tllm_checkpoint
     echo "Downloading $MODEL_ID from Hugging Face"
     mkdir -p $MODEL_TRT_LLM
-    huggingface-cli download --local-dir whisper-${MODEL_ID}-trt-llm-checkpoint yuekai/whisper-${MODEL_ID}-trt-llm-checkpoint
+    # Choose download source based on model ID prefix
+    if [[ $MODEL_ID == distil* ]]; then
+        huggingface-cli download --local-dir whisper-${MODEL_ID}-trt-llm-checkpoint Steveeeeeeen/${MODEL_ID}-trt-llm-checkpoint
+    else
+        huggingface-cli download --local-dir whisper-${MODEL_ID}-trt-llm-checkpoint yuekai/whisper-${MODEL_ID}-trt-llm-checkpoint
+    fi
     wget -nc --directory-prefix=assets "$URL"
     wget -nc --directory-prefix=assets assets/mel_filters.npz https://raw.githubusercontent.com/openai/whisper/main/whisper/assets/mel_filters.npz
     wget -nc --directory-prefix=assets https://raw.githubusercontent.com/openai/whisper/main/whisper/assets/multilingual.tiktoken
     wget -nc --directory-prefix=assets https://raw.githubusercontent.com/openai/whisper/main/whisper/assets/gpt2.tiktoken
-
 }
 
 build_model() {
@@ -49,13 +53,13 @@ build_model() {
                   --gpt_attention_plugin "$INFERENCE_PRECISION"
 }
 
-MODEL_IDs=("large-v3-turbo" "large-v3" "large-v2" "large-v1" "medium" "base" "small" "tiny" "medium.en" "base.en" "small.en" "tiny.en")
+MODEL_IDs=("large-v3-turbo" "large-v3" "large-v2" "large-v1" "medium" "base" "small" "tiny" "medium.en" "base.en" "small.en" "tiny.en" "distil-large-v3" "distil-large-v2" "distil-medium.en" "distil-small.en")
 DEVICE_INDEX=0
 BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
 
-pip install -r ../requirements/requirements_trtllm.txt
+# pip install -r ../requirements/requirements_trtllm.txt
 
 for (( i=0; i<${num_models}; i++ ));
 do
