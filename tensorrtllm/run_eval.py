@@ -1,10 +1,12 @@
 import argparse
 import os
 import torch
+import json
 from tensorrt_llm.runtime import ModelRunnerCpp
 from tensorrt_llm.bindings import GptJsonConfig
 import numpy as np
-
+from collections import OrderedDict
+from pathlib import Path
 from whisper_utils import log_mel_spectrogram, get_tokenizer
 import evaluate
 from normalizer import data_utils
@@ -16,18 +18,38 @@ from concurrent.futures import ThreadPoolExecutor
 
 wer_metric = evaluate.load("wer")
 
+def read_config(component, engine_dir):
+    engine_dir = Path(engine_dir)
+    config_path = engine_dir / component / 'config.json'
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    model_config = OrderedDict()
+    model_config.update(config['pretrained_config'])
+    model_config.update(config['build_config'])
+    return model_config
+
 class WhisperTRTLLM(object):
 
     def __init__(self,
                  engine_dir,
                  assets_dir="assets",
                  batch_size=64):
-        tokenizer_name = "multilingual"
-        assert (Path(assets_dir) / "multilingual.tiktoken").exists(
-        ), "multilingual.tiktoken file is not existed in assets_dir"
-
+        encoder_config = read_config('encoder', engine_dir)
+        decoder_config = read_config('decoder', engine_dir)
+        self.n_mels = encoder_config['n_mels']
+        self.num_languages = encoder_config['num_languages']
+        is_multilingual = (decoder_config['vocab_size'] >= 51865)
+        if is_multilingual:
+            tokenizer_name = "multilingual"
+            assert (Path(assets_dir) / "multilingual.tiktoken").exists(
+            ), "multilingual.tiktoken file is not existed in assets_dir"
+        else:
+            tokenizer_name = "gpt2"
+            assert (Path(assets_dir) / "gpt2.tiktoken").exists(
+            ), "gpt2.tiktoken file is not existed in assets_dir"
+        self.text_prefix="<|startoftranscript|><|en|><|transcribe|><|notimestamps|>" if is_multilingual else "<|startoftranscript|><|notimestamps|>"
         self.tokenizer = get_tokenizer(name=tokenizer_name,
-                                       num_languages=100,
+                                       num_languages=self.num_languages,
                                        tokenizer_dir=assets_dir)
         self.eot_id = self.tokenizer.encode(
             "<|endoftext|>",
@@ -43,7 +65,6 @@ class WhisperTRTLLM(object):
                                 debug_mode=False,
                                 kv_cache_free_gpu_memory_fraction=0.9)
         self.model_runner_cpp = ModelRunnerCpp.from_dir(**runner_kwargs)
-        self.n_mels = 128
 
     def process_single_batch(self, mel_batch, decoder_input_ids, mel_input_lengths, max_new_tokens):
         outputs = self.model_runner_cpp.generate(
@@ -66,9 +87,9 @@ class WhisperTRTLLM(object):
             texts.append(text)
         return texts
     
-    def process_batch(self, mel, mel_input_lengths, text_prefix="<|startoftranscript|><|en|><|transcribe|><|notimestamps|>", num_threads=4, max_new_tokens=96):
+    def process_batch(self, mel, mel_input_lengths, num_threads=4, max_new_tokens=96):
         prompt_id = self.tokenizer.encode(
-            text_prefix, allowed_special=self.tokenizer.special_tokens_set)
+            self.text_prefix, allowed_special=self.tokenizer.special_tokens_set)
         prompt_id = torch.tensor(prompt_id)
         batch_size = len(mel)
         decoder_input_ids = prompt_id.repeat(batch_size, 1)
