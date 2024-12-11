@@ -13,7 +13,7 @@ torch.set_float32_matmul_precision('high')
 
 def main(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, trust_remote_code=True).to(args.device)
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, trust_remote_code=True).to(args.device).eval()
     tokenizer = PreTrainedTokenizerFast.from_pretrained(args.model_id, trust_remote_code=True)
 
     if args.torch_compile:
@@ -38,7 +38,8 @@ def main(args):
         padding = moonshine_min_input_size - input_tensor.shape[1]
         if padding > 0:
             input_tensor = torch.nn.functional.pad(input_tensor, (0, padding))
-        pred_ids = model(input_tensor.to(args.device).to(torch.bfloat16))
+        with torch.no_grad():
+            pred_ids = model(input_tensor.to(args.device).to(torch.bfloat16))
 
         # 3.2 Convert token ids to text transcription
         pred_text = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
