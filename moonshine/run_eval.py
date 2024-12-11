@@ -25,15 +25,17 @@ def main(args):
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
+        batch_size = max([len(audio) for audio in audios])
+        audios = [np.pad(audio, (0, batch_size - audio.shape[-1])) for audio in audios]
         minibatch_size = len(audios)
 
         # START TIMING
         start_time = time.time()
 
-        np_arr = np.array(audios)
+        np_arr = np.expand_dims(np.array(audios), 1)
         input_tensor = torch.FloatTensor(np_arr)
         moonshine_min_input_size = 1024
-        padding = moonshine_min_input_size - input_tensor.size()[1]
+        padding = moonshine_min_input_size - input_tensor.shape[1]
         if padding > 0:
             input_tensor = torch.nn.functional.pad(input_tensor, (0, padding))
         pred_ids = model(input_tensor.to(args.device).to(torch.bfloat16))
