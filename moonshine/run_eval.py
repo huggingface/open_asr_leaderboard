@@ -1,7 +1,8 @@
 import argparse
 import os
 import torch
-from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoProcessor, PreTrainedTokenizerFast
+from transformers import MoonshineForConditionalGeneration, AutoProcessor
+
 import evaluate
 from normalizer import data_utils
 import time
@@ -12,9 +13,9 @@ wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
 
 def main(args):
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, trust_remote_code=True).to(args.device)
-    tokenizer = PreTrainedTokenizerFast.from_pretrained(args.model_id, trust_remote_code=True)
+    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    model = MoonshineForConditionalGeneration.from_pretrained(args.model_id).to(args.device).to(torch_dtype)
+    processor = AutoProcessor.from_pretrained(args.model_id)
 
     if args.torch_compile:
         model.forward = torch.compile(model.forward, mode=args.compile_mode, fullgraph=True)
@@ -30,16 +31,30 @@ def main(args):
         # START TIMING
         start_time = time.time()
 
-        np_arr = np.array(audios)
-        input_tensor = torch.FloatTensor(np_arr)
-        moonshine_min_input_size = 1024
-        padding = moonshine_min_input_size - input_tensor.size()[1]
-        if padding > 0:
-            input_tensor = torch.nn.functional.pad(input_tensor, (0, padding))
-        pred_ids = model(input_tensor.to(args.device).to(torch.bfloat16))
+        # 1. Pre-Processing
+        # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
+        padding_size = 0
+        if minibatch_size != args.batch_size and args.torch_compile:
+            padding_size = args.batch_size - minibatch_size
+            padding_audios = [audios[-1] for _ in range(padding_size)]
+            audios.extend(padding_audios)
+
+        inputs = processor(audios, return_tensors="pt", padding=True, sampling_rate=16000).to(args.device).to(torch_dtype)
+
+        # Create a mask for output tokens to limit length based on input audio clip length.
+        # Add 2 to token limits to account for <sot> and <eot>.
+        token_generation_limits = [len(clip) * 6.5 // 16000 + 2 for clip in audios]
+        max_new_tokens = torch.tensor(token_generation_limits).reshape((-1, 1)).to(args.device)
+
+        pred_ids = model.generate(**inputs, max_new_tokens=max_new_tokens.max())
+        output_mask = torch.arange(pred_ids.shape[-1]).repeat((pred_ids.shape[0], 1)).to(args.device)
+        output_mask = output_mask > max_new_tokens
+
+        eot_token = 2
+        pred_ids.masked_fill(output_mask, eot_token)
 
         # 3.2 Convert token ids to text transcription
-        pred_text = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+        pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 
         # END TIMING
         runtime = time.time() - start_time
@@ -48,6 +63,7 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # normalize transcriptions with English normalizer
+        pred_text = pred_text if padding_size == 0 else pred_text[:-padding_size]
         batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
         batch["references"] = batch["norm_text"]
         return batch
