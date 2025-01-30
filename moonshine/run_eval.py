@@ -50,7 +50,7 @@ def main(args):
         output_mask = torch.arange(pred_ids.shape[-1]).repeat((pred_ids.shape[0], 1)).to(args.device)
         output_mask = output_mask > max_new_tokens
 
-        eot_token = 2
+        eot_token = model.config.eos_token_id
         pred_ids.masked_fill(output_mask, eot_token)
 
         # 3.2 Convert token ids to text transcription
