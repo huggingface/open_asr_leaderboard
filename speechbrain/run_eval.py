@@ -56,6 +56,7 @@ def get_model(
         "distributed_launch": False,
         "distributed_backend": "nccl",
         "jit_module_keys": None,
+        "precision": "fp16",
     }
 
     run_opts = {**run_opt_defaults, **kwargs}
@@ -102,21 +103,17 @@ def main(args):
     def benchmark(batch):
         # Load audio inputs
         audios = [torch.from_numpy(sample["array"]) for sample in batch["audio"]]
-        minibatch_size = len(audios)
 
-        # START TIMING
-        start_time = time.time()
 
         audios, audio_lens = batch_pad_right(audios)
         audios = audios.to(device)
         audio_lens = audio_lens.to(device)
+        
+        start_time = time.time()
         predictions, _ = model.transcribe_batch(audios, audio_lens)
-
-        # END TIMING
         runtime = time.time() - start_time
 
-        # normalize by minibatch size since we want the per-sample time
-        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
+        batch["transcription_time_s"] = runtime
 
         # normalize transcriptions with English normalizer
         batch["predictions"] = [data_utils.normalizer(pred) for pred in predictions]
