@@ -50,7 +50,7 @@ def get_model(
     """
 
     run_opt_defaults = {
-        "device": "cpu",
+        "device": "cuda",
         "data_parallel_count": -1,
         "data_parallel_backend": False,
         "distributed_launch": False,
@@ -59,14 +59,15 @@ def get_model(
         "precision": "fp16",
     }
 
-    run_opts = {**run_opt_defaults, **kwargs}
+    run_opts = {**run_opt_defaults}
 
     overrides = {}
     if beam_size:
         overrides["test_beam_size"] = beam_size
     
-    if ctc_weight_decode:
-        overrides["ctc_weight_decode"] = ctc_weight_decode
+    if ctc_weight_decode == 0.0:
+        overrides["scorer"] = None
+    overrides["ctc_weight_decode"] = ctc_weight_decode
 
     kwargs = {
         "source": f"{speechbrain_repository}",
@@ -81,7 +82,7 @@ def get_model(
         raise AttributeError(
             f"SpeechBrain Pretrained class: {speechbrain_pretrained_class_name} not found in pretrained.py"
         )
-
+    
     return model_class.from_hparams(**kwargs)
 
 
@@ -103,17 +104,18 @@ def main(args):
     def benchmark(batch):
         # Load audio inputs
         audios = [torch.from_numpy(sample["array"]) for sample in batch["audio"]]
-
+        minibatch_size = len(audios)
 
         audios, audio_lens = batch_pad_right(audios)
         audios = audios.to(device)
         audio_lens = audio_lens.to(device)
         
         start_time = time.time()
-        predictions, _ = model.transcribe_batch(audios, audio_lens)
+        with torch.autocast(device_type="cuda"):
+            predictions, _ = model.transcribe_batch(audios, audio_lens)
         runtime = time.time() - start_time
 
-        batch["transcription_time_s"] = runtime
+        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # normalize transcriptions with English normalizer
         batch["predictions"] = [data_utils.normalizer(pred) for pred in predictions]
@@ -244,7 +246,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=5,
+        default=2,
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     parser.add_argument(
@@ -255,8 +257,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--ctc_weight_decode",
-        type=int,
-        default=None,
+        type=float,
+        default=0.3,
         help="Weight of CTC for joint CTC/Att. decoding"
     )
     args = parser.parse_args()
