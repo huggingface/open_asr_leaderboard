@@ -3,7 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=("usefulsensors/moonshine-base" "usefulsensors/moonshine-tiny")
-BATCH_SIZE=1
+BATCH_SIZE=256
 
 num_models=${#MODEL_IDs[@]}
 
