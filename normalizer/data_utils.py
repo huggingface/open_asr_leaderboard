@@ -1,4 +1,7 @@
+import io
+
 from datasets import load_dataset, Audio
+import librosa
 from normalizer import EnglishTextNormalizer
 
 from .eval_utils import read_manifest, write_manifest
@@ -31,10 +34,15 @@ def get_text(sample):
 normalizer = EnglishTextNormalizer()
 
 
-def normalize(batch):
-    batch["original_text"] = get_text(batch)
-    batch["norm_text"] = normalizer(batch["original_text"])
-    return batch
+def normalize(sample):
+    sample["original_text"] = get_text(sample)
+    sample["norm_text"] = normalizer(sample["original_text"])
+    # Failover logic for dataset normalization
+    if 'array' not in sample['audio'] and 'bytes' in sample['audio']:
+        audio_file = io.BytesIO(sample['audio']['bytes'])
+        audio_array, _ = librosa.load(audio_file, sr=16000)
+        sample['audio']['array'] = audio_array
+    return sample
 
 
 def load_data(args):
@@ -53,7 +61,6 @@ def prepare_data(dataset):
     dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
     dataset = dataset.map(normalize)
     dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
-
     return dataset
 
 
