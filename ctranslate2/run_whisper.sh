@@ -2,7 +2,15 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("tiny.en" "small.en" "base.en" "medium.en" "large-v1" "large-v2" "large-v3")
+MODEL_IDs=(
+    "Systran/faster-whisper-tiny.en" 
+    "Systran/faster-whisper-small.en" 
+    "Systran/faster-whisper-base.en" 
+    "Systran/faster-whisper-medium.en" 
+    "Systran/faster-whisper-large-v1" 
+    "Systran/faster-whisper-large-v2" 
+    "Systran/faster-whisper-large-v3"
+)
 DEVICE_INDEX=0
 
 num_models=${#MODEL_IDs[@]}
