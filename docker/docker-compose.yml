@@ -1,0 +1,15 @@
+services:
+  evaluate:
+    build:
+      context: .
+    volumes:
+      - ../.huggingface:/root/.cache/huggingface
+      - ..:/root/open_asr_leaderboard/
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint: bash -x /opt/run-evaluation.sh
