@@ -14,6 +14,16 @@ Each library has its own set of requirements. We recommend using a clean conda e
 
 **Note:** If you wish to run NeMo, the benchmark currently needs CUDA 12.6 to fix a problem in previous drivers for RNN-T inference with cooperative kernels inside conditional nodes (see here: https://github.com/NVIDIA/NeMo/pull/9869). Running `nvidia-smi` should output "CUDA Version: 12.6" or higher.
 
+# Docker
+
+Alternatively if you want to use a docker environment you can do for instance
+```bash
+cd docker
+docker compose run --build evaluate ../ctranslate2/run_whisper.sh
+```
+
+On the first run the `--build` will build and cache the image. It will also ask you to login to your huggingface account, the hugging face storage (`~/.cache/huggingface`), will be mounted as `$this_repo/.hugginface` in the host.
+
 # Evaluate a model
 
 Each library has a script `run_eval.py` that acts as the entry point for evaluating a model. The script is run by the corresponding bash script for each model that is being evaluated. The script then outputs a JSONL file containing the predictions of the model on each dataset, and summarizes the Word Error Rate (WER) and Inverse Real-Time Factor (RTFx) of the model on each dataset after completion.
