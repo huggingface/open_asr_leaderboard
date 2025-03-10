@@ -2,7 +2,12 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("facebook/wav2vec2-base-960h" "facebook/wav2vec2-large-960h" "facebook/wav2vec2-large-960h-lv60-self" "facebook/wav2vec2-large-robust-ft-libri-960h")
+MODEL_IDs=(
+    "facebook/wav2vec2-base-960h"
+    "facebook/wav2vec2-large-960h"
+    "facebook/wav2vec2-large-960h-lv60-self"
+    "facebook/wav2vec2-large-robust-ft-libri-960h"
+)
 BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
