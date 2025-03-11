@@ -12,17 +12,12 @@ wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
 
 def main(args):
-    model = AutoModel.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, trust_remote_code=True).to(args.device)
-    processor = AutoProcessor.from_pretrained("openai/whisper-large-v3")
+    model = AutoModel.from_pretrained(args.model_id, torch_dtype=torch.float16, trust_remote_code=True, force_download=True).to(args.device)
+    processor = AutoProcessor.from_pretrained("openai/whisper-large-v3-turbo", force_download=True)
     model_input_name = processor.model_input_names[0]
 
     if model.can_generate():
-        gen_kwargs = {"max_new_tokens": args.max_new_tokens}
-        # for multilingual Whisper-checkpoints we see a definitive WER boost by setting the language and task args
-        # print(model.generation_config)
-        # if getattr(model.generation_config, "is_multilingual"):
-        #     gen_kwargs["language"] = "en"
-        #     gen_kwargs["task"] = "transcribe"
+        gen_kwargs = {"max_new_tokens": 224}
     elif args.max_new_tokens:
         raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
@@ -63,13 +58,14 @@ def main(args):
             inputs = processor(audios, sampling_rate=16_000, return_tensors="pt", device=args.device)
 
         inputs = inputs.to(args.device)
-        inputs[model_input_name] = inputs[model_input_name].to(torch.bfloat16)
+        inputs[model_input_name] = inputs[model_input_name].to(torch.float16)
 
         # 2. Model Inference
         with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
+            forced_decoder_ids = processor.get_decoder_prompt_ids(language="english", task="transcribe")
             if model.can_generate():
                 # 2.1 Auto-regressive generation for encoder-decoder models
-                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
+                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens, forced_decoder_ids=forced_decoder_ids)
             else:
                 # 2.2. Single forward pass for CTC
                 with torch.no_grad():
