@@ -50,6 +50,8 @@ def main(args):
         audio_paths = []
         durations = []
 
+        # import ipdb; ipdb.set_trace()
+
         for id, sample in zip(batch["id"], batch["audio"]):
             audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
             if not os.path.exists(audio_path):
@@ -118,7 +120,7 @@ def main(args):
     # normalize transcriptions with English normalizer
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
-    predictions = [data_utils.normalizer(pred) for pred in transcriptions]
+    predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
