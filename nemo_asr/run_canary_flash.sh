@@ -13,32 +13,32 @@ do
     MODEL_ID=${MODEL_IDs[$i]}
 
     
-    # python run_eval.py \
-    #     --model_id=${MODEL_ID} \
-    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-    #     --dataset="ami" \
-    #     --split="test" \
-    #     --device=${DEVICE_ID} \
-    #     --batch_size=${BATCH_SIZE} \
-    #     --max_eval_samples=-1 
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="ami" \
+        --split="test" \
+        --device=${DEVICE_ID} \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1 
     
-    # python run_eval.py \
-    #     --model_id=${MODEL_ID} \
-    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-    #     --dataset="earnings22" \
-    #     --split="test" \
-    #     --device=${DEVICE_ID} \
-    #     --batch_size=${BATCH_SIZE} \
-    #     --max_eval_samples=-1 
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="earnings22" \
+        --split="test" \
+        --device=${DEVICE_ID} \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1 
 
-    # python run_eval.py \
-    #     --model_id=${MODEL_ID} \
-    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-    #     --dataset="gigaspeech" \
-    #     --split="test" \
-    #     --device=${DEVICE_ID} \
-    #     --batch_size=${BATCH_SIZE} \
-    #     --max_eval_samples=-1 
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="gigaspeech" \
+        --split="test" \
+        --device=${DEVICE_ID} \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -58,32 +58,32 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1 
 
-    # python run_eval.py \
-    #     --model_id=${MODEL_ID} \
-    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-    #     --dataset="spgispeech" \
-    #     --split="test" \
-    #     --device=${DEVICE_ID} \
-    #     --batch_size=${BATCH_SIZE} \
-    #     --max_eval_samples=-1 
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="spgispeech" \
+        --split="test" \
+        --device=${DEVICE_ID} \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1 
 
-    # python run_eval.py \
-    #     --model_id=${MODEL_ID} \
-    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-    #     --dataset="tedlium" \
-    #     --split="test" \
-    #     --device=${DEVICE_ID} \
-    #     --batch_size=${BATCH_SIZE} \
-    #     --max_eval_samples=-1 
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="tedlium" \
+        --split="test" \
+        --device=${DEVICE_ID} \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1 
 
-    # python run_eval.py \
-    #     --model_id=${MODEL_ID} \
-    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-    #     --dataset="voxpopuli" \
-    #     --split="test" \
-    #     --device=${DEVICE_ID} \
-    #     --batch_size=${BATCH_SIZE} \
-    #     --max_eval_samples=-1 
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="voxpopuli" \
+        --split="test" \
+        --device=${DEVICE_ID} \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1 
 
     # Evaluate results
     RUNDIR=`pwd` && \
