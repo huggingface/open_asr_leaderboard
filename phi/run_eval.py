@@ -57,7 +57,7 @@ def main(args):
 
     prompt = f"{user}<|audio_1|>{args.user_prompt}{prompt_suffix}{assistant}"
 
-    gen_kwargs = {"max_new_tokens": args.max_new_tokens}
+    gen_kwargs = {"max_new_tokens": args.max_new_tokens, "num_beams": args.num_beams}
 
     stop_tokens = [prompt_suffix, processor.tokenizer.eos_token]
     stop_tokens_ids = processor.tokenizer(stop_tokens, add_special_tokens=False, padding="longest", return_tensors="pt")["input_ids"]
@@ -67,7 +67,9 @@ def main(args):
         # Load audio inputs
         audios = [(audio["array"], audio["sampling_rate"]) for audio in batch["audio"]]
         minibatch_size = len(audios)
-        gen_kwargs["stopping_criteria"] = StoppingCriteriaList([MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=minibatch_size)])
+        gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
+            [MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=args.num_beams * minibatch_size)]
+        )
 
         # START TIMING
         start_time = time.time()
@@ -211,6 +213,12 @@ if __name__ == "__main__":
         type=int,
         default=16,
         help="Number of samples to go through each streamed batch.",
+    )
+    parser.add_argument(
+        "--num_beams",
+        type=int,
+        default=1,
+        help="Number of beams for beam search.",
     )
     parser.add_argument(
         "--max_eval_samples",
