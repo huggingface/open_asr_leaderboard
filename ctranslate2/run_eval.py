@@ -24,9 +24,9 @@ def main(args) -> None:
     def benchmark(batch):
         start_time = time.time()
         segments, _ = asr_model.transcribe(batch["audio"]["array"], language="en")
-        outputs = [segment._asdict() for segment in segments]
+        asr_text = "".join(segment.text for segment in segments)
         batch["transcription_time_s"] = time.time() - start_time
-        batch["predictions"] = data_utils.normalizer("".join([segment["text"] for segment in outputs])).strip()
+        batch["predictions"] = data_utils.normalizer(asr_text).strip()
         batch["references"] = batch["norm_text"]
         return batch
 
@@ -50,9 +50,14 @@ def main(args) -> None:
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
+    
     dataset = data_utils.prepare_data(dataset)
 
-    dataset = dataset.map(benchmark, remove_columns=["audio"])
+    dataset = dataset.map(
+        benchmark,  
+        batched=False, 
+        remove_columns=["audio"]
+    )
 
     all_results = {
         "audio_length_s": [],
@@ -60,8 +65,7 @@ def main(args) -> None:
         "predictions": [],
         "references": [],
     }
-    result_iter = iter(dataset)
-    for result in tqdm(result_iter, desc="Samples..."):
+    for result in tqdm(dataset, desc="Samples..."):
         for key in all_results:
             all_results[key].append(result[key])
 
