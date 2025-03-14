@@ -1,5 +1,6 @@
 import argparse
 
+import io
 import os
 import torch
 import evaluate
@@ -52,11 +53,24 @@ def main(args):
 
         for id, sample in zip(batch["id"], batch["audio"]):
             audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
+
+            if "array" in sample:
+                audio_array = np.float32(sample["array"])
+                sample_rate = 16000
+
+            elif "bytes" in sample: # added to be compatible with latest datasets library (3.x.x) that produces byte stream
+                with io.BytesIO(sample["bytes"]) as audio_file:
+                    audio_array, sample_rate = soundfile.read(audio_file, dtype="float32")
+
+            else:
+                raise ValueError("Sample must have either 'array' or 'bytes' key")
+
             if not os.path.exists(audio_path):
                 os.makedirs(os.path.dirname(audio_path), exist_ok=True)
-                soundfile.write(audio_path, np.float32(sample["array"]), 16_000)
+                soundfile.write(audio_path, audio_array, sample_rate)
+
             audio_paths.append(audio_path)
-            durations.append(len(sample["array"]) / 16_000)
+            durations.append(len(audio_array) / sample_rate)
 
         
         batch["references"] = batch["norm_text"]
@@ -118,7 +132,7 @@ def main(args):
     # normalize transcriptions with English normalizer
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
-    predictions = [data_utils.normalizer(pred) for pred in transcriptions]
+    predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
