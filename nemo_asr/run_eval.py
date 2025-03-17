@@ -53,7 +53,7 @@ def main(args):
 
         for id, sample in zip(batch["id"], batch["audio"]):
 
-            # frist step added here to make ID and wav filenames unique
+            # first step added here to make ID and wav filenames unique
             # several datasets like earnings22 have a hierarchical structure
             # for eg. earnings22/test/4432298/281.wav, earnings22/test/4450488/281.wav
             # lhotse uses the filename (281.wav) here as unique ID to create and name cuts
