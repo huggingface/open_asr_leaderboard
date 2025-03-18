@@ -2,8 +2,8 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("nvidia/canary-1b")
-BATCH_SIZE=64
+MODEL_IDs=("nvidia/canary-1b-flash")  # options: "nvidia/canary-1b" "nvidia/canary-1b-flash" "nvidia/canary-180m-flash"
+BATCH_SIZE=128
 DEVICE_ID=0
 
 num_models=${#MODEL_IDs[@]}
@@ -11,7 +11,6 @@ num_models=${#MODEL_IDs[@]}
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
-
     
     python run_eval.py \
         --model_id=${MODEL_ID} \
