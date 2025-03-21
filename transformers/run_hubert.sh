@@ -2,7 +2,11 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=( "facebook/hubert-large-ls960-ft" "facebook/hubert-xlarge-ls960-ft" "patrickvonplaten/hubert-xlarge-ls960-ft-4-gram")
+MODEL_IDs=(
+    "facebook/hubert-large-ls960-ft"
+    "facebook/hubert-xlarge-ls960-ft"
+    "patrickvonplaten/hubert-xlarge-ls960-ft-4-gram"
+)
 BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
