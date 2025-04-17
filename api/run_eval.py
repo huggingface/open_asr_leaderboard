@@ -53,6 +53,32 @@ def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=2
     return audio_urls
 
 def transcribe_with_retry(model_name, audio_file_path, sample, max_retries=10, use_url=False):
+    # Check for minimum audio duration for Elevenlabs
+    if model_name.startswith("elevenlabs/"):
+        if use_url:
+            audio_duration = sample['row']['audio_length_s']
+            if audio_duration < 0.5:
+                print(f"Skipping {model_name} audio with duration {audio_duration}s (less than 0.5s)")
+                return None
+        else:
+            audio_duration = len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
+            if audio_duration < 0.5:
+                print(f"Skipping {model_name} audio with duration {audio_duration}s (less than 0.5s)")
+                return None
+
+    # Check for minimum audio duration for AssemblyAI
+    if model_name.startswith("assembly/"):
+        if use_url:
+            audio_duration = sample['row']['audio_length_s']
+            if audio_duration < 0.160:
+                print(f"Skipping audio duration {audio_duration}s")
+                return None
+        else:
+            audio_duration = len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
+            if audio_duration < 0.160:
+                print(f"Skipping audio duration {audio_duration}s")
+                return None
+
     retries = 0
     while retries <= max_retries:
         try:
@@ -65,16 +91,8 @@ def transcribe_with_retry(model_name, audio_file_path, sample, max_retries=10, u
                 )
                 if use_url:
                     audio_url = sample['row']['audio'][0]['src']
-                    audio_duration = sample['row']['audio_length_s']
-                    if audio_duration < 0.160:
-                        print(f"Skipping audio duration {audio_duration}s")
-                        return "."
                     transcript = transcriber.transcribe(audio_url, config=config)
                 else:
-                    audio_duration = len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
-                    if audio_duration < 0.160:
-                        print(f"Skipping audio duration {audio_duration}s")
-                        return "."
                     transcript = transcriber.transcribe(audio_file_path, config=config)
                 
                 if transcript.status == aai.TranscriptStatus.error:
@@ -112,7 +130,7 @@ def transcribe_with_retry(model_name, audio_file_path, sample, max_retries=10, u
                         file=audio_data,
                         model_id=model_name.split("/")[1],
                         language_code="eng",
-                        tag_audio_events=True,
+                        tag_audio_events=False,
 
                     )
                 else:
@@ -121,7 +139,7 @@ def transcribe_with_retry(model_name, audio_file_path, sample, max_retries=10, u
                             file=audio_file,
                             model_id=model_name.split("/")[1],
                             language_code="eng",
-                            tag_audio_events=True,
+                            tag_audio_events=False,
                         )
                 return transcription.text
             
@@ -203,6 +221,8 @@ def transcribe_dataset(dataset_path, dataset, split, model_name, use_url=False, 
             start = time.time()
             try:
                 transcription = transcribe_with_retry(model_name, None, sample, use_url=True)
+                if transcription is None:  # Sample was explicitly skipped, so we skip it entirely
+                    return None
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
                 return None
@@ -215,17 +235,21 @@ def transcribe_dataset(dataset_path, dataset, split, model_name, use_url=False, 
                 audio_duration = len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
 
             start = time.time()
+            file_deleted = False
             try:
                 transcription = transcribe_with_retry(model_name, tmp_path, sample, use_url=False)
+                if transcription is None:  # Sample was explicitly skipped, so we skip it entirely
+                    os.unlink(tmp_path)
+                    file_deleted = True
+                    return None
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
                 os.unlink(tmp_path)
+                file_deleted = True
                 return None
             finally:
-                if os.path.exists(tmp_path):
+                if not file_deleted and os.path.exists(tmp_path):
                     os.unlink(tmp_path)
-                else:
-                    print(f"File {tmp_path} does not exist")
 
         transcription_time = time.time() - start
         return reference, transcription, audio_duration, transcription_time

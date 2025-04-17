@@ -572,10 +572,31 @@ class EnglishTextNormalizer:
     def __call__(self, s: str):
         s = s.lower()
 
+        # Pre-processing: remove ellipses without introducing extra spaces
+        s = re.sub(r"\.{3,}\s*$", "", s)  # Remove trailing ellipses at the end of the text
+        s = re.sub(r"\s*\.{3,}\s*", " ", s)  # Replace mid-text ellipses with a single space
+
         s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
         s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
         s = re.sub(self.ignore_patterns, "", s)
         s = re.sub(r"\s+'", "'", s)  # standardize when there's a space before an apostrophe
+
+        # Handle general abbreviation patterns with plurals
+        # For patterns with plurals: A.B.C.s -> abcs (must come before the standard patterns)
+        s = re.sub(r"\b([a-z])\.([a-z])\.([a-z])\.s\b", r"\1\2\3s", s)  # A.B.C.s -> abcs
+        
+        # For patterns like A.B.C. (no spaces) -> abc
+        s = re.sub(r"\b([a-z])\.([a-z])\.([a-z])\.([a-z])\.?\b", r"\1\2\3\4", s)  # 4-letter abbreviations
+        s = re.sub(r"\b([a-z])\.([a-z])\.([a-z])\.?\b", r"\1\2\3", s)  # 3-letter abbreviations
+        s = re.sub(r"\b([a-z])\.([a-z])\.?\b", r"\1\2", s)  # 2-letter abbreviations
+        
+        # For patterns with spaces: A. B. C. -> abc (case insensitive)
+        s = re.sub(r"\b([a-z])\.\s+([a-z])\.\s+([a-z])\.\s+([a-z])\.\b", r"\1\2\3\4", s)  # 4-letter with spaces
+        s = re.sub(r"\b([a-z])\.\s+([a-z])\.\s+([a-z])\.\b", r"\1\2\3", s)  # 3-letter with spaces
+        s = re.sub(r"\b([a-z])\.\s+([a-z])\.\b", r"\1\2", s)  # 2-letter with spaces
+        
+        # For abbreviations followed by possessives
+        s = re.sub(r"\b([a-z])\.([a-z])\.([a-z])\.'s\b", r"\1\2\3s", s)  # A.B.C.'s -> abcs
 
         for pattern, replacement in self.replacers.items():
             s = re.sub(pattern, replacement, s)
