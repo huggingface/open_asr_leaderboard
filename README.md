@@ -6,11 +6,11 @@ This repository contains the code for the Open ASR Leaderboard. The leaderboard 
 
 Each library has its own set of requirements. We recommend using a clean conda environment, with Python 3.10 or above.
 
-1) Clone this repository.
-2) Install PyTorch by following the instructions here: https://pytorch.org/get-started/locally/
-3) Install the common requirements for all library by running `pip install -r requirements/requirements.txt`.
-4) Install the requirements for each library you wish to evaluate by running `pip install -r requirements/requirements_<library_name>.txt`.
-5) Connect your Hugging Face account by running `huggingface-cli login`.
+1. Clone this repository.
+2. Install PyTorch by following the instructions here: https://pytorch.org/get-started/locally/
+3. Install the common requirements for all library by running `pip install -r requirements/requirements.txt`.
+4. Install thef requirements for each library you wish to evaluate by running `pip install -r requirements/requirements_<library_name>.txt`.
+5. Connect your Hugging Face account by running `huggingface-cli login`.
 
 **Note:** If you wish to run NeMo, the benchmark currently needs CUDA 12.6 to fix a problem in previous drivers for RNN-T inference with cooperative kernels inside conditional nodes (see here: https://github.com/NVIDIA/NeMo/pull/9869). Running `nvidia-smi` should output "CUDA Version: 12.6" or higher.
 
@@ -20,20 +20,20 @@ Each library has a script `run_eval.py` that acts as the entry point for evaluat
 
 To reproduce existing results:
 
-1) Change directory into the library you wish to evaluate. For example, `cd transformers`.
-2) Run the bash script for the model you wish to evaluate. For example, `bash run_wav2vec2.sh`.
+1. Change directory into the library you wish to evaluate. For example, `cd transformers`.
+2. Run the bash script for the model you wish to evaluate. For example, `bash run_wav2vec2.sh`.
 
-**Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU, with NVIDIA driver 560.28.03, CUDA 12.6, and PyTorch 2.4.0. You should ensure you use the same configuration when submitting results. If you are unable to create an equivalent machine, please request one of the maintainers to run your scripts for evaluation! 
+**Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU, with NVIDIA driver 560.28.03, CUDA 12.6, and PyTorch 2.4.0. You should ensure you use the same configuration when submitting results. If you are unable to create an equivalent machine, please request one of the maintainers to run your scripts for evaluation!
 
 # Add a new library
 
 To add a new library for evaluation in this benchmark, please follow the steps below:
 
-1) Fork this repository and create a new branch
-2) Create a new directory for your library. For example, `mkdir transformers`.
-3) Copy the template `run_eval.py` script below into your new directory. The script should be updated for the new library by making two modifications. Otherwise, please try to keep the structure of the script the same as in the template. In particular, the data loading, evaluation and manifest writing must be done in the same way as other libraries for consistency.
-   1) Update the model loading logic in the `main` function
-   2) Update the inference logic in the `benchmark` function
+1. Fork this repository and create a new branch
+2. Create a new directory for your library. For example, `mkdir transformers`.
+3. Copy the template `run_eval.py` script below into your new directory. The script should be updated for the new library by making two modifications. Otherwise, please try to keep the structure of the script the same as in the template. In particular, the data loading, evaluation and manifest writing must be done in the same way as other libraries for consistency.
+   1. Update the model loading logic in the `main` function
+   2. Update the inference logic in the `benchmark` function
 
 <details>
 
@@ -212,11 +212,11 @@ if __name__ == "__main__":
 
 </details>
 
-4) Create one bash file per model type following the conversion `run_<model_type>.sh`.
-    - The bash script should follow the same steps as other libraries. You can copy the example for [run_whisper.sh](./transformers/run_whisper.sh) and update it to your library
-    - Different model sizes of the same type should share the script. For example `Wav2Vec` and `Wav2Vec2` would be two separate scripts, but different size of `Wav2Vec2` would be part of the same script.
-    - **Important:** for a given model, you can tune decoding hyper-parameters to maximize benchmark performance (e.g. batch size, beam size, etc.). However, you must use the **same decoding hyper-parameters** for each dataset in the benchmark. For more details, refer to the [ESB paper](https://arxiv.org/abs/2210.13352).
-5) Submit a PR for your changes.
+4. Create one bash file per model type following the conversion `run_<model_type>.sh`.
+   - The bash script should follow the same steps as other libraries. You can copy the example for [run_whisper.sh](./transformers/run_whisper.sh) and update it to your library
+   - Different model sizes of the same type should share the script. For example `Wav2Vec` and `Wav2Vec2` would be two separate scripts, but different size of `Wav2Vec2` would be part of the same script.
+   - **Important:** for a given model, you can tune decoding hyper-parameters to maximize benchmark performance (e.g. batch size, beam size, etc.). However, you must use the **same decoding hyper-parameters** for each dataset in the benchmark. For more details, refer to the [ESB paper](https://arxiv.org/abs/2210.13352).
+5. Submit a PR for your changes.
 
 # Add a new model
 
@@ -224,13 +224,12 @@ To add a model from a new library for evaluation in this benchmark, you can foll
 
 To add a model from an existing library, we can simplify the steps to:
 
-1) If the model is already supported, but of a different size, simply add the new model size to the list of models run by the corresponding bash script.
-2) If the model is entirely new, create a new bash script based on others of that library and add the new model and its sizes to that script.
-3) Run the evaluation script to obtain a list of predictions for the new model on each of the datasets.
-4) Submit a PR for your changes.
+1. If the model is already supported, but of a different size, simply add the new model size to the list of models run by the corresponding bash script.
+2. If the model is entirely new, create a new bash script based on others of that library and add the new model and its sizes to that script.
+3. Run the evaluation script to obtain a list of predictions for the new model on each of the datasets.
+4. Submit a PR for your changes.
 
-# Citation 
-
+# Citation
 
 ```bibtex
 @misc{open-asr-leaderboard,
