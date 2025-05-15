@@ -1,60 +1,108 @@
 import argparse
 import os
 import torch
-from transformers import MoonshineForConditionalGeneration, AutoProcessor
-
+from transformers import AutoModelForCausalLM, AutoProcessor, StoppingCriteria, StoppingCriteriaList
 import evaluate
 from normalizer import data_utils
 import time
 from tqdm import tqdm
-import numpy as np
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
 
-def main(args):
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    model = MoonshineForConditionalGeneration.from_pretrained(args.model_id).to(args.device).to(torch_dtype)
-    processor = AutoProcessor.from_pretrained(args.model_id)
+class MultipleTokenBatchStoppingCriteria(StoppingCriteria):
+    """Stopping criteria capable of receiving multiple stop-tokens and handling batched inputs."""
 
-    if args.torch_compile:
-        model.forward = torch.compile(model.forward, mode=args.compile_mode, fullgraph=True)
-        if model.can_generate():
-            # enable static k/v cache for autoregressive models
-            model.generation_config.cache_implementation = "static"
+    def __init__(self, stop_tokens: torch.LongTensor, batch_size: int = 1) -> None:
+        """Initialize the multiple token batch stopping criteria.
+
+        Args:
+            stop_tokens: Stop-tokens.
+            batch_size: Batch size.
+
+        """
+
+        self.stop_tokens = stop_tokens
+        self.max_stop_tokens = stop_tokens.shape[-1]
+        self.stop_tokens_idx = torch.zeros(batch_size, dtype=torch.long, device=stop_tokens.device)
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+        # Only gather the maximum number of inputs compatible with stop tokens
+        # and checks whether generated inputs are equal to `stop_tokens`
+        generated_inputs = torch.eq(input_ids[:, -self.max_stop_tokens :].unsqueeze(1), self.stop_tokens)
+        equal_generated_inputs = torch.all(generated_inputs, dim=2)
+
+        # Mark the position where a stop token has been produced for each input in the batch,
+        # but only if the corresponding entry is not already set
+        sequence_idx = torch.any(equal_generated_inputs, dim=1)
+        sequence_set_mask = self.stop_tokens_idx == 0
+        self.stop_tokens_idx[sequence_idx & sequence_set_mask] = input_ids.shape[-1]
+
+        return torch.all(self.stop_tokens_idx)
+
+
+def main(args):
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_id,
+        trust_remote_code=True,
+        torch_dtype="auto",
+        _attn_implementation="flash_attention_2",
+    ).to(args.device)
+    model.eval()
+    processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
+
+    user = "<|user|>"
+    assistant = "<|assistant|>"
+    prompt_suffix = "<|end|>"
+
+    prompt = f"{user}<|audio_1|>{args.user_prompt}{prompt_suffix}{assistant}"
+
+    gen_kwargs = {"max_new_tokens": args.max_new_tokens, "num_beams": args.num_beams}
+
+    stop_tokens = [prompt_suffix, processor.tokenizer.eos_token]
+    stop_tokens_ids = processor.tokenizer(stop_tokens, add_special_tokens=False, padding="longest", return_tensors="pt")["input_ids"]
+    stop_tokens_ids = stop_tokens_ids.to(model.device)
 
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
-        audios = [audio["array"] for audio in batch["audio"]]
+        audios = [(audio["array"], audio["sampling_rate"]) for audio in batch["audio"]]
         minibatch_size = len(audios)
+        gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
+            [MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=args.num_beams * minibatch_size)]
+        )
 
         # START TIMING
         start_time = time.time()
 
-        # 1. Pre-Processing
-        # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
-        padding_size = 0
-        if minibatch_size != args.batch_size and args.torch_compile:
-            padding_size = args.batch_size - minibatch_size
-            padding_audios = [audios[-1] for _ in range(padding_size)]
-            audios.extend(padding_audios)
+        with torch.autocast(model.device.type, enabled=True):
+            inputs = processor(text=[prompt] * minibatch_size, audios=audios, return_tensors="pt").to(args.device)
 
-        inputs = processor(audios, return_tensors="pt", padding=True, sampling_rate=16000).to(args.device).to(torch_dtype)
+            # Model Inference
+            pred_ids = model.generate(
+                **inputs,
+                pad_token_id=processor.tokenizer.pad_token_id,
+                eos_token_id=processor.tokenizer.eos_token_id,
+                **gen_kwargs,
+                min_new_tokens=min_new_tokens,
+            )
 
-        # Create a mask for output tokens to limit length based on input audio clip length.
-        # Add 2 to token limits to account for <sot> and <eot>.
-        token_generation_limits = [len(clip) * 6.5 // 16000 + 2 for clip in audios]
-        max_new_tokens = torch.tensor(token_generation_limits).reshape((-1, 1)).to(args.device)
+        # Gather the sequence index of the stop token
+        stop_tokens_idx = gen_kwargs["stopping_criteria"][0].stop_tokens_idx.reshape(minibatch_size, -1)[:, 0]
 
-        pred_ids = model.generate(**inputs, max_new_tokens=max_new_tokens.max())
-        output_mask = torch.arange(pred_ids.shape[-1]).repeat((pred_ids.shape[0], 1)).to(args.device)
-        output_mask = output_mask > max_new_tokens
+        # If a stop token was produced, we need to remove its length from the found index,
+        # however there might be a chance that the stop token was not produced and the index
+        # returned is the length of the generated sequence
+        stop_tokens_idx = torch.where(
+            stop_tokens_idx > 0,
+            stop_tokens_idx - stop_tokens_ids.shape[-1],
+            pred_ids.shape[-1],
+        )
 
-        eot_token = model.config.eos_token_id
-        pred_ids.masked_fill(output_mask, eot_token)
-
-        # 3.2 Convert token ids to text transcription
-        pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        # Convert token ids to text transcription
+        pred_text = [
+            processor.decode(_pred_ids[inputs["input_ids"].shape[1] : _stop_tokens_idx], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            for _pred_ids, _stop_tokens_idx in zip(pred_ids, stop_tokens_idx)
+        ]
 
         # END TIMING
         runtime = time.time() - start_time
@@ -63,7 +111,6 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # normalize transcriptions with English normalizer
-        pred_text = pred_text if padding_size == 0 else pred_text[:-padding_size]
         batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
         batch["references"] = batch["norm_text"]
         return batch
@@ -168,6 +215,12 @@ if __name__ == "__main__":
         help="Number of samples to go through each streamed batch.",
     )
     parser.add_argument(
+        "--num_beams",
+        type=int,
+        default=1,
+        help="Number of beams for beam search.",
+    )
+    parser.add_argument(
         "--max_eval_samples",
         type=int,
         default=None,
@@ -186,21 +239,16 @@ if __name__ == "__main__":
         help="Maximum number of tokens to generate (for auto-regressive models).",
     )
     parser.add_argument(
-        "--torch_compile",
-        action="store_true",
-        help="Whether to JIT compile the forward pass of the model.",
-    )
-    parser.add_argument(
-        "--compile_mode",
-        type=str,
-        default="max-autotune",
-        help="Mode for torch compiling model forward pass. Can be either 'default', 'reduce-overhead', 'max-autotune' or 'max-autotune-no-cudagraphs'.",
-    )
-    parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=10,
+        default=2,
         help="Number of warm-up steps to run before launching the timed runs.",
+    )
+    parser.add_argument(
+        "--user_prompt",
+        type=str,
+        default="Transcribe the audio clip into text.",
+        help="User prompt string.",
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=False)

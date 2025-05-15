@@ -18,6 +18,8 @@ import os
 def get_model(
     speechbrain_repository: str,
     speechbrain_pretrained_class_name: str,
+    beam_size: int,
+    ctc_weight_decode: float,
     **kwargs,
 ):
     """Fetch a pretrained SpeechBrain model from the SpeechBrain 🤗 Hub.
@@ -29,6 +31,10 @@ def get_model(
     speechbrain_pretrained_class_name : str
         The name of the SpeechBrain pretrained class to fetch. E.g. `EncoderASR`.
         See: https://github.com/speechbrain/speechbrain/blob/develop/speechbrain/pretrained/interfaces.py
+    beam_size : int
+        Size of the beam for decoding.
+    ctc_weight_decode : float
+        Weight of the CTC prob for decoding with joint CTC/Attn.
     **kwargs
         Additional keyword arguments to pass to override the default run options of the pretrained model.
 
@@ -44,20 +50,30 @@ def get_model(
     """
 
     run_opt_defaults = {
-        "device": "cpu",
+        "device": "cuda",
         "data_parallel_count": -1,
         "data_parallel_backend": False,
         "distributed_launch": False,
         "distributed_backend": "nccl",
         "jit_module_keys": None,
+        "precision": "fp16",
     }
 
-    run_opts = {**run_opt_defaults, **kwargs}
+    run_opts = {**run_opt_defaults}
+
+    overrides = {}
+    if beam_size:
+        overrides["test_beam_size"] = beam_size
+    
+    if ctc_weight_decode == 0.0:
+        overrides["scorer"] = None
+    overrides["ctc_weight_decode"] = ctc_weight_decode
 
     kwargs = {
         "source": f"{speechbrain_repository}",
         "savedir": f"pretrained_models/{speechbrain_repository}",
         "run_opts": run_opts,
+        "overrides": overrides,
     }
 
     try:
@@ -66,7 +82,7 @@ def get_model(
         raise AttributeError(
             f"SpeechBrain Pretrained class: {speechbrain_pretrained_class_name} not found in pretrained.py"
         )
-
+    
     return model_class.from_hparams(**kwargs)
 
 
@@ -78,7 +94,11 @@ def main(args):
         device = f"cuda:{args.device}"
 
     model = get_model(
-        args.source, args.speechbrain_pretrained_class_name, device=device
+        args.source, 
+        args.speechbrain_pretrained_class_name, 
+        args.beam_size,
+        args.ctc_weight_decode, 
+        device=device
     )
 
     def benchmark(batch):
@@ -86,18 +106,15 @@ def main(args):
         audios = [torch.from_numpy(sample["array"]) for sample in batch["audio"]]
         minibatch_size = len(audios)
 
-        # START TIMING
-        start_time = time.time()
-
         audios, audio_lens = batch_pad_right(audios)
         audios = audios.to(device)
         audio_lens = audio_lens.to(device)
-        predictions, _ = model.transcribe_batch(audios, audio_lens)
-
-        # END TIMING
+        
+        start_time = time.time()
+        with torch.autocast(device_type="cuda"):
+            predictions, _ = model.transcribe_batch(audios, audio_lens)
         runtime = time.time() - start_time
 
-        # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # normalize transcriptions with English normalizer
@@ -229,8 +246,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=5,
+        default=2,
         help="Number of warm-up steps to run before launching the timed runs.",
+    )
+    parser.add_argument(
+        "--beam_size",
+        type=int,
+        default=None,
+        help="Beam size for decoding"
+    )
+    parser.add_argument(
+        "--ctc_weight_decode",
+        type=float,
+        default=0.3,
+        help="Weight of CTC for joint CTC/Att. decoding"
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=True)

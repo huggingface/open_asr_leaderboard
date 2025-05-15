@@ -1,21 +1,25 @@
 import argparse
 import os
 import torch
-from transformers import MoonshineForConditionalGeneration, AutoProcessor
-
+from torch.nn.attention import sdpa_kernel, SDPBackend
+from transformers import AutoConfig, AutoModel, AutoModelForCTC, AutoProcessor, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING
 import evaluate
 from normalizer import data_utils
 import time
 from tqdm import tqdm
-import numpy as np
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
 
 def main(args):
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    model = MoonshineForConditionalGeneration.from_pretrained(args.model_id).to(args.device).to(torch_dtype)
-    processor = AutoProcessor.from_pretrained(args.model_id)
+    model = AutoModel.from_pretrained(args.model_id, torch_dtype=torch.float16, trust_remote_code=True, force_download=True).to(args.device)
+    processor = AutoProcessor.from_pretrained("openai/whisper-large-v3-turbo", force_download=True)
+    model_input_name = processor.model_input_names[0]
+
+    if model.can_generate():
+        gen_kwargs = {"max_new_tokens": 224}
+    elif args.max_new_tokens:
+        raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
     if args.torch_compile:
         model.forward = torch.compile(model.forward, mode=args.compile_mode, fullgraph=True)
@@ -33,25 +37,45 @@ def main(args):
 
         # 1. Pre-Processing
         # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
-        padding_size = 0
+        padding_size = None
         if minibatch_size != args.batch_size and args.torch_compile:
             padding_size = args.batch_size - minibatch_size
             padding_audios = [audios[-1] for _ in range(padding_size)]
             audios.extend(padding_audios)
 
-        inputs = processor(audios, return_tensors="pt", padding=True, sampling_rate=16000).to(args.device).to(torch_dtype)
+        if not model.can_generate(): #or len(audios[0]) > processor.feature_extractor.n_samples:
+            # 1.2 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
+            inputs = processor(
+                audios,
+                sampling_rate=16_000,
+                truncation=False,
+                padding="longest",
+                return_tensors="pt",
+                return_attention_mask=True,
+            )
+        else:
+            # 1.3 Standard Whisper processing: pad audios to 30-seconds and converted to log-mel
+            inputs = processor(audios, sampling_rate=16_000, return_tensors="pt", device=args.device)
 
-        # Create a mask for output tokens to limit length based on input audio clip length.
-        # Add 2 to token limits to account for <sot> and <eot>.
-        token_generation_limits = [len(clip) * 6.5 // 16000 + 2 for clip in audios]
-        max_new_tokens = torch.tensor(token_generation_limits).reshape((-1, 1)).to(args.device)
+        inputs = inputs.to(args.device)
+        inputs[model_input_name] = inputs[model_input_name].to(torch.float16)
 
-        pred_ids = model.generate(**inputs, max_new_tokens=max_new_tokens.max())
-        output_mask = torch.arange(pred_ids.shape[-1]).repeat((pred_ids.shape[0], 1)).to(args.device)
-        output_mask = output_mask > max_new_tokens
+        # 2. Model Inference
+        with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
+            forced_decoder_ids = processor.get_decoder_prompt_ids(language="english", task="transcribe")
+            if model.can_generate():
+                # 2.1 Auto-regressive generation for encoder-decoder models
+                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens, forced_decoder_ids=forced_decoder_ids)
+            else:
+                # 2.2. Single forward pass for CTC
+                with torch.no_grad():
+                    logits = model(**inputs).logits
+                    pred_ids = logits.argmax(-1)
 
-        eot_token = model.config.eos_token_id
-        pred_ids.masked_fill(output_mask, eot_token)
+        # 3. Post-processing
+        # 3.1 Strip padded ids from predictions
+        if padding_size is not None:
+            pred_ids = pred_ids[:-padding_size, ...]
 
         # 3.2 Convert token ids to text transcription
         pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
@@ -63,7 +87,6 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # normalize transcriptions with English normalizer
-        pred_text = pred_text if padding_size == 0 else pred_text[:-padding_size]
         batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
         batch["references"] = batch["norm_text"]
         return batch
@@ -153,7 +176,7 @@ if __name__ == "__main__":
         "--split",
         type=str,
         default="test",
-        help="Split of the dataset. *E.g.* `'validation`' for the dev split, or `'test'` for the test split.",
+        help="Split of the dataset. *E.g.* `'validation'` for the dev split, or `'test'` for the test split.",
     )
     parser.add_argument(
         "--device",

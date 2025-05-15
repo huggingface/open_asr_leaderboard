@@ -1,4 +1,4 @@
-git+https://github.com/NVIDIA/NeMo.git@d0efff087613ea2584e215969f289fed17414d8b#egg=nemo_toolkit[all] # This commit hash is a recent version of main at the time of testing.
+git+https://github.com/NVIDIA/NeMo.git@r2.3.0#egg=nemo_toolkit[asr]
 tqdm
 soundfile
 librosa
