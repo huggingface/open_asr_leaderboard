@@ -1,0 +1,7 @@
+dotenv
+speechmatics-python
+assemblyai
+openai
+elevenlabs
+rev-ai
+requests-toolbelt

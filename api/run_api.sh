@@ -15,6 +15,7 @@ MODEL_IDs=(
     "elevenlabs/scribe_v1"
     "revai/machine" # please use --use_url=True
     "revai/fusion" # please use --use_url=True
+    "speechmatics/enhanced"
 )
 
 num_models=${#MODEL_IDs[@]}
