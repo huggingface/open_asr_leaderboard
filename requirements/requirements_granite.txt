@@ -1,6 +1,7 @@
 evaluate
-datasets
+datasets==3.4.1
 peft==0.13.1
-torchaudio
-transformers==4.52.0.dev0
+torch==2.5.1
+torchaudio==2.5.1
+transformers @ https://github.com/huggingface/transformers/archive/main.zip
 soundfile
