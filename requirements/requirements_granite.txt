@@ -1,0 +1,6 @@
+evaluate
+datasets
+peft==0.13.1
+torchaudio
+transformers==4.52.0.dev0
+soundfile
