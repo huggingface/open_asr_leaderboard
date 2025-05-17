@@ -2,8 +2,8 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("ibm-granite/granite-speech-3.3-2b" , "ibm-granite/granite-speech-3.3-8b")
-BATCH_SIZEs=(20 , 12)
+MODEL_IDs=("ibm-granite/granite-speech-3.3-2b" "ibm-granite/granite-speech-3.3-8b")
+BATCH_SIZEs=(20 12)
 NUM_BEAMS=1
 MAX_NEW_TOKENS=200
 
