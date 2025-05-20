@@ -2,7 +2,10 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("facebook/mms-1b-all" "facebook/mms-1b-fl102")
+MODEL_IDs=(
+    "facebook/mms-1b-all"
+    "facebook/mms-1b-fl102"
+)
 BATCH_SIZE=48
 
 num_models=${#MODEL_IDs[@]}
