@@ -1,6 +1,7 @@
 #!/bin/bash
 
 export PYTHONPATH="..":$PYTHONPATH
+export TOKENIZERS_PARALLELISM=false
 
 MODEL_IDs=(
     nvidia/canary-qwen-2.5b

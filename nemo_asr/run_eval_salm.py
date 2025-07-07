@@ -27,12 +27,14 @@ wer_metric = evaluate.load("wer")
 
 class ToAudio(torch.utils.data.Dataset):
     def __getitem__(self, cuts):
+        cuts = lhotse.CutSet([c.to_mono(mono_downmix=True) if isinstance(c, lhotse.MultiCut) else c for c in cuts])
         audios, audio_lens = cuts.load_audio(collate=True)
         return {"cuts": cuts, "audios": audios, "audio_lens": audio_lens}
 
 
 def setup_dloader(audio_files, batch_size, num_workers):
     cuts = lhotse.CutSet([lhotse.Recording.from_file(p).to_cut() for p in audio_files])
+    cuts = cuts.resample(16000)
     return torch.utils.data.DataLoader(
         dataset=ToAudio(),
         sampler=lhotse.dataset.DynamicCutSampler(cuts, max_cuts=batch_size),
