@@ -16,7 +16,7 @@ torch.set_float32_matmul_precision('high')
 def main(args):
     processor = AutoProcessor.from_pretrained(args.model_id)
     tokenizer = processor.tokenizer
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id).to(args.device)
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16).to(args.device)
 
     # create text prompt
     chat = [
@@ -45,24 +45,24 @@ def main(args):
         # START TIMING
         start_time = time.time()
 
-        with torch.autocast(model.device.type, enabled=True):
-            model_inputs = processor(
-                texts,
-                audios,
-                device=args.device, # Computation device; returned tensors are put on CPU
-                return_tensors="pt",
-            ).to(args.device)
+        # with torch.autocast(model.device.type, enabled=True):
+        model_inputs = processor(
+            texts,
+            audios,
+            device=args.device, # Computation device; returned tensors are put on CPU
+            return_tensors="pt",
+        ).to(args.device)
 
-            # Model Inference
-            model_outputs = model.generate(
-                **model_inputs,
-                bos_token_id=tokenizer.bos_token_id,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                repetition_penalty=1.0,
-                **gen_kwargs,
-                min_new_tokens=min_new_tokens,
-            )
+        # Model Inference
+        model_outputs = model.generate(
+            **model_inputs,
+            bos_token_id=tokenizer.bos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            repetition_penalty=1.0,
+            **gen_kwargs,
+            min_new_tokens=min_new_tokens,
+        )
 
         # Transformers includes the input IDs in the response.
         num_input_tokens = model_inputs["input_ids"].shape[-1]
