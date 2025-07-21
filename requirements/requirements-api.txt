@@ -5,3 +5,5 @@ openai
 elevenlabs
 rev-ai
 requests-toolbelt
+spitch
+vulavula
