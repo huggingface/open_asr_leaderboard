@@ -1,481 +1,196 @@
 import argparse
-from typing import Optional
-import datasets
-import evaluate
-import soundfile as sf
-import tempfile
-import time
 import os
-import requests
-import itertools
+import sys
+import torch
+import evaluate
+import time
 from tqdm import tqdm
-from dotenv import load_dotenv
-from io import BytesIO
-import assemblyai as aai
-import openai
-from rev_ai import apiclient
-from rev_ai.models import CustomerUrlData
+from inference import WhisperQwenModel
+
+# Add parent directory to path for normalizer import
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from normalizer import data_utils
-import concurrent.futures
-from speechmatics.models import ConnectionSettings, BatchTranscriptionConfig, FetchData
-from speechmatics.batch_client import BatchClient
-from httpx import HTTPStatusError
-from requests_toolbelt import MultipartEncoder
-from spitch import Spitch
 
-load_dotenv()
+wer_metric = evaluate.load("wer")
+torch.set_float32_matmul_precision("high")
 
 
-def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=20):
-    API_URL = "https://datasets-server.huggingface.co/rows"
-
-    size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={dataset}&split={split}"
-    size_response = requests.get(size_url).json()
-    total_rows = size_response["size"]["config"]["num_rows"]
-    audio_urls = []
-    for offset in tqdm(range(0, total_rows, batch_size), desc="Fetching audio URLs"):
-        params = {
-            "dataset": dataset_path,
-            "config": dataset,
-            "split": split,
-            "offset": offset,
-            "length": min(batch_size, total_rows - offset),
-        }
-
-        retries = 0
-        while retries <= max_retries:
-            try:
-                headers = {}
-                if os.environ.get("HF_TOKEN") is not None:
-                    headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
-                else:
-                    print("HF_TOKEN not set, might experience rate-limiting.")
-                response = requests.get(API_URL, params=params)
-                response.raise_for_status()
-                data = response.json()
-                yield from data["rows"]
-                break
-            except (requests.exceptions.RequestException, ValueError) as e:
-                retries += 1
-                print(
-                    f"Error fetching data: {e}, retrying ({retries}/{max_retries})..."
-                )
-                time.sleep(10)
-                if retries >= max_retries:
-                    raise Exception("Max retries exceeded while fetching data.")
+def load_model(model_id, device="cuda", dtype="bfloat16"):
+    """Load WhisperQwen model"""
+    dtype_map = {'float16': torch.float16, 'float32': torch.float32, 'bfloat16': torch.bfloat16}
+    
+    model = WhisperQwenModel(torch_dtype=dtype_map[dtype])
+    model = model.to(device, dtype=dtype_map[dtype])
+    model.eval()
+    
+    return model
 
 
-def transcribe_with_retry(
-    model_name: str,
-    audio_file_path: Optional[str],
-    sample: dict,
-    max_retries=10,
-    use_url=False,
-):
-    retries = 0
-    while retries <= max_retries:
-        try:
-            PREFIX = "speechmatics/"
-            if model_name.startswith(PREFIX):
-                api_key = os.getenv("SPEECHMATICS_API_KEY")
-                if not api_key:
-                    raise ValueError(
-                        "SPEECHMATICS_API_KEY environment variable not set"
-                    )
+def main(args):
+    model = load_model(args.model_id, device=f"cuda:{args.device}" if args.device >= 0 else "cpu")
+    
+    def benchmark(batch):
+        # Load audio inputs
+        audios = [audio["array"] for audio in batch["audio"]]
+        
+        batch["audio_length_s"] = [
+            len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios
+        ]
+        minibatch_size = len(audios)
 
-                settings = ConnectionSettings(
-                    url="https://asr.api.speechmatics.com/v2", auth_token=api_key
-                )
-                with BatchClient(settings) as client:
-                    config = BatchTranscriptionConfig(
-                        language="en",
-                        enable_entities=True,
-                        operating_point=model_name[len(PREFIX) :],
-                    )
+        # Start timing
+        start_time = time.time()
 
-                    job_id = None
-                    audio_url = None
-                    try:
-                        if use_url:
-                            audio_url = sample["row"]["audio"][0]["src"]
-                            config.fetch_data = FetchData(url=audio_url)
-                            multipart_data = MultipartEncoder(
-                                fields={"config": config.as_config().encode("utf-8")}
-                            )
-                            response = client.send_request(
-                                "POST",
-                                "jobs",
-                                data=multipart_data.to_string(),
-                                headers={"Content-Type": multipart_data.content_type},
-                            )
-                            job_id = response.json()["id"]
-                        else:
-                            job_id = client.submit_job(audio_file_path, config)
-
-                        transcript = client.wait_for_completion(
-                            job_id, transcription_format="txt"
-                        )
-                        return transcript
-                    except HTTPStatusError as e:
-                        if e.response.status_code == 401:
-                            raise ValueError(
-                                "Invalid Speechmatics API credentials"
-                            ) from e
-                        elif e.response.status_code == 400:
-                            raise ValueError(
-                                f"Speechmatics API responded with 400 Bad request: {e.response.text}"
-                            )
-                        raise e
-                    except Exception as e:
-                        if job_id is not None:
-                            status = client.check_job_status(job_id)
-                            if (
-                                audio_url is not None
-                                and "job" in status
-                                and "errors" in status["job"]
-                                and isinstance(status["job"]["errors"], list)
-                                and len(status["job"]["errors"]) > 0
-                            ):
-                                errors = status["job"]["errors"]
-                                if "message" in errors[-1] and "failed to fetch file" in errors[-1]["message"]:
-                                    retries = max_retries + 1
-                                    raise Exception(f"could not fetch URL {audio_url}, not retrying")
-
-                        raise Exception(
-                            f"Speechmatics transcription failed: {str(e)}"
-                        ) from e
-
-            elif model_name.startswith("assembly/"):
-                aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
-                transcriber = aai.Transcriber()
-                config = aai.TranscriptionConfig(
-                    speech_model=model_name.split("/")[1],
-                    language_code="en",
-                )
-                if use_url:
-                    audio_url = sample["row"]["audio"][0]["src"]
-                    audio_duration = sample["row"]["audio_length_s"]
-                    if audio_duration < 0.160:
-                        print(f"Skipping audio duration {audio_duration}s")
-                        return "."
-                    transcript = transcriber.transcribe(audio_url, config=config)
-                else:
-                    audio_duration = (
-                        len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
-                    )
-                    if audio_duration < 0.160:
-                        print(f"Skipping audio duration {audio_duration}s")
-                        return "."
-                    transcript = transcriber.transcribe(audio_file_path, config=config)
-
-                if transcript.status == aai.TranscriptStatus.error:
-                    raise Exception(
-                        f"AssemblyAI transcription error: {transcript.error}"
-                    )
-                return transcript.text
-
-            elif model_name.startswith("openai/"):
-                if use_url:
-                    response = requests.get(sample["row"]["audio"][0]["src"])
-                    audio_data = BytesIO(response.content)
-                    response = openai.Audio.transcribe(
-                        model=model_name.split("/")[1],
-                        file=audio_data,
-                        response_format="text",
-                        language="en",
-                        temperature=0.0,
-                    )
-                else:
-                    with open(audio_file_path, "rb") as audio_file:
-                        response = openai.Audio.transcribe(
-                            model=model_name.split("/")[1],
-                            file=audio_file,
-                            response_format="text",
-                            language="en",
-                            temperature=0.0,
-                        )
-                return response.strip()
-
-
-
-            elif model_name.startswith("revai/"):
-                access_token = os.getenv("REVAI_API_KEY")
-                client = apiclient.RevAiAPIClient(access_token)
-
-                if use_url:
-                    # Submit job with URL for Rev.ai
-                    job = client.submit_job_url(
-                        transcriber=model_name.split("/")[1],
-                        source_config=CustomerUrlData(sample["row"]["audio"][0]["src"]),
-                        metadata="benchmarking_job",
-                    )
-                else:
-                    # Submit job with local file
-                    job = client.submit_job_local_file(
-                        transcriber=model_name.split("/")[1],
-                        filename=audio_file_path,
-                        metadata="benchmarking_job",
-                    )
-
-                # Polling until job is done
-                while True:
-                    job_details = client.get_job_details(job.id)
-                    if job_details.status.name in ["IN_PROGRESS", "TRANSCRIBING"]:
-                        time.sleep(0.1)
-                        continue
-                    elif job_details.status.name == "FAILED":
-                        raise Exception("RevAI transcription failed.")
-                    elif job_details.status.name == "TRANSCRIBED":
-                        break
-
-                transcript_object = client.get_transcript_object(job.id)
-
-                # Combine all words from all monologues
-                transcript_text = []
-                for monologue in transcript_object.monologues:
-                    for element in monologue.elements:
-                        transcript_text.append(element.value)
-
-                return "".join(transcript_text) if transcript_text else ""
-
-
-            elif model_name.startswith("lelapa"):
-                LELAPA_API_KEY = os.getenv("LELAPA_API_KEY")
-                if not LELAPA_API_KEY:
-                    raise ValueError("LELAPA_API_KEY environment variable not set")
-
-                url = "https://vulavula-services.lelapa.ai/api/v2alpha/transcribe/fast"
-                headers = {
-                "X-CLIENT-TOKEN": LELAPA_API_KEY,
-                }
-                files = {
-                    "upload": ("audio.wav", open(audio_file_path,'rb').read())
-                }
-                params = {"lang_code":"eng"}
-                response = requests.post(url, headers = headers, files = files, params = params)
-                return response.json()['text']
-
-            elif model_name.startswith("spitch"):
-
-                SPITCH_API_KEY = os.getenv("SPITCH_API_KEY")
-                if not SPITCH_API_KEY:
-                    raise ValueError("SPITCH_API_KEY environment variable not set")
-
-                if model_name.endswith("echoblend") is False:
-                    BASE_URL = "http://44.197.218.17:5000/v1/transcriptions"
-                    headers = {
-                        "Authorization": f"Bearer {SPITCH_API_KEY}",
-                        #"Content-Type": "application/json"
-                    }
-                    data = {
-                        "language": "en",
-
-                    }
-                    files = {
-                        'content': sample['audio']['bytes'],
-                    }
-                    response = requests.post(BASE_URL, headers=headers, data=data, files=files)
-                    print(response.json())
-                    return response.json()
-
-                else:
-                    BASE_URL = "http://44.197.218.17:5000/v1/transcriptions"
-
-                    with open(audio_file_path, "rb") as f:
-                        audio_data = f.read()
-                    headers = {
-                        "Authorization": f"Bearer {SPITCH_API_KEY}",
-                        #"Content-Type": "application/json"
-                    }
-                    data = {
-                        "language": "en",
-                        "model":"echoblend",
-                        #"timestamp":"sentence",
-                        #"special_words":"Segun"
-                    }
-                    files = {
-                        'content': sample['audio']['bytes']
-                    }
-                    response = requests.post(BASE_URL, headers=headers, data=data, files=files)
-                    return response.json()['text']
-
-
-            else:
-                raise ValueError(
-                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/' or 'revai/'"
-                )
-
-        except Exception as e:
-            retries += 1
-            if retries > max_retries:
-                raise e
-
-            if not use_url:
-                sf.write(
-                    audio_file_path,
-                    sample["audio"]["array"],
-                    sample["audio"]["sampling_rate"],
-                    format="WAV",
-                )
-            delay = 1
-            print(
-                f"API Error: {str(e)}. Retrying in {delay}s... (Attempt {retries}/{max_retries})"
+        # Process each audio sample
+        pred_text = []
+        for audio in audios:
+            result = model.generate(
+                audio=audio,
+                max_new_tokens=50,
+                temperature=0.1,
+                return_timestamps=False
             )
-            time.sleep(delay)
+            pred_text.append(result.text[0][0])
 
+        # End timing
+        runtime = time.time() - start_time
 
-def transcribe_dataset(
-    dataset_path,
-    dataset,
-    split,
-    model_name,
-    use_url=False,
-    max_samples=None,
-    max_workers=4,
-):
-    if use_url:
-        audio_rows = fetch_audio_urls(dataset_path, dataset, split)
-        if max_samples:
-            audio_rows = itertools.islice(audio_rows, max_samples)
-        ds = audio_rows
-    else:
-        ds = datasets.load_dataset(dataset_path, dataset, split=split, streaming=False)
-        ds = data_utils.prepare_data(ds)
-        ds = ds.cast_column("audio", datasets.Audio(decode = False))
-        if max_samples:
-            ds = ds.take(max_samples)
+        # normalize by minibatch size since we want the per-sample time
+        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-    results = {
-        "references": [],
-        "predictions": [],
+        # normalize transcriptions with English normalizer
+        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
+        batch["references"] = batch["norm_text"]
+        return batch
+
+    if args.warmup_steps is not None:
+        warmup_dataset = data_utils.load_data(args)
+        warmup_dataset = data_utils.prepare_data(warmup_dataset)
+
+        num_warmup_samples = args.warmup_steps * args.batch_size
+        if args.streaming:
+            warmup_dataset = warmup_dataset.take(num_warmup_samples)
+        else:
+            warmup_dataset = warmup_dataset.select(
+                range(min(num_warmup_samples, len(warmup_dataset)))
+            )
+        warmup_dataset = iter(
+            warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True)
+        )
+
+        for _ in tqdm(warmup_dataset, desc="Warming up..."):
+            continue
+
+    dataset = data_utils.load_data(args)
+    dataset = data_utils.prepare_data(dataset)
+
+    if args.max_eval_samples is not None and args.max_eval_samples > 0:
+        print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
+        if args.streaming:
+            dataset = dataset.take(args.max_eval_samples)
+        else:
+            dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
+
+    dataset = dataset.map(
+        benchmark,
+        batch_size=args.batch_size,
+        batched=True,
+        remove_columns=["audio"],
+    )
+
+    all_results = {
         "audio_length_s": [],
         "transcription_time_s": [],
+        "predictions": [],
+        "references": [],
     }
+    result_iter = iter(dataset)
+    for result in tqdm(result_iter, desc="Samples..."):
+        for key in all_results:
+            all_results[key].append(result[key])
 
-    print(f"Transcribing with model: {model_name}")
-
-    def process_sample(sample):
-        if use_url:
-            reference = sample["row"]["text"].strip() or " "
-            audio_duration = sample["row"]["audio_length_s"]
-            start = time.time()
-            try:
-                transcription = transcribe_with_retry(
-                    model_name, None, sample, use_url=True
-                )
-            except Exception as e:
-                print(f"Failed to transcribe after retries: {e}")
-                return None
-
-        else:
-            reference = sample.get("norm_text", "").strip() or " "
-            # with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-            #     sf.write(
-            #         tmpfile.name,
-            #         sample["audio"]["array"],
-            #         sample["audio"]["sampling_rate"],
-            #         format="WAV",
-            #     )
-            #     tmp_path = tmpfile.name
-            #     audio_duration = (
-            #         len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
-            #     )
-
-            start = time.time()
-            try:
-                transcription = transcribe_with_retry(
-                    model_name, None, sample, use_url=False
-                )
-            except Exception as e:
-                print(f"Failed to transcribe after retries: {e}")
-                #os.unlink(tmp_path)
-                return None
-            finally:
-                pass
-        transcription_time = time.time() - start
-        return reference, transcription, audio_duration, transcription_time
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_sample = {
-            executor.submit(process_sample, sample): sample for sample in ds
-        }
-        for future in tqdm(
-            concurrent.futures.as_completed(future_to_sample),
-            total=len(future_to_sample),
-            desc="Transcribing",
-        ):
-            result = future.result()
-            if result:
-                reference, transcription, audio_duration, transcription_time = result
-                results["predictions"].append(transcription)
-                results["references"].append(reference)
-                results["audio_length_s"].append(audio_duration)
-                results["transcription_time_s"].append(transcription_time)
-
-    results["predictions"] = [
-        data_utils.normalizer(transcription) or " "
-        for transcription in results["predictions"]
-    ]
-    results["references"] = [
-        data_utils.normalizer(reference) or " " for reference in results["references"]
-    ]
-
+    # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
-        results["references"],
-        results["predictions"],
-        model_name.replace("/", "-"),
-        dataset_path,
-        dataset,
-        split,
-        audio_length=results["audio_length_s"],
-        transcription_time=results["transcription_time_s"],
+        all_results["references"],
+        all_results["predictions"],
+        args.model_id,
+        args.dataset_path,
+        args.dataset,
+        args.split,
+        audio_length=all_results["audio_length_s"],
+        transcription_time=all_results["transcription_time_s"],
     )
+    print("Results saved at path:", os.path.abspath(manifest_path))
 
-    print("Results saved at path:", manifest_path)
-
-    wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(
-        references=results["references"], predictions=results["predictions"]
+        references=all_results["references"], predictions=all_results["predictions"]
     )
-    wer_percent = round(100 * wer, 2)
+    wer = round(100 * wer, 2)
     rtfx = round(
-        sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2
+        sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2
     )
-
-    print("WER:", wer_percent, "%")
-    print("RTFx:", rtfx)
+    print("WER:", wer, "%", "RTFx:", rtfx)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Unified Transcription Script with Concurrency"
-    )
-    parser.add_argument("--dataset_path", required=True)
-    parser.add_argument("--dataset", required=True)
-    parser.add_argument("--split", default="test")
+    parser = argparse.ArgumentParser()
+
     parser.add_argument(
-        "--model_name",
+        "--model_id",
+        type=str,
         required=True,
-        help="Prefix model name with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', or 'speechmatics/'",
-    )
-    parser.add_argument("--max_samples", type=int, default=None)
-    parser.add_argument(
-        "--max_workers", type=int, default=300, help="Number of concurrent threads"
+        help="Model identifier. Should be loadable with 🤗 Transformers",
     )
     parser.add_argument(
-        "--use_url",
-        action="store_true",
-        help="Use URL-based audio fetching instead of datasets",
+        "--dataset_path",
+        type=str,
+        default="esb/datasets",
+        help="Dataset path. By default, it is `esb/datasets`",
     )
-
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+        help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
+        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        help="Split of the dataset. *E.g.* `'validation`' for the dev split, or `'test'` for the test split.",
+    )
+    parser.add_argument(
+        "--device",
+        type=int,
+        default=-1,
+        help="The device to run the pipeline on. -1 for CPU (default), 0 for the first GPU and so on.",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Number of samples to go through each streamed batch.",
+    )
+    parser.add_argument(
+        "--max_eval_samples",
+        type=int,
+        default=None,
+        help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
+    )
+    parser.add_argument(
+        "--no-streaming",
+        dest="streaming",
+        action="store_false",
+        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+    )
+    parser.add_argument(
+        "--warmup_steps",
+        type=int,
+        default=10,
+        help="Number of warm-up steps to run before launching the timed runs.",
+    )
     args = parser.parse_args()
+    parser.set_defaults(streaming=False)
 
-    transcribe_dataset(
-        dataset_path=args.dataset_path,
-        dataset=args.dataset,
-        split=args.split,
-        model_name=args.model_name,
-        use_url=args.use_url,
-        max_samples=args.max_samples,
-        max_workers=args.max_workers,
-    )
+    main(args)
