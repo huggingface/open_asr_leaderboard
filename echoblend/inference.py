@@ -120,7 +120,7 @@ class WhisperQwenModel(PreTrainedModel):
             audio_io = io.BytesIO(audio_input)
             array, sr = librosa.load(audio_io, sr=target_sr, duration=30)
         elif isinstance(audio_input, np.ndarray):
-            array = audio_input
+            array = audio_input[:(16000*30)]
         else:
             raise ValueError("Audio input must be file path, bytes, or numpy array")
 
@@ -161,7 +161,7 @@ class WhisperQwenModel(PreTrainedModel):
             attention_mask=attention_mask,
             pad_token_id=pad_token_id,
             eos_token_id=eos_token_id,
-            temperature=temperature,
+            #temperature=temperature,
             max_new_tokens=max_new_tokens
         )
 
@@ -192,7 +192,7 @@ class WhisperQwenModel(PreTrainedModel):
             return transcript
 
         decoded = [self.tokenizer.decode(s, skip_special_tokens=True).strip() for s in seqs]
-        text_lists = [[t] for t in decoded]
+        text_lists = [[clean_asr_artifacts(t)] for t in decoded]
 
         return TranscriptBatch(text=text_lists, start=None, end=None)
 
@@ -291,6 +291,7 @@ class WhisperQwenModel(PreTrainedModel):
             "babs/decoder_fusion_lm_v5",
             torch_dtype=self.torch_dtype,
             trust_remote_code=True,
+            attn_implementation = 'flash_attention_2'
         ).to(self.torch_device)
 
         path = hf_hub_download(filename='encoder.safetensors', repo_id=model_dir)
