@@ -16,9 +16,9 @@ MODEL_IDs=(
     #"revai/machine" # please use --use_url=True
     #"revai/fusion" # please use --use_url=True
     #"speechmatics/enhanced",
-    "lelapa/vulavula",
+    #"lelapa/vulavula",
     "spitch/echoblend",
-    "spitch/asr-1",
+    #"spitch/asr-1",
 
 )
 
