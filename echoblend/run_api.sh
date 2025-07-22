@@ -16,9 +16,10 @@ MODEL_IDs=(
     #"revai/machine" # please use --use_url=True
     #"revai/fusion" # please use --use_url=True
     #"speechmatics/enhanced",
+    "lelapa/vulavula",
     "spitch/echoblend",
     "spitch/asr-1",
-    "lelapa/vulavula"
+
 )
 
 num_models=${#MODEL_IDs[@]}

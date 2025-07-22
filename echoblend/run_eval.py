@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 from io import BytesIO
 import assemblyai as aai
 import openai
-from elevenlabs.client import ElevenLabs
 from rev_ai import apiclient
 from rev_ai.models import CustomerUrlData
 from normalizer import data_utils
@@ -197,26 +196,7 @@ def transcribe_with_retry(
                         )
                 return response.strip()
 
-            elif model_name.startswith("elevenlabs/"):
-                client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
-                if use_url:
-                    response = requests.get(sample["row"]["audio"][0]["src"])
-                    audio_data = BytesIO(response.content)
-                    transcription = client.speech_to_text.convert(
-                        file=audio_data,
-                        model_id=model_name.split("/")[1],
-                        language_code="eng",
-                        tag_audio_events=True,
-                    )
-                else:
-                    with open(audio_file_path, "rb") as audio_file:
-                        transcription = client.speech_to_text.convert(
-                            file=audio_file,
-                            model_id=model_name.split("/")[1],
-                            language_code="eng",
-                            tag_audio_events=True,
-                        )
-                return transcription.text
+
 
             elif model_name.startswith("revai/"):
                 access_token = os.getenv("REVAI_API_KEY")
@@ -276,23 +256,33 @@ def transcribe_with_retry(
                 return response.json()['text']
 
             elif model_name.startswith("spitch"):
+
                 SPITCH_API_KEY = os.getenv("SPITCH_API_KEY")
                 if not SPITCH_API_KEY:
                     raise ValueError("SPITCH_API_KEY environment variable not set")
 
                 if model_name.endswith("echoblend") is False:
-                    client = Spitch()
-                    with open(audio_file_path, "rb") as f:
-                        audio_data = f.read()
-                        response = client.speech.transcribe(
-                                language="en",
-                                content=f.read()
-                            ).json()
-                    return response.text
+                    BASE_URL = "http://44.197.218.17:5000/v1/transcriptions"
+                    headers = {
+                        "Authorization": f"Bearer {SPITCH_API_KEY}",
+                        #"Content-Type": "application/json"
+                    }
+                    data = {
+                        "language": "en",
+
+                    }
+                    files = {
+                        'content': sample['audio']['bytes'],
+                    }
+                    response = requests.post(BASE_URL, headers=headers, data=data, files=files)
+                    print(response.json())
+                    return response.json()
 
                 else:
                     BASE_URL = "http://44.197.218.17:5000/v1/transcriptions"
-                    MODEL = "echoblend"
+
+                    with open(audio_file_path, "rb") as f:
+                        audio_data = f.read()
                     headers = {
                         "Authorization": f"Bearer {SPITCH_API_KEY}",
                         #"Content-Type": "application/json"
@@ -304,10 +294,10 @@ def transcribe_with_retry(
                         #"special_words":"Segun"
                     }
                     files = {
-                        'content': open(audio_file_path, 'rb').read()
+                        'content': sample['audio']['bytes']
                     }
                     response = requests.post(BASE_URL, headers=headers, data=data, files=files)
-                    return response.json()
+                    return response.json()['text']
 
 
             else:
@@ -351,6 +341,7 @@ def transcribe_dataset(
     else:
         ds = datasets.load_dataset(dataset_path, dataset, split=split, streaming=False)
         ds = data_utils.prepare_data(ds)
+        ds = ds.cast_column("audio", datasets.Audio(decode = False))
         if max_samples:
             ds = ds.take(max_samples)
 
@@ -378,33 +369,29 @@ def transcribe_dataset(
 
         else:
             reference = sample.get("norm_text", "").strip() or " "
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-                sf.write(
-                    tmpfile.name,
-                    sample["audio"]["array"],
-                    sample["audio"]["sampling_rate"],
-                    format="WAV",
-                )
-                tmp_path = tmpfile.name
-                audio_duration = (
-                    len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
-                )
+            # with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
+            #     sf.write(
+            #         tmpfile.name,
+            #         sample["audio"]["array"],
+            #         sample["audio"]["sampling_rate"],
+            #         format="WAV",
+            #     )
+            #     tmp_path = tmpfile.name
+            #     audio_duration = (
+            #         len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
+            #     )
 
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, tmp_path, sample, use_url=False
+                    model_name, None, sample, use_url=False
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
-                os.unlink(tmp_path)
+                #os.unlink(tmp_path)
                 return None
             finally:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-                else:
-                    print(f"File {tmp_path} does not exist")
-
+                pass
         transcription_time = time.time() - start
         return reference, transcription, audio_duration, transcription_time
 
