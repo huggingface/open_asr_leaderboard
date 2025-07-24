@@ -22,6 +22,7 @@ from speechmatics.models import ConnectionSettings, BatchTranscriptionConfig, Fe
 from speechmatics.batch_client import BatchClient
 from httpx import HTTPStatusError
 from requests_toolbelt import MultipartEncoder
+import google.generativeai as genai
 
 load_dotenv()
 
@@ -175,26 +176,33 @@ def transcribe_with_retry(
                 return transcript.text
 
             elif model_name.startswith("openai/"):
+                client = openai.OpenAI()
+                
+                # Multilingual prompt for better transcription
+                multilingual_prompt = "Please transcribe this audio verbatim, preserving all words, pronunciation variations, and natural speech patterns. Include any code-switching between languages. Maintain exact spoken content without corrections or interpretations."
+                
                 if use_url:
                     response = requests.get(sample["row"]["audio"][0]["src"])
                     audio_data = BytesIO(response.content)
-                    response = openai.Audio.transcribe(
+                    audio_data.name = "audio.mp3"  # Required for OpenAI API
+                    
+                    transcription = client.audio.transcriptions.create(
                         model=model_name.split("/")[1],
                         file=audio_data,
                         response_format="text",
-                        language="en",
+                        prompt=multilingual_prompt,
                         temperature=0.0,
                     )
                 else:
                     with open(audio_file_path, "rb") as audio_file:
-                        response = openai.Audio.transcribe(
+                        transcription = client.audio.transcriptions.create(
                             model=model_name.split("/")[1],
                             file=audio_file,
                             response_format="text",
-                            language="en",
+                            prompt=multilingual_prompt,
                             temperature=0.0,
                         )
-                return response.strip()
+                return transcription.strip()
 
             elif model_name.startswith("elevenlabs/"):
                 client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
@@ -257,9 +265,49 @@ def transcribe_with_retry(
 
                 return "".join(transcript_text) if transcript_text else ""
 
+            elif model_name.startswith("google/"):
+                client = genai.Client()
+                
+                # Enhanced multilingual prompt for Gemini
+                multilingual_prompt = """Please transcribe this audio clip verbatim and accurately. Focus on:
+- Preserving exact spoken words including all pronunciation variations
+- Maintaining natural speech patterns, hesitations, and repetitions  
+- Including any code-switching between languages naturally
+- Avoiding corrections or interpretations of the spoken content
+- Transcribing all languages present (English, Yoruba, Igbo, Hausa, French, Amharic, Malagasy, Pidgin, Swahili, etc.)
+- Maintaining cultural and linguistic authenticity
+
+Provide only the transcription text without any additional commentary."""
+
+                if use_url:
+                    # Download audio file temporarily for Gemini API
+                    response = requests.get(sample["row"]["audio"][0]["src"])
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_audio:
+                        tmp_audio.write(response.content)
+                        tmp_audio_path = tmp_audio.name
+                    
+                    try:
+                        myfile = client.files.upload(file=tmp_audio_path)
+                        response = client.models.generate_content(
+                            model="gemini-2.5-flash", 
+                            contents=[multilingual_prompt, myfile]
+                        )
+                        transcription = response.text
+                    finally:
+                        os.unlink(tmp_audio_path)
+                else:
+                    myfile = client.files.upload(file=audio_file_path)
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash", 
+                        contents=[multilingual_prompt, myfile]
+                    )
+                    transcription = response.text
+                
+                return transcription.strip()
+
             else:
                 raise ValueError(
-                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/' or 'revai/'"
+                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'speechmatics/', or 'google/'"
                 )
 
         except Exception as e:
@@ -416,7 +464,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_name",
         required=True,
-        help="Prefix model name with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', or 'speechmatics/'",
+        help="Prefix model name with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'speechmatics/', or 'google/'",
     )
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument(
