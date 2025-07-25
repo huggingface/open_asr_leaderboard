@@ -2,7 +2,7 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("tiny.en" "small.en" "base.en" "medium.en" "large-v1" "large-v2" "large-v3")
+MODEL_IDs=("shunyalabs/pingala-v1-en-verbatim")
 DEVICE_INDEX=0
 
 num_models=${#MODEL_IDs[@]}
