@@ -1,4 +1,4 @@
-git+https://github.com/NVIDIA/NeMo.git@r2.3.0#egg=nemo_toolkit[asr]
+git+https://github.com/NVIDIA/NeMo.git@6294bc7708ce67522b92f5e9b6917ea0b2e23429#egg=nemo_toolkit[asr]
 tqdm
 soundfile
 librosa
