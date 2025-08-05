@@ -127,9 +127,15 @@ def main(args):
         else:
             audio_files = all_data["audio_filepaths"]
         start_time = time.time()
-        with torch.cuda.amp.autocast(enabled=False, dtype=compute_dtype), torch.inference_mode(), torch.no_grad():
+        with torch.autocast(device_type="cuda", dtype=compute_dtype), torch.inference_mode(), torch.no_grad():
+
+            if 'canary' in args.model_id and 'v2' not in args.model_id:
+                pnc = 'nopnc'
+            else:
+                pnc = 'pnc'
+                
             if 'canary' in args.model_id:
-                transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, pnc='no', num_workers=1)
+                transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, pnc=pnc, num_workers=1)
             else:
                 transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, num_workers=1)
         end_time = time.time()
