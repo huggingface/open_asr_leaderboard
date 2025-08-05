@@ -91,4 +91,4 @@ echo "========================================================"
 RUNDIR=`pwd`
 cd ../normalizer && \
 python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')" && \
-cd $RUNDIR
+cd "$RUNDIR"
