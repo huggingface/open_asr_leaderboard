@@ -92,6 +92,23 @@ class BasicTextNormalizer:
         return s
 
 
+class BasicMultilingualTextNormalizer:
+    def __init__(self, remove_diacritics: bool = True):
+        self.clean = remove_symbols_and_diacritics if remove_diacritics else remove_symbols
+
+    def __call__(self, s: str):
+        s = s.lower()
+        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
+        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = self.clean(s).lower()
+
+        # Remove punctuations and extra spaces
+        s = re.sub(r"[^\w\s]", "", s)
+        s = re.sub(r"\s+", " ", s).strip()
+
+        return s
+
+
 class EnglishNumberNormalizer:
     """
     Convert any spelled-out numbers into arabic numbers, while handling:

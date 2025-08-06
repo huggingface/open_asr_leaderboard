@@ -1,5 +1,5 @@
 from datasets import load_dataset, Audio
-from normalizer import EnglishTextNormalizer
+from normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
 
 from .eval_utils import read_manifest, write_manifest
 
@@ -29,6 +29,8 @@ def get_text(sample):
         )
 
 normalizer = EnglishTextNormalizer()
+
+ml_normalizer = BasicMultilingualTextNormalizer()
 
 
 def normalize(batch):

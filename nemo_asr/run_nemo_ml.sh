@@ -9,7 +9,8 @@ export PYTHONPATH="..":$PYTHONPATH
 # Configuration
 MODEL_ID="nvidia/canary-1b-flash" 
 
-BATCH_SIZE=128 
+BATCH_SIZE=64
+
 DEVICE_ID=0
 
 # Available datasets and languages

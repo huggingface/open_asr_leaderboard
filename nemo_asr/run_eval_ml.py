@@ -17,19 +17,6 @@ import re
 
 wer_metric = evaluate.load("wer")
 
-def normalize_text(text):
-    """Simple text normalization for non english languages"""
-    if text is None:
-        return ""
-    # Remove capitalization
-    text = text.lower()
-    
-    # Remove punctuation
-    text = re.sub(r'[^\w\s]', '', text)
-    
-    # Remove extra spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
 
 def main(args):
     DATA_CACHE_DIR = os.path.join(os.getcwd(), "audio_cache")
@@ -181,8 +168,8 @@ def main(args):
         transcriptions = transcriptions[0]
     
     references = all_data["references"]
-    references = [normalize_text(ref) for ref in references]
-    predictions = [normalize_text(pred.text) for pred in transcriptions]
+    references = [data_utils.ml_normalizer(ref) for ref in references]
+    predictions = [data_utils.ml_normalizer(pred.text) for pred in transcriptions]
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
