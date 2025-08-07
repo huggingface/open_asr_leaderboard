@@ -12,7 +12,6 @@ from datasets import load_dataset
 from normalizer import data_utils
 from nemo.collections.asr.models import ASRModel
 import time
-import re
 
 
 wer_metric = evaluate.load("wer")
