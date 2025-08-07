@@ -7,7 +7,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
-MODEL_ID="nvidia/canary-1b-flash" 
+MODEL_ID="nvidia/canary-1b-flash"
 
 BATCH_SIZE=64
 

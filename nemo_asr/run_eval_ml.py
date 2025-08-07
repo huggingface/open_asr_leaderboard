@@ -146,7 +146,7 @@ def main(args):
             print("Running full evaluation...")
             
         start_time = time.time()
-        with torch.autocast(device_type="cuda", dtype=compute_dtype), torch.inference_mode(), torch.no_grad():
+        with torch.inference_mode(), torch.no_grad():
             # for canary-1b and canary-1b-flash, we need to set pnc='no' for English and for other languages, we need to set pnc='pnc' but for canary-1b-v2 pnc='yes' for all languages
             if 'canary' in args.model_id and 'v2' not in args.model_id:
                 pnc = 'nopnc' if LANGUAGE == "en" else 'pnc'
