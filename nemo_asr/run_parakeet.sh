@@ -3,10 +3,10 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 #considering latest model
-MODEL_IDs=("nvidia/parakeet-tdt-0.6b-v2")
+MODEL_IDs=("nvidia/parakeet-tdt-0.6b-v3") 
 
 # For RNNT models:
-#  ("nvidia/parakeet-tdt-1.1b" "nvidia/parakeet-rnnt-1.1b" "nvidia/parakeet-rnnt-0.6b" "nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_conformer_transducer_large" "stt_en_conformer_transducer_small")
+#  ("nvidia/parakeet-tdt-0.6b-v2" "nvidia/parakeet-tdt-1.1b" "nvidia/parakeet-rnnt-1.1b" "nvidia/parakeet-rnnt-0.6b" "nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_conformer_transducer_large" "stt_en_conformer_transducer_small")
 
 # For CTC models:
 #  ("nvidia/parakeet-ctc-1.1b" "nvidia/parakeet-ctc-0.6b" "nvidia/stt_en_fastconformer_ctc_large" "nvidia/stt_en_conformer_ctc_large" "nvidia/stt_en_conformer_ctc_small")
