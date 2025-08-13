@@ -166,9 +166,13 @@ def main(args):
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
     
-    references = all_data["references"]
-    references = [data_utils.ml_normalizer(ref) for ref in references]
-    predictions = [data_utils.ml_normalizer(pred.text) for pred in transcriptions]
+    references = all_data["references"] 
+    if LANGUAGE == "en": # English is handled by the English normalizer
+        references = [data_utils.normalizer(ref) for ref in references]
+        predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
+    else:
+        references = [data_utils.ml_normalizer(ref) for ref in references]
+        predictions = [data_utils.ml_normalizer(pred.text) for pred in transcriptions]
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 

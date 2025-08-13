@@ -7,7 +7,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
-MODEL_ID="nvidia/canary-1b-v2"
+MODEL_ID="nvidia/parakeet-tdt-0.6b-v3"  #"nvidia/canary-1b-v2"
 
 BATCH_SIZE=64
 
