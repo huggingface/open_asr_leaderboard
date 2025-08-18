@@ -1,1 +1,1 @@
-from .normalizer import EnglishTextNormalizer
+from .normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer

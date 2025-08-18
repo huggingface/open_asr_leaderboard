@@ -2,7 +2,7 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("nvidia/canary-1b-flash")  # options: "nvidia/canary-1b" "nvidia/canary-1b-flash" "nvidia/canary-180m-flash"
+MODEL_IDs=("nvidia/canary-1b-v2")  # options: "nvidia/canary-1b" "nvidia/canary-1b-flash" "nvidia/canary-180m-flash" "nvidia/canary-1b-v2"
 BATCH_SIZE=128
 DEVICE_ID=0
 
