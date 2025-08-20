@@ -1,0 +1,2 @@
+websockets
+requests
