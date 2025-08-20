@@ -1,7 +1,14 @@
 #!/bin/bash
 
 export PYTHONPATH="..":$PYTHONPATH
-export SONIOX_API_KEY="3ca7a2f013f953471042c2075107d993bc0d7265fcd3694f1e0f91b1ea763664"
+
+# Set your Soniox API key as an environment variable before running this script:
+# export SONIOX_API_KEY="your-api-key-here"
+if [ -z "$SONIOX_API_KEY" ]; then
+    echo "Error: SONIOX_API_KEY environment variable is not set"
+    echo "Please set your API key: export SONIOX_API_KEY=\"your-api-key-here\""
+    exit 1
+fi
 
 DATASETS_PATH="nithinraok/asr-leaderboard-datasets"
 MODEL_NAME="soniox/speech-to-text"

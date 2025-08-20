@@ -1,2 +1,12 @@
+# Core dependencies for Soniox integration
 websockets
 requests
+datasets
+evaluate
+soundfile
+tqdm
+python-dotenv
+transformers
+
+# Note: Set your Soniox API key as an environment variable:
+# export SONIOX_API_KEY="your-api-key-here"

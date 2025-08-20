@@ -224,7 +224,9 @@ def transcribe_dataset(
         ds = audio_rows
     else:
         ds = datasets.load_dataset(dataset_path, dataset, split=split, streaming=False)
-        ds = data_utils.prepare_data(ds)
+        # Disable automatic audio decoding to avoid torchcodec dependency
+        ds = ds.cast_column('audio', datasets.Audio(sampling_rate=16000, decode=False))
+        ds = data_utils.prepare_data(ds, decode_audio=False)
         if max_samples:
             ds = ds.take(max_samples)
 
@@ -251,17 +253,20 @@ def transcribe_dataset(
                 return None
         else:
             reference = sample.get("norm_text", "").strip() or " "
+            
+            # Handle undecoded audio - read from bytes
+            audio_bytes = sample["audio"]["bytes"]
+            
+            # Write bytes to temporary file and read audio data
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-                sf.write(
-                    tmpfile.name,
-                    sample["audio"]["array"],
-                    sample["audio"]["sampling_rate"],
-                    format="WAV",
-                )
+                tmpfile.write(audio_bytes)
+                tmpfile.flush()
+                
+                # Read back to get audio data and sample rate
+                audio_data, sample_rate = sf.read(tmpfile.name)
+                audio_duration = len(audio_data) / sample_rate
+                
                 tmp_path = tmpfile.name
-                audio_duration = (
-                    len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
-                )
 
             start = time.time()
             try:

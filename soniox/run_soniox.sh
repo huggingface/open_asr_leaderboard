@@ -1,7 +1,14 @@
 #!/bin/bash
 
 export PYTHONPATH="..":$PYTHONPATH
-export SONIOX_API_KEY="3ca7a2f013f953471042c2075107d993bc0d7265fcd3694f1e0f91b1ea763664"
+
+# Set your Soniox API key as an environment variable before running this script:
+# export SONIOX_API_KEY="your-api-key-here"
+if [ -z "$SONIOX_API_KEY" ]; then
+    echo "Error: SONIOX_API_KEY environment variable is not set"
+    echo "Please set your API key: export SONIOX_API_KEY=\"your-api-key-here\""
+    exit 1
+fi
 
 MODES=("async" "realtime")
 MODEL_NAME="soniox/speech-to-text"
@@ -9,7 +16,7 @@ MODEL_NAME="soniox/speech-to-text"
 for MODE in "${MODES[@]}"
 do
     MODEL_ID="${MODEL_NAME}-${MODE}"
-    python soniox/run_eval.py \
+    PYTHONPATH="." python soniox/run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="ami" \
         --split="test" \
@@ -17,7 +24,7 @@ do
         --mode ${MODE} \
         --use_url
 
-    python soniox/run_eval.py \
+    PYTHONPATH="." python soniox/run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="earnings22" \
         --split="test" \
@@ -25,7 +32,7 @@ do
         --mode ${MODE} \
         --use_url
 
-    python soniox/run_eval.py \
+    PYTHONPATH="." python soniox/run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="gigaspeech" \
         --split="test" \
@@ -33,7 +40,7 @@ do
         --mode ${MODE} \
         --use_url
 
-    python soniox/run_eval.py \
+    PYTHONPATH="." python soniox/run_eval.py \
         --dataset_path "hf-audio/esb-datasets-test-only-sorted" \
         --dataset "librispeech" \
         --split "test.clean" \
@@ -41,7 +48,7 @@ do
         --mode ${MODE} \
         --use_url
 
-    python soniox/run_eval.py \
+    PYTHONPATH="." python soniox/run_eval.py \
         --dataset_path "hf-audio/esb-datasets-test-only-sorted" \
         --dataset "librispeech" \
         --split "test.other" \
@@ -49,7 +56,7 @@ do
         --mode ${MODE} \
         --use_url
 
-    python soniox/run_eval.py \
+    PYTHONPATH="." python soniox/run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="spgispeech" \
         --split="test" \
@@ -57,7 +64,7 @@ do
         --mode ${MODE} \
         --use_url
 
-    python soniox/run_eval.py \
+    PYTHONPATH="." python soniox/run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="tedlium" \
         --split="test" \
@@ -65,7 +72,7 @@ do
         --mode ${MODE} \
         --use_url
 
-    python soniox/run_eval.py \
+    PYTHONPATH="." python soniox/run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="voxpopuli" \
         --split="test" \
