@@ -19,7 +19,7 @@ do
         for language in ${EVAL_DATASETS[$dataset]}; do
             config_name="${dataset}_${language}"
             echo "Running evaluation for ${config_name} with mode ${MODE}"
-            python soniox/run_eval_ml.py \
+            PYTHONPATH="." python soniox/run_eval_ml.py \
                 --dataset="${DATASETS_PATH}" \
                 --config_name="${config_name}" \
                 --split="test" \
