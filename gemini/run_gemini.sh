@@ -12,8 +12,8 @@ if [ -f "${SCRIPT_DIR}/.env" ]; then
     set +a
 fi
 
-# Use full Python path for reliability (can be overridden with PYTHON_CMD environment variable)
-PYTHON_CMD=${PYTHON_CMD:-"C:\Users\Alexander.Immler\AppData\Local\Programs\Python\Python313\python.exe"}
+# Use Python from PATH by default (override with PYTHON_CMD if desired)
+PYTHON_CMD=${PYTHON_CMD:-python3}
 
 # Check if Google API key is set
 if [ -z "$GOOGLE_API_KEY" ]; then
@@ -25,8 +25,13 @@ fi
 # Verify Python installation
 if ! command -v "$PYTHON_CMD" &> /dev/null; then
     echo "Warning: Python not found at $PYTHON_CMD"
-    echo "Falling back to system python3"
-    PYTHON_CMD="python3"
+    if command -v python3 &> /dev/null; then
+        echo "Falling back to python3"
+        PYTHON_CMD="python3"
+    else
+        echo "Falling back to python"
+        PYTHON_CMD="python"
+    fi
 fi
 
 MODEL_IDs=(
