@@ -1,277 +1,228 @@
 import argparse
-from typing import Optional
-import datasets
-import evaluate
-import soundfile as sf
-import tempfile
-import time
+import io
 import os
-import requests
-import itertools
-from tqdm import tqdm
-from io import BytesIO
-from normalizer import data_utils
-import concurrent.futures
+import time
 import getpass
-import google.generativeai as genai
 
+import evaluate
+import datasets
+import numpy as np
+import soundfile as sf
+from tqdm import tqdm
 
-def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=20):
-    API_URL = "https://datasets-server.huggingface.co/rows"
+from normalizer import data_utils
 
-    size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={dataset}&split={split}"
-    size_response = requests.get(size_url).json()
-    total_rows = size_response["size"]["config"]["num_rows"]
-    audio_urls = []
-    for offset in tqdm(range(0, total_rows, batch_size), desc="Fetching audio URLs"):
-        params = {
-            "dataset": dataset_path,
-            "config": dataset,
-            "split": split,
-            "offset": offset,
-            "length": min(batch_size, total_rows - offset),
-        }
-
-        retries = 0
-        while retries <= max_retries:
-            try:
-                headers = {}
-                if os.environ.get("HF_TOKEN") is not None:
-                    headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
-                else:
-                    print("HF_TOKEN not set, might experience rate-limiting.")
-                response = requests.get(API_URL, params=params)
-                response.raise_for_status()
-                data = response.json()
-                yield from data["rows"]
-                break
-            except (requests.exceptions.RequestException, ValueError) as e:
-                retries += 1
-                print(
-                    f"Error fetching data: {e}, retrying ({retries}/{max_retries})..."
-                )
-                time.sleep(10)
-                if retries >= max_retries:
-                    raise Exception("Max retries exceeded while fetching data.")
+try:
+    import google.generativeai as genai
+except ImportError:
+    print("Error: google-generativeai not installed. Run: pip install google-generativeai")
+    exit(1)
 
 
 def transcribe_with_retry(
-    model_name: str,
-    audio_file_path: Optional[str],
-    sample: dict,
-    max_retries=10,
-    use_url=False,
-):
+    model_id: str,
+    audio_file_path: str,
+    max_retries: int = 10,
+) -> str:
     retries = 0
     while retries <= max_retries:
         try:
-            if model_name.startswith("gemini/"):
-                model_id = model_name.split("/", 1)[1]
-                model = genai.GenerativeModel(model_id)
+            if model_id.startswith("gemini/"):
+                _model = model_id.split("/", 1)[1]
+                model = genai.GenerativeModel(_model)
 
-                if use_url:
-                    # Download the audio file from the URL to a temporary file
-                    response = requests.get(sample["row"]["audio"][0]["src"])
-                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-                        tmpfile.write(response.content)
-                        audio_file_path = tmpfile.name
-
-                # Upload the file to the Gemini API
                 gemini_file = genai.upload_file(path=audio_file_path)
-
-                # Transcribe the audio
-                response = model.generate_content(["Generate a transcript of the speech.", gemini_file])
-
-                # Clean up the uploaded file
+                response = model.generate_content([
+                    "Generate a transcript of the speech.",
+                    gemini_file,
+                ])
                 genai.delete_file(gemini_file.name)
 
-                if use_url:
-                    # Clean up the temporary file
-                    os.unlink(audio_file_path)
-
-                return response.text.strip()
+                return response.text.strip() if getattr(response, "text", None) else ""
             else:
-                raise ValueError(
-                    "Invalid model prefix, must start with 'gemini/'"
-                )
+                raise ValueError("Invalid model prefix, must start with 'gemini/'")
 
         except Exception as e:
             retries += 1
             if retries > max_retries:
                 raise e
 
-            if not use_url:
-                sf.write(
-                    audio_file_path,
-                    sample["audio"]["array"],
-                    sample["audio"]["sampling_rate"],
-                    format="WAV",
-                )
-            delay = 1
+            delay = min(2 ** retries, 30)  # Exponential backoff with max 30s
             print(
                 f"API Error: {str(e)}. Retrying in {delay}s... (Attempt {retries}/{max_retries})"
             )
             time.sleep(delay)
+    
+    # This should never be reached, but adding for type safety
+    return ""
 
 
-def transcribe_dataset(
-    dataset_path,
-    dataset,
-    split,
-    model_name,
-    use_url=False,
-    max_samples=None,
-    max_workers=4,
-):
-    if use_url:
-        audio_rows = fetch_audio_urls(dataset_path, dataset, split)
-        if max_samples:
-            audio_rows = itertools.islice(audio_rows, max_samples)
-        ds = audio_rows
-    else:
-        ds = datasets.load_dataset(dataset_path, dataset, split=split, streaming=False)
-        ds = data_utils.prepare_data(ds)
-        if max_samples:
-            ds = ds.take(max_samples)
+def main(args):
+    DATA_CACHE_DIR = os.path.join(os.getcwd(), "audio_cache")
+    CACHE_DIR = os.path.join(DATA_CACHE_DIR, args.dataset, args.split)
+    os.makedirs(CACHE_DIR, exist_ok=True)
 
-    results = {
-        "references": [],
-        "predictions": [],
-        "audio_length_s": [],
-        "transcription_time_s": [],
-    }
+    # Load dataset without triggering audio decoding (avoid torchcodec)
+    ds = datasets.load_dataset(
+        args.dataset_path,
+        args.dataset,
+        split=args.split,
+        streaming=False,
+        token=True,
+    )
+    # Keep audio as filepaths to avoid decoding here
+    try:
+        from datasets import Audio
+        ds = ds.cast_column("audio", Audio(decode=False))
+    except Exception:
+        pass
 
-    print(f"Transcribing with model: {model_name}")
+    # Subsample
+    if args.max_eval_samples is not None and args.max_eval_samples > 0:
+        print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
+        if hasattr(ds, "select") and hasattr(ds, "__len__"):
+            ds = ds.select(range(min(args.max_eval_samples, len(ds))))
 
-    def process_sample(sample):
-        if use_url:
-            reference = sample["row"]["text"].strip() or " "
-            audio_duration = sample["row"]["audio_length_s"]
-            start = time.time()
-            try:
-                transcription = transcribe_with_retry(
-                    model_name, None, sample, use_url=True
-                )
-            except Exception as e:
-                print(f"Failed to transcribe after retries: {e}")
-                return None
+    references = []
+    audio_paths = []
+    durations = []
 
-        else:
-            reference = sample.get("norm_text", "").strip() or " "
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-                sf.write(
-                    tmpfile.name,
-                    sample["audio"]["array"],
-                    sample["audio"]["sampling_rate"],
-                    format="WAV",
-                )
-                tmp_path = tmpfile.name
-                audio_duration = (
-                    len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
-                )
+    for sample in tqdm(ds, desc="Preparing samples"):
+        sid = str(sample.get("id", "sample")).replace("/", "_").removesuffix(".wav")
+        audio_info = sample.get("audio")
+        if not isinstance(audio_info, dict):
+            print("Skipping sample without audio info")
+            continue
+        try:
+            if audio_info.get("bytes") is not None:
+                with io.BytesIO(audio_info["bytes"]) as bio:
+                    audio_array, sr = sf.read(bio, dtype="float32")
+            elif audio_info.get("path"):
+                audio_array, sr = sf.read(audio_info["path"], dtype="float32")
+            elif audio_info.get("array") is not None:
+                audio_array = np.float32(audio_info["array"]) if not isinstance(audio_info["array"], np.ndarray) else audio_info["array"].astype(np.float32)
+                sr = audio_info.get("sampling_rate", 16000)
+            else:
+                print("Skipping sample: unsupported audio format")
+                continue
+        except Exception as e:
+            print(f"Failed to read audio: {e}")
+            continue
 
-            start = time.time()
-            try:
-                transcription = transcribe_with_retry(
-                    model_name, tmp_path, sample, use_url=False
-                )
-            except Exception as e:
-                print(f"Failed to transcribe after retries: {e}")
-                os.unlink(tmp_path)
-                return None
-            finally:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-                else:
-                    print(f"File {tmp_path} does not exist")
+        out_path = os.path.join(CACHE_DIR, f"{sid}.wav")
+        if not os.path.exists(out_path):
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            sf.write(out_path, audio_array, sr)
 
-        transcription_time = time.time() - start
-        return reference, transcription, audio_duration, transcription_time
+        audio_paths.append(out_path)
+        durations.append(len(audio_array) / sr)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_sample = {
-            executor.submit(process_sample, sample): sample for sample in ds
-        }
-        for future in tqdm(
-            concurrent.futures.as_completed(future_to_sample),
-            total=len(future_to_sample),
-            desc="Transcribing",
-        ):
-            result = future.result()
-            if result:
-                reference, transcription, audio_duration, transcription_time = result
-                results["predictions"].append(transcription)
-                results["references"].append(reference)
-                results["audio_length_s"].append(audio_duration)
-                results["transcription_time_s"].append(transcription_time)
+        # Normalize reference text
+        try:
+            ref_text = data_utils.get_text(sample)
+        except Exception:
+            ref_text = sample.get("text", " ")
+        references.append(data_utils.normalizer(ref_text) or " ")
 
-    results["predictions"] = [
-        data_utils.normalizer(transcription) or " "
-        for transcription in results["predictions"]
-    ]
-    results["references"] = [
-        data_utils.normalizer(reference) or " " for reference in results["references"]
-    ]
+        if args.max_eval_samples is not None and len(audio_paths) >= args.max_eval_samples:
+            break
+
+    # Transcribe
+    predictions = []
+    transcription_times = []
+    print(f"Transcribing with model: {args.model_id}")
+    for audio_path in tqdm(audio_paths, desc="Transcribing"):
+        start = time.time()
+        try:
+            pred_text = transcribe_with_retry(args.model_id, audio_path)
+        except Exception as e:
+            print(f"Failed to transcribe {audio_path}: {e}")
+            pred_text = " "
+        elapsed = time.time() - start
+        transcription_times.append(elapsed)
+        predictions.append(data_utils.normalizer(pred_text) or " ")
+        time.sleep(0.1)
+
+    if len(predictions) == 0:
+        print("No samples were successfully processed.")
+        return
 
     manifest_path = data_utils.write_manifest(
-        results["references"],
-        results["predictions"],
-        model_name.replace("/", "-"),
-        dataset_path,
-        dataset,
-        split,
-        audio_length=results["audio_length_s"],
-        transcription_time=results["transcription_time_s"],
+        references,
+        predictions,
+        args.model_id,
+        args.dataset_path,
+        args.dataset,
+        args.split,
+        audio_length=durations,
+        transcription_time=transcription_times,
     )
-
-    print("Results saved at path:", manifest_path)
+    print("Results saved at path:", os.path.abspath(manifest_path))
 
     wer_metric = evaluate.load("wer")
-    wer = wer_metric.compute(
-        references=results["references"], predictions=results["predictions"]
-    )
-    wer_percent = round(100 * wer, 2)
-    rtfx = round(
-        sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2
-    )
-
-    print("WER:", wer_percent, "%")
+    wer = wer_metric.compute(references=references, predictions=predictions)
+    wer = round(100 * wer, 2)
+    rtfx = round(sum(durations) / max(1e-9, sum(transcription_times)), 2)
+    print("WER:", wer, "%")
     print("RTFx:", rtfx)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Unified Transcription Script with Concurrency"
-    )
-    parser.add_argument("--dataset_path", required=True)
-    parser.add_argument("--dataset", required=True)
-    parser.add_argument("--split", default="test")
+    parser = argparse.ArgumentParser(description="Gemini ASR Evaluation Script")
     parser.add_argument(
-        "--model_name",
+        "--model_id",
+        type=str,
         required=True,
-        help="Prefix model name with 'gemini/'",
-    )
-    parser.add_argument("--max_samples", type=int, default=None)
-    parser.add_argument(
-        "--max_workers", type=int, default=300, help="Number of concurrent threads"
+        help="Model identifier, must start with 'gemini/'",
     )
     parser.add_argument(
-        "--use_url",
-        action="store_true",
-        help="Use URL-based audio fetching instead of datasets",
+        "--dataset_path",
+        type=str,
+        default="esb/datasets",
+        help="Dataset path. By default, it is `esb/datasets`",
     )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+        help="Dataset name.",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        help="Split of the dataset.",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+        help="Number of samples per streamed batch.",
+    )
+    parser.add_argument(
+        "--max_eval_samples",
+        type=int,
+        default=None,
+        help="Number of samples to be evaluated.",
+    )
+    parser.add_argument(
+        "--no-streaming",
+        dest="streaming",
+        action="store_false",
+        help="Download the entire dataset instead of streaming.",
+    )
+    parser.set_defaults(streaming=True)
 
     args = parser.parse_args()
 
-    gemini_api_key = getpass.getpass("Enter your Gemini API key: ")
-    genai.configure(api_key=gemini_api_key)
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        try:
+            api_key = getpass.getpass("Enter your Gemini API key: ")
+        except Exception:
+            api_key = None
+    if not api_key:
+        raise RuntimeError("GOOGLE_API_KEY not set and no key provided interactively.")
+    genai.configure(api_key=api_key)
 
-    transcribe_dataset(
-        dataset_path=args.dataset_path,
-        dataset=args.dataset,
-        split=args.split,
-        model_name=args.model_name,
-        use_url=args.use_url,
-        max_samples=args.max_samples,
-        max_workers=args.max_workers,
-    )
+    main(args)
