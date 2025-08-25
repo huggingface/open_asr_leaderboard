@@ -8,8 +8,8 @@ MODEL_IDs=(
 )
 
 BATCH_SIZEs=(
-    20 
-    12
+    160 
+    64
 )
 
 NUM_BEAMS=1
