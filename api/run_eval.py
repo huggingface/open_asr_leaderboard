@@ -173,6 +173,32 @@ def transcribe_with_retry(
                         f"AssemblyAI transcription error: {transcript.error}"
                     )
                 return transcript.text
+            
+            elif model_name.startswith("ganai/"):
+                url = 'https://os.gan.ai/v1/asr/transcribe'
+                if use_url:
+                    ganai_api_key = os.getenv("GANAI_API_KEY")
+                    headers = {
+                        'accept': 'application/json',
+                        'ganos-api-key': ganai_api_key,
+                        'Content-Type': 'application/json'
+                        }
+                
+                    data = {"input_audio_url": sample['row']['audio'][0]['src']}
+                    response = requests.post(url, headers=headers, json=data)
+                    response = response.json()
+                else:
+                    url = 'https://os.gan.ai/v1/asr/transcribe'
+                    headers = {
+                        'accept': 'application/json',
+                        'ganos-api-key': 'Zrcn3NKDmQu8v6WIWG0X1eShZV_Q-adtSALJM8p5'
+                        }
+                    with open(audio_file_path, 'rb') as f:
+                        files = {'input_audio_file': f}
+                        response = requests.post(url, headers=headers, files=files)
+                    response = response.json()
+                    
+                return response['results']['channels'][0]['transcript']
 
             elif model_name.startswith("openai/"):
                 if use_url:
@@ -259,7 +285,7 @@ def transcribe_with_retry(
 
             else:
                 raise ValueError(
-                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/' or 'revai/'"
+                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/', 'ganai/' or 'revai/'"
                 )
 
         except Exception as e:
@@ -416,7 +442,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_name",
         required=True,
-        help="Prefix model name with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', or 'speechmatics/'",
+        help="Prefix model name with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'ganai/' or 'speechmatics/'",
     )
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument(
