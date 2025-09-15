@@ -256,10 +256,23 @@ def transcribe_with_retry(
                         transcript_text.append(element.value)
 
                 return "".join(transcript_text) if transcript_text else ""
+            elif model_name.startswith("aquavoice/"):
+                api_key = os.getenv("AQUAVOICE_API_KEY")
+                if not api_key or api_key == "your_api_key":
+                    raise ValueError(
+                        "AQUAVOICE_API_KEY environment variable not set, go to https://withaqua.com/api-dashboard to create a key"
+                    )
+                endpoint = "https://api.aquavoice.com/api/v1/audio/transcriptions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                }
+                with open(audio_file_path, "rb") as audio_file:
+                    response = requests.post(endpoint, files={'file': audio_file}, data={'model': model_name.split("/")[1]}, headers=headers)
+                return response.json()["text"]
 
             else:
                 raise ValueError(
-                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/' or 'revai/'"
+                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/', 'revai/' or 'aquavoice/'"
                 )
 
         except Exception as e:
@@ -416,7 +429,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_name",
         required=True,
-        help="Prefix model name with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', or 'speechmatics/'",
+        help="Prefix model name with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'speechmatics/' or 'aquavoice/'",
     )
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument(
