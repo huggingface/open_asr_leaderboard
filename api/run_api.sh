@@ -18,6 +18,8 @@ MODEL_IDs=(
     "speechmatics/enhanced"
 )
 
+MAX_WORKERS=10
+
 num_models=${#MODEL_IDs[@]}
 
 for (( i=0; i<${num_models}; i++ ));
@@ -27,49 +29,57 @@ do
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="ami" \
         --split="test" \
-        --model_name ${MODEL_ID}
+        --model_name ${MODEL_ID} \
+        --max_workers ${MAX_WORKERS}
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="earnings22" \
         --split="test" \
-        --model_name ${MODEL_ID}
+        --model_name ${MODEL_ID} \
+        --max_workers ${MAX_WORKERS}
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="gigaspeech" \
         --split="test" \
-        --model_name ${MODEL_ID}
+        --model_name ${MODEL_ID} \
+        --max_workers ${MAX_WORKERS}
 
     python run_eval.py \
         --dataset_path "hf-audio/esb-datasets-test-only-sorted" \
         --dataset "librispeech" \
         --split "test.clean" \
-        --model_name ${MODEL_ID}
+        --model_name ${MODEL_ID} \
+        --max_workers ${MAX_WORKERS}
 
     python run_eval.py \
         --dataset_path "hf-audio/esb-datasets-test-only-sorted" \
         --dataset "librispeech" \
         --split "test.other" \
-        --model_name ${MODEL_ID}
+        --model_name ${MODEL_ID} \
+        --max_workers ${MAX_WORKERS}
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="spgispeech" \
         --split="test" \
-        --model_name ${MODEL_ID}
+        --model_name ${MODEL_ID} \
+        --max_workers ${MAX_WORKERS}
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="tedlium" \
         --split="test" \
-        --model_name ${MODEL_ID}
+        --model_name ${MODEL_ID} \
+        --max_workers ${MAX_WORKERS}
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="voxpopuli" \
         --split="test" \
-        --model_name ${MODEL_ID}
+        --model_name ${MODEL_ID} \
+        --max_workers ${MAX_WORKERS}
     
     # Evaluate results
     RUNDIR=`pwd` && \
