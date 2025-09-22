@@ -8,7 +8,7 @@ import time
 from tqdm import tqdm
 
 wer_metric = evaluate.load("wer")
-torch.set_float32_matmul_precision('high')
+torch.set_float32_matmul_precision("medium")
 
 class MultipleTokenBatchStoppingCriteria(StoppingCriteria):
     """Stopping criteria capable of receiving multiple stop-tokens and handling batched inputs."""
@@ -45,7 +45,7 @@ def main(args):
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         trust_remote_code=True,
-        torch_dtype="auto",
+        torch_dtype=torch.bfloat16,
         _attn_implementation="flash_attention_2",
     ).to(args.device)
     model.eval()
@@ -74,17 +74,16 @@ def main(args):
         # START TIMING
         start_time = time.time()
 
-        with torch.autocast(model.device.type, enabled=True):
-            inputs = processor(text=[prompt] * minibatch_size, audios=audios, return_tensors="pt").to(args.device)
+        inputs = processor(text=[prompt] * minibatch_size, audios=audios, return_tensors="pt").to(args.device)
 
-            # Model Inference
-            pred_ids = model.generate(
-                **inputs,
-                pad_token_id=processor.tokenizer.pad_token_id,
-                eos_token_id=processor.tokenizer.eos_token_id,
-                **gen_kwargs,
-                min_new_tokens=min_new_tokens,
-            )
+        # Model Inference
+        pred_ids = model.generate(
+            **inputs,
+            pad_token_id=processor.tokenizer.pad_token_id,
+            eos_token_id=processor.tokenizer.eos_token_id,
+            **gen_kwargs,
+            min_new_tokens=min_new_tokens,
+        )
 
         # Gather the sequence index of the stop token
         stop_tokens_idx = gen_kwargs["stopping_criteria"][0].stop_tokens_idx.reshape(minibatch_size, -1)[:, 0]
@@ -124,7 +123,7 @@ def main(args):
             warmup_dataset = dataset.take(num_warmup_samples)
         else:
             warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size // 2, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
