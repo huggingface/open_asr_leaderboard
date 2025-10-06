@@ -6,6 +6,7 @@ export OPENAI_API_KEY="your_api_key"
 export ASSEMBLYAI_API_KEY="your_api_key"
 export ELEVENLABS_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
+export AQUAVOICE_API_KEY="your_api_key"
 
 MODEL_IDs=(
     "openai/gpt-4o-transcribe"
@@ -16,6 +17,7 @@ MODEL_IDs=(
     "revai/machine" # please use --use_url=True
     "revai/fusion" # please use --use_url=True
     "speechmatics/enhanced"
+    "aquavoice/avalon-v1-en"
 )
 
 MAX_WORKERS=10
