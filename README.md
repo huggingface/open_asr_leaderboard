@@ -2,6 +2,19 @@
 
 This repository contains the code for the Open ASR Leaderboard. The leaderboard is a Gradio Space that allows users to compare the accuracy of ASR models on a variety of datasets. The leaderboard is hosted at [hf-audio/open_asr_leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
 
+# Datasets
+
+The Open ASR Leaderboard evaluates models on a diverse set of publicly available ASR benchmarks hosted on the Hugging Face Hub. These datasets cover a wide range of domains, languages, and recording conditions to provide a fair and comprehensive comparison across models.
+
+* **Core Test Sets (English, sorted, test-only):**
+  The main benchmark datasets used for evaluation are available here: [**ESB test-only sorted collection**](https://huggingface.co/datasets/hf-audio/esb-datasets-test-only-sorted).
+
+* **Long-form Benchmark (recent addition):**
+  The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21, earnings22 and tedlium longform.
+
+* **Multilingual Benchmark (recent addition):**
+  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/nithinraok/asr-leaderboard-datasets) dataset includes fleurs, mcv and mls multilingual.
+
 # Requirements
 
 Each library has its own set of requirements. We recommend using a clean conda environment, with Python 3.10 or above.
