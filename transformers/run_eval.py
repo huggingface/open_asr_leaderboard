@@ -70,7 +70,10 @@ def main(args):
         with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
             if model.can_generate():
                 # 2.1 Auto-regressive generation for encoder-decoder models
-                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
+                if args.longform:
+                    pred_ids = model.generate(**inputs, **gen_kwargs, return_timestamps=True)
+                else:   
+                    pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
             else:
                 # 2.2. Single forward pass for CTC
                 with torch.no_grad():
@@ -212,6 +215,11 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Maximum number of tokens to generate (for auto-regressive models).",
+    )
+    parser.add_argument(
+        "--longform",
+        action="store_true",
+        help="Whether to use longform mode.",
     )
     parser.add_argument(
         "--torch_compile",
