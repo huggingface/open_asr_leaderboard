@@ -1,3 +1,0 @@
-torch>=2.6.0
-julius
-moshi>=0.2.6

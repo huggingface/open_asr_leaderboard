@@ -28,8 +28,11 @@ def get_text(sample):
             ".join{sample.keys()}. Ensure a text column name is present in the dataset."
         )
 
-normalizer = EnglishTextNormalizer()
+# Using multilingual normalizer for Spanish (Chilean) text
+# Set remove_diacritics=False to preserve Spanish accents
+normalizer = BasicMultilingualTextNormalizer(remove_diacritics=False)
 
+# Keep both for potential multi-language use
 ml_normalizer = BasicMultilingualTextNormalizer()
 
 
