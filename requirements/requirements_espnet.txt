@@ -1,0 +1,2 @@
+espnet @ git+https://github.com/espnet/espnet@29a6e5a62b5d850686df8a1454efec69e2861332
+espnet_model_zoo @ git+https://github.com/espnet/espnet_model_zoo@8b7301923c1c529a126c86c16fc73ce356b94d62
