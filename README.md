@@ -233,11 +233,13 @@ To add a model from an existing library, we can simplify the steps to:
 
 
 ```bibtex
-@misc{open-asr-leaderboard,
-	title        = {Open Automatic Speech Recognition Leaderboard},
-	author       = {Srivastav, Vaibhav and Majumdar, Somshubra and Koluguri, Nithin and Moumen, Adel and Gandhi, Sanchit and Hugging Face Team and Nvidia NeMo Team and SpeechBrain Team},
-	year         = 2023,
-	publisher    = {Hugging Face},
-	howpublished = "\\url{https://huggingface.co/spaces/huggingface.co/spaces/open-asr-leaderboard/leaderboard}"
+@misc{srivastav2025openasrleaderboardreproducible,
+      title={Open ASR Leaderboard: Towards Reproducible and Transparent Multilingual and Long-Form Speech Recognition Evaluation}, 
+      author={Vaibhav Srivastav and Steven Zheng and Eric Bezzam and Eustache Le Bihan and Nithin Koluguri and Piotr Żelasko and Somshubra Majumdar and Adel Moumen and Sanchit Gandhi},
+      year={2025},
+      eprint={2510.06961},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2510.06961}, 
 }
 ```
