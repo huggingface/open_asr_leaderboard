@@ -4,4 +4,6 @@ assemblyai
 openai
 elevenlabs
 rev-ai
+requests
 requests-toolbelt
+torchcodec
