@@ -6,6 +6,8 @@ import soundfile as sf
 import tempfile
 import time
 import os
+from operator import getitem
+from functools import reduce
 import requests
 import itertools
 from tqdm import tqdm
@@ -32,7 +34,6 @@ def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=2
     size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={dataset}&split={split}"
     size_response = requests.get(size_url).json()
     total_rows = size_response["size"]["config"]["num_rows"]
-    audio_urls = []
     for offset in tqdm(range(0, total_rows, batch_size), desc="Fetching audio URLs"):
         params = {
             "dataset": dataset_path,
@@ -269,10 +270,64 @@ def transcribe_with_retry(
                 with open(audio_file_path, "rb") as audio_file:
                     response = requests.post(endpoint, files={'file': audio_file}, data={'model': model_name.split("/")[1]}, headers=headers)
                 return response.json()["text"]
+            elif model_name.startswith("gladia/"):
+                api_key = os.getenv("GLADIA_API_KEY")
+                if not api_key:
+                    raise ValueError("GLADIA_API_KEY environment variable not set")
+                
+                gladia_base_url = "https://api.gladia.io/v2/"
+                headers = {
+                    "x-gladia-key": api_key,
+                    "accept": "application/json",
+                }
+
+                audio_url = None
+                if not use_url:
+                    # Upload the audio file to Gladia
+                    audio_file_name, file_extension = os.path.splitext(
+                        audio_file_path
+                    )
+                    if audio_file_path is None:
+                        raise ValueError("Audio file path must be provided for file upload")
+                    with open(audio_file_path, "rb") as f:
+                        audio_file_content = f.read()
+                    files = [("audio", (audio_file_name, audio_file_content, "audio/" + file_extension[1:]))]
+                    upload_response = requests.post(gladia_base_url + "upload/", headers=headers, files=files)
+                    audio_url = upload_response.json().get("audio_url")
+                    if not audio_url:
+                        raise ValueError("Failed to upload audio file to Gladia")
+                else:
+                    audio_url = sample["row"]["audio"][0]["src"]
+
+                data = {
+                    "audio_url": audio_url,
+                    "model": "solaria-2",
+                    "language_config": {
+                      "languages": ["en"],
+                    }
+                }
+                post_response = requests.post(gladia_base_url + "pre-recorded/", headers=headers, json=data)
+                result_url = post_response.json().get("result_url")
+                if not result_url:
+                    raise ValueError("Failed to initiate transcription with Gladia")
+                
+                # Polling until job is done
+                full_transcript = None
+                while True:
+                    poll_response = requests.get(result_url, headers=headers)
+                    poll_json: dict = poll_response.json()
+                    if poll_json.get("status") == "done":
+                        full_transcript = reduce(getitem, ["result", "transcription", "full_transcript"], poll_json)
+                        break
+                    elif poll_json.get("status") == "error":
+                        raise ValueError("Gladia transcription error: " + str(poll_json))
+                    time.sleep(0.1)
+                
+                return full_transcript or ""
 
             else:
                 raise ValueError(
-                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/', 'revai/' or 'aquavoice/'"
+                    "Invalid model prefix, must start with 'speechmatics/', 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'aquavoice/' or 'gladia/'"
                 )
 
         except Exception as e:
@@ -429,7 +484,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_name",
         required=True,
-        help="Prefix model name with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'speechmatics/' or 'aquavoice/'",
+        help="Prefix model name with 'speechmatics/', 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'aquavoice/' or 'gladia/'",
     )
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument(
