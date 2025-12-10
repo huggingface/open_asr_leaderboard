@@ -14,7 +14,7 @@ torch.set_float32_matmul_precision('high')
 def main(args):
     config = AutoConfig.from_pretrained(args.model_id)
     cls_model = AutoModelForSpeechSeq2Seq if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else AutoModelForCTC
-    model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
+    model = cls_model.from_pretrained(args.model_id, dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
     processor = AutoProcessor.from_pretrained(args.model_id)
     model_input_name = processor.model_input_names[0]
 
@@ -37,6 +37,9 @@ def main(args):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
+        
+        # Compute audio length in seconds (16kHz sampling rate)
+        batch["audio_length_s"] = [len(audio) / 16_000 for audio in audios]
 
         # START TIMING
         start_time = time.time()
@@ -61,7 +64,17 @@ def main(args):
             )
         else:
             # 1.3 Standard Whisper processing: pad audios to 30-seconds and converted to log-mel
-            inputs = processor(audios, sampling_rate=16_000, return_tensors="pt", device=args.device)
+            if args.longform:
+                inputs = processor(
+                    audios,
+                    sampling_rate=16_000,
+                    return_tensors="pt",
+                    truncation=False,
+                    padding="longest",
+                    return_attention_mask=True,
+                )
+            else:
+                inputs = processor(audios, sampling_rate=16_000, return_tensors="pt", device=args.device)
 
         inputs = inputs.to(args.device)
         inputs[model_input_name] = inputs[model_input_name].to(torch.bfloat16)
