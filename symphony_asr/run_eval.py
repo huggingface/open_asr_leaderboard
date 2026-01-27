@@ -4,7 +4,7 @@ import os
 import torch
 import os 
 import sys
-from transformers import AutoModelForCausalLM, AutoProcessor, GenerationConfig
+from transformers import AutoModelForCausalLM, AutoConfig, GenerationConfig, AutoTokenizer
 from normalizer import data_utils
 import evaluate
 import time
@@ -12,10 +12,6 @@ from tqdm import tqdm
 import random
 import numpy as np
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, "../../")) 
-sys.path.append(project_root)
-from FastSLM import FastSLMConfig, FastSLMForConditionalGeneration
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision("medium")
@@ -23,10 +19,13 @@ torch.set_float32_matmul_precision("medium")
 def main(args,min_new_tokens=None):
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
-        trust_remote_code=True,
+        trust_remote_code=True
     ).to(args.device)
+
+
     model.eval()
-    tokenizer = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
     generation_config = GenerationConfig.from_pretrained(args.model_id)
 
     TASK_TOKEN = "<|ASR|>"
@@ -208,6 +207,12 @@ if __name__ == "__main__":
         type=str,
         default="Transcribe the audio clip into text.",
         help="User prompt string.",
+    )
+    parser.add_argument(
+        "--task",
+        type=str,
+        default="ASR",
+        help='Selct Speech Text-to-text Task'
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=False)

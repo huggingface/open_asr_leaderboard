@@ -1,6 +1,8 @@
 #!/bin/bash
-MODEL_IDs=("okestro-ai-lab/FastSLM_ASR")
-BATCH_SIZE=128
+export PYTHONPATH="..":$PYTHONPATH
+
+MODEL_IDs=("okestro-ai-lab/SYMPHONY-ASR")
+BATCH_SIZE=64
 NUM_BEAMS=1
 MAX_NEW_TOKENS=256
 
