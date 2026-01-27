@@ -1,14 +1,12 @@
 import argparse
 import os
 import torch
-from transformers import AutoModelForSeq2SeqLM, AutoProcessor, models
+from transformers import GlmAsrForConditionalGeneration, AutoProcessor, models
 import evaluate
 from normalizer import data_utils
 import time
 from tqdm import tqdm
 
-# ensure installed transformers supports glm_asr
-assert hasattr(models, "glm_asr"), "Transformers version must support GLM-ASR (requires transformers >= 5.0.0)"
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
@@ -16,9 +14,9 @@ torch.set_float32_matmul_precision('high')
 
 def main(args):
     processor = AutoProcessor.from_pretrained(args.model_id)
-    model = AutoModelForSeq2SeqLM.from_pretrained(
+    model = GlmAsrForConditionalGeneration.from_pretrained(
         args.model_id,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map=args.device,
     )
     model.eval()
@@ -31,34 +29,20 @@ def main(args):
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
-        sampling_rates = [audio["sampling_rate"] for audio in batch["audio"]]
         minibatch_size = len(audios)
 
         # START TIMING
         start_time = time.time()
 
-        # Process audio inputs using apply_transcription_request
-        # GLM-ASR expects audio arrays with sampling rates
-        inputs_list = []
-        for audio, sr in zip(audios, sampling_rates):
-            inputs = processor.apply_transcription_request(audio, sampling_rate=sr)
-            inputs_list.append(inputs)
-        
-        # Batch the inputs
-        if minibatch_size == 1:
-            inputs = inputs_list[0]
-        else:
-            # For batched processing, we need to pad the inputs
-            inputs = processor.pad(inputs_list, return_tensors="pt")
-        
+        # Process batch with list of audio arrays (true batched inference)
+        inputs = processor.apply_transcription_request(audios)
         inputs = inputs.to(model.device, dtype=model.dtype)
 
-        # Model Inference
+        # Model Inference (single call for entire batch)
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
                 **gen_kwargs,
-                min_new_tokens=min_new_tokens,
             )
 
         # Decode outputs - strip the input prompt tokens

@@ -6,7 +6,7 @@ MODEL_IDs=(
     "zai-org/GLM-ASR-Nano-2512"
 )
 
-BATCH_SIZE=32
+BATCH_SIZE=64
 MAX_NEW_TOKENS=500
 
 num_models=${#MODEL_IDs[@]}
@@ -15,85 +15,85 @@ for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="voxpopuli" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS}
+    # python run_eval.py \
+    #     --model_id=${MODEL_ID} \
+    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    #     --dataset="voxpopuli" \
+    #     --split="test" \
+    #     --device=0 \
+    #     --batch_size=${BATCH_SIZE} \
+    #     --max_eval_samples=-1 \
+    #     --max_new_tokens=${MAX_NEW_TOKENS}
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="ami" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS}
+    # python run_eval.py \
+    #     --model_id=${MODEL_ID} \
+    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    #     --dataset="ami" \
+    #     --split="test" \
+    #     --device=0 \
+    #     --batch_size=${BATCH_SIZE} \
+    #     --max_eval_samples=-1 \
+    #     --max_new_tokens=${MAX_NEW_TOKENS}
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="earnings22" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS}
+    # python run_eval.py \
+    #     --model_id=${MODEL_ID} \
+    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    #     --dataset="earnings22" \
+    #     --split="test" \
+    #     --device=0 \
+    #     --batch_size=${BATCH_SIZE} \
+    #     --max_eval_samples=-1 \
+    #     --max_new_tokens=${MAX_NEW_TOKENS}
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="gigaspeech" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS}
+    # python run_eval.py \
+    #     --model_id=${MODEL_ID} \
+    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    #     --dataset="gigaspeech" \
+    #     --split="test" \
+    #     --device=0 \
+    #     --batch_size=${BATCH_SIZE} \
+    #     --max_eval_samples=-1 \
+    #     --max_new_tokens=${MAX_NEW_TOKENS}
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="librispeech" \
-        --split="test.clean" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS}
+    # python run_eval.py \
+    #     --model_id=${MODEL_ID} \
+    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    #     --dataset="librispeech" \
+    #     --split="test.clean" \
+    #     --device=0 \
+    #     --batch_size=${BATCH_SIZE} \
+    #     --max_eval_samples=-1 \
+    #     --max_new_tokens=${MAX_NEW_TOKENS}
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="librispeech" \
-        --split="test.other" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS}
+    # python run_eval.py \
+    #     --model_id=${MODEL_ID} \
+    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    #     --dataset="librispeech" \
+    #     --split="test.other" \
+    #     --device=0 \
+    #     --batch_size=${BATCH_SIZE} \
+    #     --max_eval_samples=-1 \
+    #     --max_new_tokens=${MAX_NEW_TOKENS}
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="spgispeech" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS}
+    # python run_eval.py \
+    #     --model_id=${MODEL_ID} \
+    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    #     --dataset="spgispeech" \
+    #     --split="test" \
+    #     --device=0 \
+    #     --batch_size=${BATCH_SIZE} \
+    #     --max_eval_samples=-1 \
+    #     --max_new_tokens=${MAX_NEW_TOKENS}
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
-        --dataset="tedlium" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS}
+    # python run_eval.py \
+    #     --model_id=${MODEL_ID} \
+    #     --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    #     --dataset="tedlium" \
+    #     --split="test" \
+    #     --device=0 \
+    #     --batch_size=${BATCH_SIZE} \
+    #     --max_eval_samples=-1 \
+    #     --max_new_tokens=${MAX_NEW_TOKENS}
 
     # Evaluate results
     RUNDIR=`pwd` && \
