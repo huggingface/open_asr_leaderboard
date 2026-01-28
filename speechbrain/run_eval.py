@@ -8,7 +8,7 @@ import argparse
 import time
 
 import evaluate
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 from tqdm import tqdm
 import torch
 import speechbrain.inference.ASR as ASR
@@ -100,6 +100,9 @@ def main(args):
         args.ctc_weight_decode, 
         device=device
     )
+    
+    # Set model to evaluation mode
+    model.eval()
 
     def benchmark(batch):
         # Load audio inputs
@@ -110,9 +113,17 @@ def main(args):
         audios = audios.to(device)
         audio_lens = audio_lens.to(device)
         
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
         start_time = time.time()
-        with torch.autocast(device_type="cuda"):
-            predictions, _ = model.transcribe_batch(audios, audio_lens)
+        
+        # Model inference only in timed block
+        with torch.inference_mode(): 
+            with torch.autocast(device_type="cuda"):
+                predictions, _ = model.transcribe_batch(audios, audio_lens)
+        
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
         runtime = time.time() - start_time
 
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]

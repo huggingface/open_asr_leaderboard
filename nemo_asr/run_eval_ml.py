@@ -9,7 +9,7 @@ import soundfile
 import numpy as np
 from tqdm import tqdm
 from datasets import load_dataset
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 from nemo.collections.asr.models import ASRModel
 import time
 
@@ -144,9 +144,12 @@ def main(args):
         else:
             audio_files = all_data["audio_filepaths"]
             print("Running full evaluation...")
-            
+        
+        # CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
         start_time = time.time()
-        with torch.inference_mode(), torch.no_grad():
+        
+        with torch.inference_mode(): 
             # for canary-1b and canary-1b-flash, we need to set pnc='no' for English and for other languages, we need to set pnc='pnc' but for canary-1b-v2 pnc='yes' for all languages
             if 'canary' in args.model_id and 'v2' not in args.model_id:
                 pnc = 'nopnc' if LANGUAGE == "en" else 'pnc'
@@ -157,6 +160,9 @@ def main(args):
                 transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, pnc=pnc, num_workers=1, source_lang=LANGUAGE, target_lang=LANGUAGE)
             else:
                 transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, num_workers=1)
+        
+        # CUDA sync before measuring time
+        cuda_sync(args.device)
         end_time = time.time()
         
         if warmup_round == 1:

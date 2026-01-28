@@ -1,4 +1,4 @@
-"""Run evaluation for ctranslate2 whisper models."""""
+"""Run evaluation for ctranslate2 whisper models."""
 import argparse
 import os
 import time
@@ -7,7 +7,7 @@ import evaluate
 from faster_whisper import WhisperModel
 from tqdm import tqdm
 
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 
 wer_metric = evaluate.load("wer")
 
@@ -22,10 +22,19 @@ def main(args) -> None:
     )
 
     def benchmark(batch):
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
         start_time = time.time()
+
+        # Model inference (timed block)
         segments, _ = asr_model.transcribe(batch["audio"]["array"], language="en")
         outputs = [segment._asdict() for segment in segments]
+
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
         batch["transcription_time_s"] = time.time() - start_time
+
+        # Post-processing outside timed block
         batch["predictions"] = data_utils.normalizer("".join([segment["text"] for segment in outputs])).strip()
         batch["references"] = batch["norm_text"]
         return batch

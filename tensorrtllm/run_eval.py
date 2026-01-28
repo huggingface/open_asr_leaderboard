@@ -9,7 +9,7 @@ from collections import OrderedDict
 from pathlib import Path
 from whisper_utils import log_mel_spectrogram, get_tokenizer
 import evaluate
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 import time
 from tqdm import tqdm
 from pathlib import Path
@@ -178,8 +178,6 @@ def main(args):
                 audio_index.append(i)
         audios = [torch.from_numpy(audio) for audio in audios]
 
-        # START TIMING
-        start_time = time.time()
         longest_duration = int(sample_rate * max_duration)
 
         features = [
@@ -194,8 +192,19 @@ def main(args):
                                               dtype=torch.int32,
                                               device='cuda')
 
-        texts_origin = asr_model.process_batch(features, features_input_lengths, num_threads=4)
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(0)  # TensorRT-LLM runs on CUDA
+        start_time = time.time()
 
+        # Model inference only in timed block
+        with torch.inference_mode(): 
+            texts_origin = asr_model.process_batch(features, features_input_lengths, num_threads=4)
+
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(0)
+        runtime = time.time() - start_time
+
+        # Post-processing outside timed block
         texts = []
         for i in range(minibatch_size):
             text_chunks = []
@@ -212,8 +221,6 @@ def main(args):
                 texts.append(merged_text)
             else:
                 texts.append(text_chunks[0])
-        # END TIMING
-        runtime = time.time() - start_time
 
         print(f"Batch size: {minibatch_size}, Time taken: {runtime:.2f} s, texts_origin_len: {len(texts_origin)}, texts_len: {len(texts)}")
         # normalize by minibatch size since we want the per-sample time

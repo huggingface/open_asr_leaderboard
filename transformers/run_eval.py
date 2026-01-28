@@ -4,7 +4,7 @@ import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
 from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForCTC, AutoProcessor, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING
 import evaluate
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 import time
 from tqdm import tqdm
 
@@ -15,6 +15,7 @@ def main(args):
     config = AutoConfig.from_pretrained(args.model_id)
     cls_model = AutoModelForSpeechSeq2Seq if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else AutoModelForCTC
     model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
+    model.eval()  # Set model to evaluation mode
     processor = AutoProcessor.from_pretrained(args.model_id)
     model_input_name = processor.model_input_names[0]
 
@@ -38,10 +39,7 @@ def main(args):
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
 
-        # START TIMING
-        start_time = time.time()
-
-        # 1. Pre-Processing
+        # 1. Pre-Processing (outside timed block)
         # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
         padding_size = None
         if minibatch_size != args.batch_size and args.torch_compile:
@@ -49,7 +47,7 @@ def main(args):
             padding_audios = [audios[-1] for _ in range(padding_size)]
             audios.extend(padding_audios)
 
-        if not model.can_generate(): #or len(audios[0]) > processor.feature_extractor.n_samples:
+        if not model.can_generate():
             # 1.2 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
             inputs = processor(
                 audios,
@@ -66,27 +64,32 @@ def main(args):
         inputs = inputs.to(args.device)
         inputs[model_input_name] = inputs[model_input_name].to(torch.bfloat16)
 
-        # 2. Model Inference
-        with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
-            if model.can_generate():
-                # 2.1 Auto-regressive generation for encoder-decoder models
-                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
-            else:
-                # 2.2. Single forward pass for CTC
-                with torch.no_grad():
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
+        start_time = time.time()
+
+        # 2. Model Inference (timed block with inference_mode)
+        with torch.inference_mode(): 
+            with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
+                if model.can_generate():
+                    # 2.1 Auto-regressive generation for encoder-decoder models
+                    pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
+                else:
+                    # 2.2. Single forward pass for CTC
                     logits = model(**inputs).logits
                     pred_ids = logits.argmax(-1)
 
-        # 3. Post-processing
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
+        runtime = time.time() - start_time
+
+        # 3. Post-processing (outside timed block)
         # 3.1 Strip padded ids from predictions
         if padding_size is not None:
             pred_ids = pred_ids[:-padding_size, ...]
 
         # 3.2 Convert token ids to text transcription
         pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
-
-        # END TIMING
-        runtime = time.time() - start_time
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]

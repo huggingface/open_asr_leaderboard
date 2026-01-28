@@ -3,7 +3,7 @@ import os
 import torch
 from transformers import AutoModelForCausalLM, AutoProcessor, StoppingCriteria, StoppingCriteriaList
 import evaluate
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 import time
 from tqdm import tqdm
 
@@ -64,27 +64,34 @@ def main(args):
     stop_tokens_ids = stop_tokens_ids.to(model.device)
 
     def benchmark(batch, min_new_tokens=None):
-        # Load audio inputs
+        # Load audio inputs (preprocessing outside timed block)
         audios = [(audio["array"], audio["sampling_rate"]) for audio in batch["audio"]]
         minibatch_size = len(audios)
         gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
             [MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=args.num_beams * minibatch_size)]
         )
 
-        # START TIMING
-        start_time = time.time()
-
         inputs = processor(text=[prompt] * minibatch_size, audios=audios, return_tensors="pt").to(args.device)
 
-        # Model Inference
-        pred_ids = model.generate(
-            **inputs,
-            pad_token_id=processor.tokenizer.pad_token_id,
-            eos_token_id=processor.tokenizer.eos_token_id,
-            **gen_kwargs,
-            min_new_tokens=min_new_tokens,
-        )
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
+        start_time = time.time()
 
+        # Model Inference only in timed block
+        with torch.inference_mode(): 
+            pred_ids = model.generate(
+                **inputs,
+                pad_token_id=processor.tokenizer.pad_token_id,
+                eos_token_id=processor.tokenizer.eos_token_id,
+                **gen_kwargs,
+                min_new_tokens=min_new_tokens,
+            )
+
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
+        runtime = time.time() - start_time
+
+        # Post-processing outside timed block
         # Gather the sequence index of the stop token
         stop_tokens_idx = gen_kwargs["stopping_criteria"][0].stop_tokens_idx.reshape(minibatch_size, -1)[:, 0]
 
@@ -102,9 +109,6 @@ def main(args):
             processor.decode(_pred_ids[inputs["input_ids"].shape[1] : _stop_tokens_idx], skip_special_tokens=True, clean_up_tokenization_spaces=False)
             for _pred_ids, _stop_tokens_idx in zip(pred_ids, stop_tokens_idx)
         ]
-
-        # END TIMING
-        runtime = time.time() - start_time
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]

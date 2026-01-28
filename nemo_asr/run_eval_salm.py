@@ -8,7 +8,7 @@ import soundfile
 import lhotse
 
 from tqdm import tqdm
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 import numpy as np
 
 from nemo.collections.asr.models import ASRModel
@@ -171,10 +171,17 @@ def main(args):
         else:
             audio_files = all_data["audio_filepaths"]
         dloader = setup_dloader(audio_files=audio_files, batch_size=args.batch_size, num_workers=1)
-        with torch.inference_mode():
-            start_time = time.time()
+        
+        # CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
+        start_time = time.time()
+        
+        with torch.inference_mode(): 
             transcriptions = transcribe(model, dloader)
-            end_time = time.time()
+        
+        # CUDA sync before measuring time
+        cuda_sync(args.device)
+        end_time = time.time()
         if _ == 1:
             total_time += end_time - start_time
     total_time = total_time

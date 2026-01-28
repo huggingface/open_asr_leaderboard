@@ -1,1 +1,2 @@
 from .normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
+from .benchmark_utils import cuda_sync
