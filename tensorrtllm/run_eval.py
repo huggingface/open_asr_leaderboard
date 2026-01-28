@@ -201,7 +201,7 @@ def main(args):
             texts_origin = asr_model.process_batch(features, features_input_lengths, num_threads=4)
 
         # END TIMING - CUDA sync before measuring
-        cuda_sync(0)
+        cuda_sync(args.device)
         runtime = time.time() - start_time
 
         # Post-processing outside timed block

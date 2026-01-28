@@ -52,7 +52,7 @@ def main(args):
         sub_batch_idxs = []  # Track which sorted indices are in sub_batch
 
         # START TIMING - CUDA sync for accurate GPU timing
-        cuda_sync(0)  # ABR model runs on CUDA
+        cuda_sync(args.device)  # ABR model runs on CUDA
         start_time = time.time()
 
         for i, audio in enumerate(sorted_audios):
