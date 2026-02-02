@@ -50,9 +50,18 @@ def load_data(args):
 
     return dataset
 
-def prepare_data(dataset):
+def prepare_data(dataset, decode_audio=True):
     # Re-sample to 16kHz and normalise transcriptions
-    dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
+    if decode_audio:
+        dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
+    else:
+        # Keep decode=False but ensure sampling_rate is set
+        current_audio_feature = dataset.features["audio"]
+        if hasattr(current_audio_feature, 'decode') and not current_audio_feature.decode:
+            # Already set up with decode=False, don't change it
+            pass
+        else:
+            dataset = dataset.cast_column("audio", Audio(sampling_rate=16000, decode=False))
     dataset = dataset.map(normalize)
     dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
 
