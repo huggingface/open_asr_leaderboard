@@ -117,28 +117,56 @@ def main(args):
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
     dataset = data_utils.prepare_data(dataset)
 
-    # Run evaluation
-    # Note: num_proc > 1 doesn't work well with GPU models due to CUDA context issues
-    # For CPU inference, you can increase num_proc for parallel processing
-    dataset = dataset.map(
-        benchmark,
-        batch_size=args.batch_size,
-        batched=True,
-        remove_columns=["audio"],
-        num_proc=1,  # Use 1 for GPU, increase for CPU
-        writer_batch_size=args.batch_size * 10,  # Write in larger chunks to reduce I/O
-    )
-
+    # Run evaluation - manual iteration for better performance
     all_results = {
         "audio_length_s": [],
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
     }
-    result_iter = iter(dataset)
-    for result in tqdm(result_iter, desc="Samples..."):
-        for key in all_results:
-            all_results[key].append(result[key])
+
+    # Create batches manually and iterate
+    batch = {
+        "audio": [],
+        "norm_text": [],
+        "audio_length_s": [],
+    }
+
+    dataset_iter = iter(dataset)
+    total_samples = len(dataset) if hasattr(dataset, '__len__') else args.max_eval_samples
+
+    with tqdm(total=total_samples, desc="Evaluating") as pbar:
+        for sample in dataset_iter:
+            batch["audio"].append(sample["audio"])
+            batch["norm_text"].append(sample["norm_text"])
+            batch["audio_length_s"].append(sample.get("audio_length_s", 0))
+
+            # Process batch when it reaches the desired size
+            if len(batch["audio"]) == args.batch_size:
+                result_batch = benchmark(batch)
+
+                # Accumulate results
+                for i in range(len(result_batch["predictions"])):
+                    all_results["predictions"].append(result_batch["predictions"][i])
+                    all_results["references"].append(result_batch["references"][i])
+                    all_results["transcription_time_s"].append(result_batch["transcription_time_s"][i])
+                    all_results["audio_length_s"].append(batch["audio_length_s"][i])
+
+                # Clear batch
+                batch = {"audio": [], "norm_text": [], "audio_length_s": []}
+                pbar.update(args.batch_size)
+
+        # Process remaining samples in the last incomplete batch
+        if len(batch["audio"]) > 0:
+            result_batch = benchmark(batch)
+
+            for i in range(len(result_batch["predictions"])):
+                all_results["predictions"].append(result_batch["predictions"][i])
+                all_results["references"].append(result_batch["references"][i])
+                all_results["transcription_time_s"].append(result_batch["transcription_time_s"][i])
+                all_results["audio_length_s"].append(batch["audio_length_s"][i])
+
+            pbar.update(len(batch["audio"]))
 
     # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
