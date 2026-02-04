@@ -3,7 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=("espnet/owsm_ctc_v4_1B" "espnet/owsm_ctc_v3.1_1B" "espnet/owsm_ctc_v3.2_ft_1B")
-BATCH_SIZE=144
+BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
 
