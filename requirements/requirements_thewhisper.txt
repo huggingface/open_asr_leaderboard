@@ -1,11 +1,17 @@
 # TheWhisper requirements
 --extra-index-url https://thestage.jfrog.io/artifactory/api/pypi/pypi-thestage-ai-production/simple
 thestage-elastic-models
-torch==2.9.0
+torch>=2.7.0
 transformers==4.52.3
 datasets==3.6.0
-evaluate>=0.4.0
+evaluate
 tqdm
 soundfile>=0.12.0
 librosa>=0.10.0
 huggingface-hub>=0.19.0
+jiwer
+
+tensorrt==10.13.0.35
+tensorrt-cu12==10.13.0.35
+tensorrt-cu12-bindings==10.13.0.35
+tensorrt-cu12-libs==10.13.0.35
