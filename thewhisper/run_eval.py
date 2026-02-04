@@ -42,6 +42,7 @@ def main(args):
         device=args.device,
         torch_dtype=dtype,
         chunk_length_s=chunk_length,
+        batch_size=args.batch_size,
     )
 
     gen_kwargs = {
