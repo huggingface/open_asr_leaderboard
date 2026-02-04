@@ -1,6 +1,6 @@
 # TheWhisper requirements
 --extra-index-url https://thestage.jfrog.io/artifactory/api/pypi/pypi-thestage-ai-production/simple
-thestage-elsatic-models[nvidia]
+thestage-elastic-models
 torch==2.9.0
 transformers==4.52.3
 datasets==3.6.0
