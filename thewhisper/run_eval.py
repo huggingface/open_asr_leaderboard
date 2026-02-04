@@ -100,7 +100,8 @@ def main(args):
             benchmark,
             batch_size=args.batch_size,
             batched=True,
-            fn_kwargs={"min_new_tokens": args.max_new_tokens}
+            fn_kwargs={"min_new_tokens": args.max_new_tokens},
+            num_proc=1,  # Keep single process to avoid model duplication during warmup
         ))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
@@ -117,11 +118,15 @@ def main(args):
     dataset = data_utils.prepare_data(dataset)
 
     # Run evaluation
+    # Note: num_proc > 1 doesn't work well with GPU models due to CUDA context issues
+    # For CPU inference, you can increase num_proc for parallel processing
     dataset = dataset.map(
         benchmark,
         batch_size=args.batch_size,
         batched=True,
         remove_columns=["audio"],
+        num_proc=1,  # Use 1 for GPU, increase for CPU
+        writer_batch_size=args.batch_size * 10,  # Write in larger chunks to reduce I/O
     )
 
     all_results = {
