@@ -193,7 +193,7 @@ def main(args):
                                               device='cuda')
 
         # START TIMING - CUDA sync for accurate GPU timing
-        cuda_sync(0)  # TensorRT-LLM runs on CUDA
+        cuda_sync(args.device)
         start_time = time.time()
 
         # Model inference only in timed block
