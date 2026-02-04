@@ -101,7 +101,6 @@ def main(args):
             batch_size=args.batch_size,
             batched=True,
             fn_kwargs={"min_new_tokens": args.max_new_tokens},
-            num_proc=1,  # Keep single process to avoid model duplication during warmup
         ))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
@@ -250,7 +249,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=10,
+        default=None,
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     parser.add_argument(
