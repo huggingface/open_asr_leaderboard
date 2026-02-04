@@ -85,7 +85,7 @@ def main(args):
                 all_out[target_idx] = pred_text[j]
 
         # END TIMING - CUDA sync before measuring
-        cuda_sync(0)
+        cuda_sync(args.device)
         runtime = time.time() - start_time
 
         assert all(x is not None for x in all_out)
@@ -194,6 +194,12 @@ if __name__ == "__main__":
         type=str,
         default="test",
         help="Split of the dataset. *E.g.* `'validation`' for the dev split, or `'test'` for the test split.",
+    )
+    parser.add_argument(
+        "--device",
+        type=int,
+        default=0,
+        help="The device to run the pipeline on. 0 for the first GPU (default) and so on.",
     )
     parser.add_argument(
         "--batch_size",
