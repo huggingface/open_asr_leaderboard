@@ -1,7 +1,7 @@
 import argparse
 import os
 import torch
-from transformers import pipeline
+from transformers import pipeline, AutoProcessor, AutoTokenizer
 import evaluate
 from normalizer import data_utils
 import time
@@ -27,11 +27,18 @@ def main(args):
     model.generation_config.forced_decoder_ids = None
     model.generation_config.cache_implementation = "flexi-static"
 
+    processor = AutoProcessor.from_pretrained(
+        args.model_id,
+        chunk_length=chunk_length,
+        tokenizer=AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
+    )
+
     # Create ASR pipeline
     asr_pipeline = pipeline(
         "automatic-speech-recognition",
         model=model,
-        tokenizer=args.model_id,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor,
         device=args.device,
         torch_dtype=dtype,
         chunk_length_s=chunk_length,
