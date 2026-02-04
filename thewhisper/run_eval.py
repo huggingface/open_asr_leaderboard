@@ -198,7 +198,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=16,
+        default=64,
         help="Number of samples to go through each streamed batch.",
     )
     parser.add_argument(
