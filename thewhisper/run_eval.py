@@ -1,7 +1,7 @@
 import argparse
 import os
 import torch
-from transformers import WhisperProcessor, AutoTokenizer
+from transformers import pipeline
 import evaluate
 from normalizer import data_utils
 import time
@@ -15,7 +15,7 @@ torch.set_float32_matmul_precision('high')
 
 def main(args):
     dtype = torch.float16
-    chunk_length = 20
+    chunk_length = 30
 
     # Load model using elastic_models for optimized inference
     model = WhisperForConditionalGeneration.from_pretrained(
@@ -27,13 +27,15 @@ def main(args):
     model.generation_config.forced_decoder_ids = None
     model.generation_config.cache_implementation = "flexi-static"
 
-    # Load processor with matching chunk_length
-    processor = WhisperProcessor.from_pretrained(
-        args.model_id,
-        chunk_length=chunk_length,
-        tokenizer=AutoTokenizer.from_pretrained(args.model_id, use_fast=False)
+    # Create ASR pipeline
+    asr_pipeline = pipeline(
+        "automatic-speech-recognition",
+        model=model,
+        tokenizer=args.model_id,
+        device=args.device,
+        torch_dtype=dtype,
+        chunk_length_s=chunk_length,
     )
-    model_input_name = processor.model_input_names[0]
 
     gen_kwargs = {
         "max_new_tokens": args.max_new_tokens,
@@ -52,39 +54,19 @@ def main(args):
         # START TIMING
         start_time = time.time()
 
-        # 1. Pre-Processing
-        # Pad audios to max batch size if needed for consistent batching
-        padding_size = None
-        if minibatch_size != args.batch_size:
-            padding_size = args.batch_size - minibatch_size
-            padding_audios = [audios[-1] for _ in range(padding_size)]
-            audios.extend(padding_audios)
+        # Use ASR pipeline for inference
+        if min_new_tokens is not None:
+            gen_kwargs["min_new_tokens"] = min_new_tokens
 
-        # Process audio with Whisper processor
-        inputs = processor(
+        outputs = asr_pipeline(
             audios,
-            sampling_rate=16_000,
-            return_tensors="pt",
-            device=args.device
+            batch_size=args.batch_size,
+            generate_kwargs=gen_kwargs,
+            chunk_length_s=chunk_length
         )
-        inputs = inputs.to(args.device)
-        inputs[model_input_name] = inputs[model_input_name].to(dtype)
 
-        # 2. Model Inference
-        with torch.no_grad():
-            pred_ids = model.generate(
-                **inputs,
-                **gen_kwargs,
-                min_new_tokens=min_new_tokens
-            )
-
-        # 3. Post-processing
-        # Strip padded ids from predictions
-        if padding_size is not None:
-            pred_ids = pred_ids[:-padding_size, ...]
-
-        # Convert token ids to text transcription
-        pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        # Extract transcriptions
+        pred_text = [output["text"] for output in outputs]
 
         # END TIMING
         runtime = time.time() - start_time
