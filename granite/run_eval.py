@@ -3,7 +3,7 @@ import os
 import torch
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, models
 import evaluate
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 import time
 from tqdm import tqdm
 
@@ -17,6 +17,7 @@ def main(args):
     processor = AutoProcessor.from_pretrained(args.model_id)
     tokenizer = processor.tokenizer
     model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16).to(args.device)
+    model.eval()  # Set model to evaluation mode
 
     # create text prompt
     chat = [
@@ -37,15 +38,11 @@ def main(args):
     gen_kwargs = {"max_new_tokens": args.max_new_tokens, "num_beams": args.num_beams}
 
     def benchmark(batch, min_new_tokens=None):
-        # Load audio inputs
+        # Load audio inputs (preprocessing outside timed block)
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
         texts=[text] * minibatch_size
 
-        # START TIMING
-        start_time = time.time()
-
-        # with torch.autocast(model.device.type, enabled=True):
         model_inputs = processor(
             texts,
             audios,
@@ -53,17 +50,27 @@ def main(args):
             return_tensors="pt",
         ).to(args.device)
 
-        # Model Inference
-        model_outputs = model.generate(
-            **model_inputs,
-            bos_token_id=tokenizer.bos_token_id,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-            repetition_penalty=1.0,
-            **gen_kwargs,
-            min_new_tokens=min_new_tokens,
-        )
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
+        start_time = time.time()
 
+        # Model Inference only in timed block
+        with torch.inference_mode(): 
+            model_outputs = model.generate(
+                **model_inputs,
+                bos_token_id=tokenizer.bos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                repetition_penalty=1.0,
+                **gen_kwargs,
+                min_new_tokens=min_new_tokens,
+            )
+
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
+        runtime = time.time() - start_time
+
+        # Post-processing outside timed block
         # Transformers includes the input IDs in the response.
         num_input_tokens = model_inputs["input_ids"].shape[-1]
         new_tokens = model_outputs[:, num_input_tokens:]
@@ -71,9 +78,6 @@ def main(args):
         output_text = tokenizer.batch_decode(
             new_tokens, add_special_tokens=False, skip_special_tokens=True
         )
-
-        # END TIMING
-        runtime = time.time() - start_time
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]

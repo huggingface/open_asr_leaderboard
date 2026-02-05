@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 import evaluate
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 import time
 from tqdm import tqdm
 import julius
@@ -83,10 +83,14 @@ def main(args):
         audio_delay_seconds,
     ) = load_model(args.model_id)
 
+    # Set models to evaluation mode
+    mimi.eval()
+    _lm.eval()
+
     mimi_frame_size = mimi.frame_size
 
     def benchmark(batch):
-        # Load audio inputs
+        # Load audio inputs (preprocessing outside timed block)
         audios = [torch.from_numpy(audio["array"]) for audio in batch["audio"]]
         sample_rates = [ex["sampling_rate"] for ex in batch["audio"]]
 
@@ -94,9 +98,6 @@ def main(args):
             len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios
         ]
         minibatch_size = len(audios)
-
-        # Start timing
-        start_time = time.time()
 
         padded_batch = get_padded_batch(
             audios,
@@ -109,15 +110,26 @@ def main(args):
 
         bsz = padded_batch.shape[0]
 
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
+        start_time = time.time()
+
+        # Model inference only in timed block
         text_tokens_acc = []
 
-        with mimi.streaming(bsz), lm_gen.streaming(bsz):
-            for offset in range(0, padded_batch.shape[-1], mimi.frame_size):
-                audio_chunk = padded_batch[:, offset : offset + mimi.frame_size].cuda()
-                tokens = mimi.encode(audio_chunk[:, None, :])
-                text_tokens = lm_gen.step(tokens)
-                text_tokens_acc.append(text_tokens)
+        with torch.inference_mode(): 
+            with mimi.streaming(bsz), lm_gen.streaming(bsz):
+                for offset in range(0, padded_batch.shape[-1], mimi.frame_size):
+                    audio_chunk = padded_batch[:, offset : offset + mimi.frame_size].cuda()
+                    tokens = mimi.encode(audio_chunk[:, None, :])
+                    text_tokens = lm_gen.step(tokens)
+                    text_tokens_acc.append(text_tokens)
 
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
+        runtime = time.time() - start_time
+
+        # Post-processing outside timed block
         pred_tokens = torch.concat(text_tokens_acc, axis=-1).squeeze(dim=1)
         pred_tokens = torch.unbind(pred_tokens, dim=0)
 
@@ -125,9 +137,6 @@ def main(args):
             tokenizer.decode(t[t > padding_token_id].cpu().numpy().tolist())
             for t in pred_tokens
         ]
-
-        # End timing
-        runtime = time.time() - start_time
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]

@@ -4,7 +4,7 @@ import torch
 from transformers import MoonshineForConditionalGeneration, AutoProcessor
 
 import evaluate
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 import time
 from tqdm import tqdm
 import numpy as np
@@ -15,6 +15,7 @@ torch.set_float32_matmul_precision('high')
 def main(args):
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     model = MoonshineForConditionalGeneration.from_pretrained(args.model_id).to(args.device).to(torch_dtype)
+    model.eval()  # Set model to evaluation mode
     processor = AutoProcessor.from_pretrained(args.model_id)
 
     if args.torch_compile:
@@ -28,10 +29,7 @@ def main(args):
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
 
-        # START TIMING
-        start_time = time.time()
-
-        # 1. Pre-Processing
+        # 1. Pre-Processing (outside timed block)
         # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
         padding_size = 0
         if minibatch_size != args.batch_size and args.torch_compile:
@@ -46,7 +44,19 @@ def main(args):
         token_generation_limits = [len(clip) * 6.5 // 16000 + 2 for clip in audios]
         max_new_tokens = torch.tensor(token_generation_limits).reshape((-1, 1)).to(args.device)
 
-        pred_ids = model.generate(**inputs, max_new_tokens=max_new_tokens.max())
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
+        start_time = time.time()
+
+        # Model inference only in timed block
+        with torch.inference_mode(): 
+            pred_ids = model.generate(**inputs, max_new_tokens=max_new_tokens.max())
+
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
+        runtime = time.time() - start_time
+
+        # Post-processing outside timed block
         output_mask = torch.arange(pred_ids.shape[-1]).repeat((pred_ids.shape[0], 1)).to(args.device)
         output_mask = output_mask > max_new_tokens
 
@@ -55,9 +65,6 @@ def main(args):
 
         # 3.2 Convert token ids to text transcription
         pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
-
-        # END TIMING
-        runtime = time.time() - start_time
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]

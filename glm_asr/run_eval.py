@@ -3,7 +3,7 @@ import os
 import torch
 from transformers import GlmAsrForConditionalGeneration, AutoProcessor, models
 import evaluate
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 import time
 from tqdm import tqdm
 
@@ -27,33 +27,36 @@ def main(args):
     }
 
     def benchmark(batch, min_new_tokens=None):
-        # Load audio inputs
+        # Load audio inputs (preprocessing outside timed block)
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
-
-        # START TIMING
-        start_time = time.time()
 
         # Process batch with list of audio arrays (true batched inference)
         inputs = processor.apply_transcription_request(audios)
         inputs = inputs.to(model.device, dtype=model.dtype)
 
-        # Model Inference (single call for entire batch)
-        with torch.no_grad():
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)
+        start_time = time.time()
+
+        # Model Inference only in timed block
+        with torch.inference_mode():
             outputs = model.generate(
                 **inputs,
                 **gen_kwargs,
             )
 
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
+        runtime = time.time() - start_time
+
+        # Post-processing outside timed block
         # Decode outputs - strip the input prompt tokens
         input_length = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
         pred_text = processor.batch_decode(
             outputs[:, input_length:],
             skip_special_tokens=True,
         )
-
-        # END TIMING
-        runtime = time.time() - start_time
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]

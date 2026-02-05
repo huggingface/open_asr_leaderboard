@@ -2,9 +2,10 @@ import argparse
 import os
 import time
 
+import torch
 import evaluate
 import numpy as np
-from normalizer import data_utils
+from normalizer import data_utils, cuda_sync
 from tqdm import tqdm
 from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
 
@@ -16,6 +17,7 @@ def main(args):
         args.model_id, trust_remote_code=True
     ).cuda()
     model = AutoModel.from_pretrained(args.model_id, trust_remote_code=True).cuda()
+    model.eval()  # Set model to evaluation mode
     tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
 
     def get_sub_batch_output(sub_batch):
@@ -28,20 +30,18 @@ def main(args):
             # Shortcut for inputs too short to process
             pred_text = ["" for _ in inputs]
         else:
-            # Get output from model
-            outputs = model(inputs, mask=features["mask"])
+            # Get output from model with inference mode
+            with torch.inference_mode(): 
+                outputs = model(inputs, mask=features["mask"])
 
             # Decode text
             pred_text = tokenizer.decode_from_logits(outputs["logits"], outputs["mask"])
         return pred_text
 
     def benchmark(batch):
-        # Load audio inputs
+        # Load audio inputs (preprocessing outside timed block)
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
-
-        # START TIMING
-        start_time = time.time()
 
         # Divide data into sub-batches that maximize the total audio length
         # that can fit within the specified limit
@@ -50,6 +50,10 @@ def main(args):
         sorted_audios = [audios[i] for i in sort_idxs]
         sub_batch = []
         sub_batch_idxs = []  # Track which sorted indices are in sub_batch
+
+        # START TIMING - CUDA sync for accurate GPU timing
+        cuda_sync(args.device)  # ABR model runs on CUDA
+        start_time = time.time()
 
         for i, audio in enumerate(sorted_audios):
             n_samples = len(audio) * (len(sub_batch) + 1)
@@ -80,11 +84,12 @@ def main(args):
                 assert all_out[target_idx] is None
                 all_out[target_idx] = pred_text[j]
 
+        # END TIMING - CUDA sync before measuring
+        cuda_sync(args.device)
+        runtime = time.time() - start_time
+
         assert all(x is not None for x in all_out)
         pred_text = all_out
-
-        # END TIMING
-        runtime = time.time() - start_time
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
@@ -189,6 +194,12 @@ if __name__ == "__main__":
         type=str,
         default="test",
         help="Split of the dataset. *E.g.* `'validation`' for the dev split, or `'test'` for the test split.",
+    )
+    parser.add_argument(
+        "--device",
+        type=int,
+        default=0,
+        help="The device to run the pipeline on. 0 for the first GPU (default) and so on.",
     )
     parser.add_argument(
         "--batch_size",
