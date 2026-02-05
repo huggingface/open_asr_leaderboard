@@ -24,8 +24,6 @@ def main(args):
         torch_dtype=dtype,
         mode=args.mode
     ).to(args.device)
-    model.generation_config.forced_decoder_ids = None
-    model.generation_config.cache_implementation = "flexi-static"
 
     processor = AutoProcessor.from_pretrained(
         args.model_id,
@@ -42,6 +40,7 @@ def main(args):
         device=args.device,
         torch_dtype=dtype,
         chunk_length_s=chunk_length,
+        batch_size=args.batch_size
     )
 
     gen_kwargs = {
@@ -50,10 +49,10 @@ def main(args):
         "do_sample": False,
         "task": "transcribe",
         "language": "en",
-        "cache_implementation": "flexi-static",
+        "disable_compile": True,
     }
 
-    def benchmark(batch, min_new_tokens=None):
+    def benchmark(batch):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
@@ -62,12 +61,8 @@ def main(args):
         start_time = time.time()
 
         # Use ASR pipeline for inference
-        if min_new_tokens is not None:
-            gen_kwargs["min_new_tokens"] = min_new_tokens
-
         outputs = asr_pipeline(
             audios,
-            batch_size=args.batch_size,
             generate_kwargs=gen_kwargs,
             chunk_length_s=chunk_length
         )
@@ -100,7 +95,6 @@ def main(args):
             benchmark,
             batch_size=args.batch_size,
             batched=True,
-            fn_kwargs={"min_new_tokens": args.max_new_tokens}
         ))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
@@ -217,7 +211,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=10,
+        default=None,
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     parser.add_argument(
