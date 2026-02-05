@@ -7,12 +7,14 @@ export ASSEMBLYAI_API_KEY="your_api_key"
 export ELEVENLABS_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
+export HF_TOKEN="your_hf_token"
 
 MODEL_IDs=(
     "openai/gpt-4o-transcribe"
     "openai/gpt-4o-mini-transcribe"
     "openai/whisper-1"
     "assembly/best"
+    "assembly/universal-3-pro"
     "elevenlabs/scribe_v1"
     "revai/machine" # please use --use_url=True
     "revai/fusion" # please use --use_url=True
@@ -20,7 +22,7 @@ MODEL_IDs=(
     "aquavoice/avalon-v1-en"
 )
 
-MAX_WORKERS=10
+MAX_WORKERS=100
 
 num_models=${#MODEL_IDs[@]}
 
@@ -32,56 +34,64 @@ do
         --dataset="ami" \
         --split="test" \
         --model_name ${MODEL_ID} \
-        --max_workers ${MAX_WORKERS}
+        --max_workers ${MAX_WORKERS} \
+        --use_url
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="earnings22" \
         --split="test" \
         --model_name ${MODEL_ID} \
-        --max_workers ${MAX_WORKERS}
+        --max_workers ${MAX_WORKERS} \
+        --use_url
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="gigaspeech" \
         --split="test" \
         --model_name ${MODEL_ID} \
-        --max_workers ${MAX_WORKERS}
+        --max_workers ${MAX_WORKERS} \
+        --use_url
 
     python run_eval.py \
         --dataset_path "hf-audio/esb-datasets-test-only-sorted" \
         --dataset "librispeech" \
         --split "test.clean" \
         --model_name ${MODEL_ID} \
-        --max_workers ${MAX_WORKERS}
+        --max_workers ${MAX_WORKERS} \
+        --use_url
 
     python run_eval.py \
         --dataset_path "hf-audio/esb-datasets-test-only-sorted" \
         --dataset "librispeech" \
         --split "test.other" \
         --model_name ${MODEL_ID} \
-        --max_workers ${MAX_WORKERS}
+        --max_workers ${MAX_WORKERS} \
+        --use_url
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="spgispeech" \
         --split="test" \
         --model_name ${MODEL_ID} \
-        --max_workers ${MAX_WORKERS}
+        --max_workers ${MAX_WORKERS} \
+        --use_url
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="tedlium" \
         --split="test" \
         --model_name ${MODEL_ID} \
-        --max_workers ${MAX_WORKERS}
+        --max_workers ${MAX_WORKERS} \
+        --use_url
 
     python run_eval.py \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="voxpopuli" \
         --split="test" \
         --model_name ${MODEL_ID} \
-        --max_workers ${MAX_WORKERS}
+        --max_workers ${MAX_WORKERS} \
+        --use_url
     
     # Evaluate results
     RUNDIR=`pwd` && \

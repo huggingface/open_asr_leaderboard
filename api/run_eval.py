@@ -146,19 +146,26 @@ def transcribe_with_retry(
                         ) from e
 
             elif model_name.startswith("assembly/"):
-                aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
-                transcriber = aai.Transcriber()
-                config = aai.TranscriptionConfig(
-                    speech_model=model_name.split("/")[1],
-                    language_code="en",
-                )
+                api_key = os.getenv("ASSEMBLYAI_API_KEY")
+                if not api_key:
+                    raise ValueError("ASSEMBLYAI_API_KEY environment variable not set")
+                
+                base_url = "https://api.assemblyai.com"
+                headers = {"authorization": api_key}
+                speech_model = model_name.split("/")[1]
+                
                 if use_url:
                     audio_url = sample["row"]["audio"][0]["src"]
                     audio_duration = sample["row"]["audio_length_s"]
                     if audio_duration < 0.160:
                         print(f"Skipping audio duration {audio_duration}s")
                         return "."
-                    transcript = transcriber.transcribe(audio_url, config=config)
+                    
+                    data = {
+                        "audio_url": audio_url,
+                        "language_code": "en",
+                        "speech_models": [speech_model],
+                    }
                 else:
                     audio_duration = (
                         len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
@@ -166,13 +173,49 @@ def transcribe_with_retry(
                     if audio_duration < 0.160:
                         print(f"Skipping audio duration {audio_duration}s")
                         return "."
-                    transcript = transcriber.transcribe(audio_file_path, config=config)
-
-                if transcript.status == aai.TranscriptStatus.error:
-                    raise Exception(
-                        f"AssemblyAI transcription error: {transcript.error}"
-                    )
-                return transcript.text
+                    
+                    # Upload the audio file first
+                    upload_headers = {
+                        "authorization": api_key,
+                        "content-type": "application/octet-stream",
+                    }
+                    with open(audio_file_path, "rb") as f:
+                        upload_response = requests.post(
+                            f"{base_url}/v2/upload",
+                            headers=upload_headers,
+                            data=f,
+                        )
+                    if upload_response.status_code != 200:
+                        raise Exception(f"AssemblyAI upload error: {upload_response.text}")
+                    
+                    audio_url = upload_response.json()["upload_url"]
+                    data = {
+                        "audio_url": audio_url,
+                        "language_code": "en",
+                        "speech_models": [speech_model],
+                    }
+                
+                # Submit transcription request
+                response = requests.post(
+                    f"{base_url}/v2/transcript",
+                    headers=headers,
+                    json=data,
+                )
+                if response.status_code != 200:
+                    raise Exception(f"AssemblyAI transcription request error: {response.text}")
+                
+                transcript_id = response.json()["id"]
+                polling_endpoint = f"{base_url}/v2/transcript/{transcript_id}"
+                
+                # Poll until completion
+                while True:
+                    transcript = requests.get(polling_endpoint, headers=headers).json()
+                    if transcript["status"] == "completed":
+                        return transcript["text"]
+                    elif transcript["status"] == "error":
+                        raise Exception(f"AssemblyAI transcription error: {transcript.get('error', 'Unknown error')}")
+                    else:
+                        time.sleep(3)
 
             elif model_name.startswith("openai/"):
                 if use_url:
