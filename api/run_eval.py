@@ -65,10 +65,21 @@ def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=2
                     raise Exception("Max retries exceeded while fetching data.")
 
 
+def extract_language_code(dataset_name: str) -> str:
+    """
+    Extract language code from dataset name for multilingual evaluation.
+    Examples: 'fleurs_fr' -> 'fr', 'mls_es' -> 'es', 'ami' -> 'en'
+    """
+    if "_" in dataset_name:
+        return dataset_name.split("_")[-1]
+    return "en"
+
+
 def transcribe_with_retry(
     model_name: str,
     audio_file_path: Optional[str],
     sample: dict,
+    dataset: str,
     max_retries=10,
     use_url=False,
 ):
@@ -204,7 +215,7 @@ def transcribe_with_retry(
                     transcription = client.speech_to_text.convert(
                         file=audio_data,
                         model_id=model_name.split("/")[1],
-                        language_code="eng",
+                        language_code=extract_language_code(dataset),
                         tag_audio_events=True,
                     )
                 else:
@@ -212,7 +223,7 @@ def transcribe_with_retry(
                         transcription = client.speech_to_text.convert(
                             file=audio_file,
                             model_id=model_name.split("/")[1],
-                            language_code="eng",
+                            language_code=extract_language_code(dataset),
                             tag_audio_events=True,
                         )
                 return transcription.text
@@ -330,7 +341,7 @@ def transcribe_dataset(
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, None, sample, use_url=True
+                    model_name, None, sample, dataset, use_url=True
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
@@ -353,7 +364,7 @@ def transcribe_dataset(
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, tmp_path, sample, use_url=False
+                    model_name, tmp_path, sample, dataset, use_url=False
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
