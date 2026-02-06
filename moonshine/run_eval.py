@@ -1,7 +1,11 @@
 import argparse
 import os
 import torch
-from transformers import MoonshineForConditionalGeneration, AutoProcessor
+from transformers import (
+    MoonshineForConditionalGeneration,
+    MoonshineStreamingForConditionalGeneration,
+    AutoProcessor,
+)
 
 import evaluate
 from normalizer import data_utils
@@ -14,7 +18,12 @@ torch.set_float32_matmul_precision('high')
 
 def main(args):
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    model = MoonshineForConditionalGeneration.from_pretrained(args.model_id).to(args.device).to(torch_dtype)
+    gen = (
+        MoonshineStreamingForConditionalGeneration
+        if "streaming" in args.model_id
+        else MoonshineForConditionalGeneration
+    )
+    model = gen.from_pretrained(args.model_id).to(args.device).to(torch_dtype)
     processor = AutoProcessor.from_pretrained(args.model_id)
 
     if args.torch_compile:
