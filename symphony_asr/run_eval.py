@@ -208,12 +208,6 @@ if __name__ == "__main__":
         default="Transcribe the audio clip into text.",
         help="User prompt string.",
     )
-    parser.add_argument(
-        "--task",
-        type=str,
-        default="ASR",
-        help='Selct Speech Text-to-text Task'
-    )
     args = parser.parse_args()
     parser.set_defaults(streaming=False)
 
