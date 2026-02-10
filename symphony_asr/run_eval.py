@@ -1,17 +1,11 @@
-
 import argparse
 import os
 import torch
-import os 
-import sys
-from transformers import AutoModelForCausalLM, AutoConfig, GenerationConfig, AutoTokenizer
+from transformers import AutoModelForCausalLM, GenerationConfig, AutoTokenizer
 from normalizer import data_utils
 import evaluate
 import time
 from tqdm import tqdm
-import random
-import numpy as np
-
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision("medium")
@@ -185,10 +179,10 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--streaming",
-        action="store_true",
-        default=False,
-        help="Stream the dataset instead of downloading it fully.",
+        "--no-streaming",
+        dest="streaming",
+        action="store_false",
+        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
     )
     parser.add_argument(
         "--max_new_tokens",
@@ -208,7 +202,6 @@ if __name__ == "__main__":
         default="Transcribe the audio clip into text.",
         help="User prompt string.",
     )
-    args = parser.parse_args()
     parser.set_defaults(streaming=False)
-
+    args = parser.parse_args()
     main(args)
