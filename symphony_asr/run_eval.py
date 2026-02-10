@@ -185,10 +185,10 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        default=False,
+        help="Stream the dataset instead of downloading it fully.",
     )
     parser.add_argument(
         "--max_new_tokens",
