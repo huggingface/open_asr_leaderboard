@@ -48,7 +48,7 @@ def main(args,min_new_tokens=None):
         inputs = tokenizer(text=[prompt] * minibatch_size, return_tensors="pt").to('cuda')
 
         # Model Inference
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        with torch.amp.autocast(device_type='cuda',dtype=torch.bfloat16):
             pred_ids = model.generate(
                 input_ids=inputs.input_ids,
                 audio=audios,
