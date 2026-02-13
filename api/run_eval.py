@@ -1,27 +1,29 @@
 import argparse
-from typing import Optional
-import datasets
-import evaluate
-import soundfile as sf
+import concurrent.futures
+import itertools
+import os
 import tempfile
 import time
-import os
-import requests
-import itertools
-from tqdm import tqdm
-from dotenv import load_dotenv
 from io import BytesIO
+from typing import Optional
+
 import assemblyai as aai
+import datasets
+import evaluate
 import openai
+import requests
+import soundfile as sf
+from dotenv import load_dotenv
 from elevenlabs.client import ElevenLabs
-from rev_ai import apiclient
-from rev_ai.models import CustomerUrlData
-from normalizer import data_utils
-import concurrent.futures
-from speechmatics.models import ConnectionSettings, BatchTranscriptionConfig, FetchData
-from speechmatics.batch_client import BatchClient
 from httpx import HTTPStatusError
 from requests_toolbelt import MultipartEncoder
+from rev_ai import apiclient
+from rev_ai.models import CustomerUrlData
+from speechmatics.batch_client import BatchClient
+from speechmatics.models import BatchTranscriptionConfig, ConnectionSettings, FetchData
+from tqdm import tqdm
+
+from normalizer import data_utils
 
 load_dotenv()
 
@@ -137,9 +139,14 @@ def transcribe_with_retry(
                                 and len(status["job"]["errors"]) > 0
                             ):
                                 errors = status["job"]["errors"]
-                                if "message" in errors[-1] and "failed to fetch file" in errors[-1]["message"]:
+                                if (
+                                    "message" in errors[-1]
+                                    and "failed to fetch file" in errors[-1]["message"]
+                                ):
                                     retries = max_retries + 1
-                                    raise Exception(f"could not fetch URL {audio_url}, not retrying")
+                                    raise Exception(
+                                        f"could not fetch URL {audio_url}, not retrying"
+                                    )
 
                         raise Exception(
                             f"Speechmatics transcription failed: {str(e)}"
@@ -267,14 +274,19 @@ def transcribe_with_retry(
                     "Authorization": f"Bearer {api_key}",
                 }
                 with open(audio_file_path, "rb") as audio_file:
-                    response = requests.post(endpoint, files={'file': audio_file}, data={'model': model_name.split("/")[1]}, headers=headers)
+                    response = requests.post(
+                        endpoint,
+                        files={"file": audio_file},
+                        data={"model": model_name.split("/")[1]},
+                        headers=headers,
+                    )
                 return response.json()["text"]
 
-            elif model_name.startswith("smallest/"):
-                api_key = os.getenv("SMALLEST_API_KEY")
+            elif model_name.startswith("smallestai/"):
+                api_key = os.getenv("SMALLESTAI_API_KEY")
                 if not api_key or api_key == "your_api_key":
                     raise ValueError(
-                        "SMALLEST_API_KEY environment variable not set, get your key at https://console.smallest.ai"
+                        "SMALLESTAI_API_KEY environment variable not set, get your key at https://console.smallest.ai"
                     )
                 endpoint = "https://waves-api.smallest.ai/api/v1/pulse/get_text"
                 headers = {
@@ -310,7 +322,7 @@ def transcribe_with_retry(
 
             else:
                 raise ValueError(
-                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'aquavoice/' or 'smallest/'"
+                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'aquavoice/' or 'smallestai/'"
                 )
 
         except Exception as e:
