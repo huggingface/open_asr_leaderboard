@@ -270,9 +270,47 @@ def transcribe_with_retry(
                     response = requests.post(endpoint, files={'file': audio_file}, data={'model': model_name.split("/")[1]}, headers=headers)
                 return response.json()["text"]
 
+            elif model_name.startswith("smallest/"):
+                api_key = os.getenv("SMALLEST_API_KEY")
+                if not api_key or api_key == "your_api_key":
+                    raise ValueError(
+                        "SMALLEST_API_KEY environment variable not set, get your key at https://console.smallest.ai"
+                    )
+                endpoint = "https://waves-api.smallest.ai/api/v1/pulse/get_text"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "audio/wav",
+                }
+                if use_url:
+                    # Download audio from URL first
+                    audio_url = sample["row"]["audio"][0]["src"]
+                    audio_response = requests.get(audio_url)
+                    audio_data = audio_response.content
+                    response = requests.post(
+                        endpoint,
+                        headers=headers,
+                        data=audio_data,
+                        params={"model": "pulse", "language": "en"},
+                    )
+                else:
+                    with open(audio_file_path, "rb") as audio_file:
+                        audio_data = audio_file.read()
+                    response = requests.post(
+                        endpoint,
+                        headers=headers,
+                        data=audio_data,
+                        params={"model": "pulse", "language": "en"},
+                    )
+                response.raise_for_status()
+                result = response.json()
+                # Handle different response formats
+                if isinstance(result, dict):
+                    return result.get("text", result.get("transcript", ""))
+                return str(result)
+
             else:
                 raise ValueError(
-                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/', 'revai/' or 'aquavoice/'"
+                    "Invalid model prefix, must start with 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'aquavoice/' or 'smallest/'"
                 )
 
         except Exception as e:
