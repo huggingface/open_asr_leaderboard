@@ -1,5 +1,6 @@
 #!/bin/bash
 
+thestage config set --access-token th_01ZtgWTHS0hA6e0gbzkUzFXqxs4oxuiEaP7j8kDF
 export PYTHONPATH="..":$PYTHONPATH
 
 # TheWhisper models using elastic_models for optimized inference
