@@ -4,8 +4,10 @@ export PYTHONPATH="..":$PYTHONPATH
 
 # Available omniASR-LLM models
 MODEL_IDs=(
+    "facebook/omniASR-CTC-300M-v2" "facebook/omniASR-CTC-1B-v2" "facebook/omniASR-CTC-3B-v2" "facebook/omniASR-CTC-7B-v2"
     "facebook/omniASR-CTC-300M" "facebook/omniASR-CTC-1B" "facebook/omniASR-CTC-3B" "facebook/omniASR-CTC-7B"
     "facebook/omniASR-LLM-300M" "facebook/omniASR-LLM-1B" "facebook/omniASR-LLM-3B" "facebook/omniASR-LLM-7B"
+    "facebook/omniASR-LLM-300M-v2" "facebook/omniASR-LLM-1B-v2" "facebook/omniASR-LLM-3B-v2" "facebook/omniASR-LLM-7B-v2"
     )
 BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
 LANGUAGE="eng_Latn"  # English language code for omniASR

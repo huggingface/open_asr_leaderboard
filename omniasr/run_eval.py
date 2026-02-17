@@ -47,9 +47,7 @@ def main(args):
         # START TIMING
         start_time = time.time()
 
-        # Inference: transcribe with English language code
-        # For English-only evaluation, we use "eng_Latn" as the language code
-        lang = ["eng_Latn"] * minibatch_size if args.language else None
+        lang = [args.language] * minibatch_size
         transcriptions = pipeline.transcribe(
             audio_data,
             lang=lang,
