@@ -7,6 +7,7 @@ export ASSEMBLYAI_API_KEY="your_api_key"
 export ELEVENLABS_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
+export SMALLESTAI_API_KEY="your_api_key"
 
 MODEL_IDs=(
     "openai/gpt-4o-transcribe"
@@ -18,6 +19,7 @@ MODEL_IDs=(
     "revai/fusion" # please use --use_url=True
     "speechmatics/enhanced"
     "aquavoice/avalon-v1-en"
+    "smallestai/pulse"
 )
 
 MAX_WORKERS=10
@@ -82,7 +84,7 @@ do
         --split="test" \
         --model_name ${MODEL_ID} \
         --max_workers ${MAX_WORKERS}
-    
+
     # Evaluate results
     RUNDIR=`pwd` && \
     cd ../normalizer && \
