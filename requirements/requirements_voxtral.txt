@@ -1,0 +1,7 @@
+transformers>=4.54.0
+mistral-common[audio]>=1.8.1
+torch>=2.0.0
+torchaudio
+datasets
+evaluate
+jiwer
