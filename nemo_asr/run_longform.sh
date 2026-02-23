@@ -3,10 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 #considering latest model
-MODEL_IDs=("nvidia/parakeet-tdt-1.1b" "nvidia/parakeet-rnnt-1.1b" "nvidia/parakeet-rnnt-0.6b" "nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_conformer_transducer_large" "nvidia/stt_en_conformer_transducer_small" "nvidia/parakeet-tdt-0.6b-v2")
-
-# For CTC models:
-# MODEL_IDs=("nvidia/parakeet-ctc-1.1b" "nvidia/parakeet-ctc-0.6b" "nvidia/stt_en_fastconformer_ctc_large" "nvidia/stt_en_conformer_ctc_large" "nvidia/stt_en_conformer_ctc_small")
+MODEL_IDs=("nvidia/parakeet-tdt-1.1b" "nvidia/parakeet-rnnt-1.1b" "nvidia/parakeet-rnnt-0.6b" "nvidia/stt_en_fastconformer_transducer_large" "nvidia/stt_en_conformer_transducer_large" "nvidia/stt_en_conformer_transducer_small" "nvidia/parakeet-tdt-0.6b-v2" "nvidia/parakeet-tdt-0.6b-v3" "nvidia/parakeet-ctc-1.1b" "nvidia/parakeet-ctc-0.6b" "nvidia/stt_en_fastconformer_ctc_large" "nvidia/stt_en_conformer_ctc_large" "nvidia/stt_en_conformer_ctc_small")
 
 BATCH_SIZE=1
 DEVICE_ID=0
@@ -46,6 +43,18 @@ do
     --batch_size=${BATCH_SIZE} \
     --max_eval_samples=-1 \
     --longform
+
+    for SUBSET in ATL DCA DCB DTA LES PRV ROC VLD; do
+        python run_eval_long.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="bezzam/coraal" \
+        --dataset=${SUBSET} \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1 \
+        --longform
+    done
 
     # Evaluate results
     RUNDIR=`pwd` && \

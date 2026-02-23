@@ -41,6 +41,18 @@ do
         --max_eval_samples=-1 \
         --longform
 
+    for SUBSET in ATL DCA DCB DTA LES PRV ROC VLD; do
+        python run_eval.py \
+            --model_id=${MODEL_ID} \
+            --dataset_path="bezzam/coraal" \
+            --dataset=${SUBSET} \
+            --split="test" \
+            --device=0 \
+            --batch_size=${BATCH_SIZE} \
+            --max_eval_samples=-1 \
+            --longform
+    done
+
     # Evaluate results
     RUNDIR=`pwd` && \
     cd ../normalizer && \

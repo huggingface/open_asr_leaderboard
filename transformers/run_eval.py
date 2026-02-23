@@ -14,7 +14,7 @@ torch.set_float32_matmul_precision('high')
 def main(args):
     config = AutoConfig.from_pretrained(args.model_id)
     cls_model = AutoModelForSpeechSeq2Seq if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else AutoModelForCTC
-    model = cls_model.from_pretrained(args.model_id, dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
+    model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
     processor = AutoProcessor.from_pretrained(args.model_id)
     model_input_name = processor.model_input_names[0]
 
