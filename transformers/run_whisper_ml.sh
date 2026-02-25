@@ -19,9 +19,9 @@ DATASETS="nithinraok/asr-leaderboard-datasets"
 
 # German, French, Italian, Spanish, Portuguese
 DATASET_NAMES=("fleurs" "mcv" "mls")
-# DATASET_LANGS_fleurs="de fr it es pt"
-DATASET_LANGS_mcv="de"
-# DATASET_LANGS_mls="es fr it pt"
+DATASET_LANGS_fleurs="de fr it es pt"
+DATASET_LANGS_mcv="de es fr it"
+DATASET_LANGS_mls="es fr it pt"
 
 # Function to run evaluation
 run_evaluation() {
