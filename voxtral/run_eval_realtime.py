@@ -1,104 +1,73 @@
 import argparse
 import os
 import torch
-from transformers import (
-    MoonshineForConditionalGeneration,
-    MoonshineStreamingForConditionalGeneration,
-    AutoProcessor,
-)
-
+from transformers import VoxtralRealtimeForConditionalGeneration, AutoProcessor
 import evaluate
 from normalizer import data_utils
 import time
 from tqdm import tqdm
-import numpy as np
 
 wer_metric = evaluate.load("wer")
-torch.set_float32_matmul_precision('high')
+
 
 def main(args):
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    gen = (
-        MoonshineStreamingForConditionalGeneration
-        if "streaming" in args.model_id
-        else MoonshineForConditionalGeneration
-    )
-    model = gen.from_pretrained(args.model_id).to(args.device).to(torch_dtype)
+    print(f"Loading model: {args.model_id}")
     processor = AutoProcessor.from_pretrained(args.model_id)
+    model = VoxtralRealtimeForConditionalGeneration.from_pretrained(
+        args.model_id,
+        torch_dtype=torch.bfloat16,
+        device_map=f"cuda:{args.device}" if args.device >= 0 else "cpu",
+    )
+    model.eval()
 
-    if args.torch_compile:
-        model.forward = torch.compile(model.forward, mode=args.compile_mode, fullgraph=True)
-        if model.can_generate():
-            # enable static k/v cache for autoregressive models
-            model.generation_config.cache_implementation = "static"
-
-    def benchmark(batch, min_new_tokens=None):
-        # Load audio inputs
+    def benchmark(batch):
         audios = [audio["array"] for audio in batch["audio"]]
+        batch["audio_length_s"] = [len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios]
         minibatch_size = len(audios)
 
         # START TIMING
         start_time = time.time()
 
-        # 1. Pre-Processing
-        # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
-        padding_size = 0
-        if minibatch_size != args.batch_size and args.torch_compile:
-            padding_size = args.batch_size - minibatch_size
-            padding_audios = [audios[-1] for _ in range(padding_size)]
-            audios.extend(padding_audios)
+        # INFERENCE: native batched processing
+        inputs = processor(audios, return_tensors="pt")
+        inputs = inputs.to(model.device, dtype=model.dtype)
 
-        inputs = processor(audios, return_tensors="pt", padding=True, sampling_rate=16000).to(args.device).to(torch_dtype)
+        with torch.no_grad():
+            outputs = model.generate(**inputs)
 
-        # Create a mask for output tokens to limit length based on input audio clip length.
-        # Add 2 to token limits to account for <sot> and <eot>.
-        token_generation_limits = [len(clip) * 6.5 // 16000 + 2 for clip in audios]
-        max_new_tokens = torch.tensor(token_generation_limits).reshape((-1, 1)).to(args.device)
-
-        pred_ids = model.generate(**inputs, max_new_tokens=max_new_tokens.max())
-        output_mask = torch.arange(pred_ids.shape[-1]).repeat((pred_ids.shape[0], 1)).to(args.device)
-        output_mask = output_mask > max_new_tokens
-
-        eot_token = model.config.eos_token_id
-        pred_ids.masked_fill(output_mask, eot_token)
-
-        # 3.2 Convert token ids to text transcription
-        pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        pred_text = processor.batch_decode(outputs, skip_special_tokens=True)
 
         # END TIMING
         runtime = time.time() - start_time
 
-        # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
-
-        # normalize transcriptions with English normalizer
-        pred_text = pred_text if padding_size == 0 else pred_text[:-padding_size]
         batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
         batch["references"] = batch["norm_text"]
         return batch
 
     if args.warmup_steps is not None:
-        dataset = data_utils.load_data(args)
-        dataset = data_utils.prepare_data(dataset)
+        warmup_dataset = data_utils.load_data(args)
+        warmup_dataset = data_utils.prepare_data(warmup_dataset)
 
         num_warmup_samples = args.warmup_steps * args.batch_size
         if args.streaming:
-            warmup_dataset = dataset.take(num_warmup_samples)
+            warmup_dataset = warmup_dataset.take(num_warmup_samples)
         else:
-            warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}))
+            warmup_dataset = warmup_dataset.select(range(min(num_warmup_samples, len(warmup_dataset))))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
 
     dataset = data_utils.load_data(args)
+    dataset = data_utils.prepare_data(dataset)
+
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
         if args.streaming:
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset)
 
     dataset = dataset.map(
         benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"],
@@ -115,7 +84,6 @@ def main(args):
         for key in all_results:
             all_results[key].append(result[key])
 
-    # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],
@@ -143,7 +111,7 @@ if __name__ == "__main__":
         "--model_id",
         type=str,
         required=True,
-        help="Model identifier. Should be loadable with 🤗 Transformers",
+        help="Model identifier. Should be loadable with transformers (e.g., 'mistralai/Voxtral-Mini-4B-Realtime-2602')",
     )
     parser.add_argument(
         "--dataset_path",
@@ -173,7 +141,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=16,
+        default=8,
         help="Number of samples to go through each streamed batch.",
     )
     parser.add_argument(
@@ -187,23 +155,6 @@ if __name__ == "__main__":
         dest="streaming",
         action="store_false",
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
-    )
-    parser.add_argument(
-        "--max_new_tokens",
-        type=int,
-        default=None,
-        help="Maximum number of tokens to generate (for auto-regressive models).",
-    )
-    parser.add_argument(
-        "--torch_compile",
-        action="store_true",
-        help="Whether to JIT compile the forward pass of the model.",
-    )
-    parser.add_argument(
-        "--compile_mode",
-        type=str,
-        default="max-autotune",
-        help="Mode for torch compiling model forward pass. Can be either 'default', 'reduce-overhead', 'max-autotune' or 'max-autotune-no-cudagraphs'.",
     )
     parser.add_argument(
         "--warmup_steps",

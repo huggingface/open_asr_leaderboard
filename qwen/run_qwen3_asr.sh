@@ -3,11 +3,8 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=(
-    "usefulsensors/moonshine-streaming-tiny"
-    "usefulsensors/moonshine-streaming-small"
-    "usefulsensors/moonshine-streaming-medium"
-    "usefulsensors/moonshine-base"
-    "usefulsensors/moonshine-tiny"
+    "Qwen/Qwen3-ASR-0.6B"
+    "Qwen/Qwen3-ASR-1.7B"
 )
 BATCH_SIZE=64
 

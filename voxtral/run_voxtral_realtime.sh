@@ -3,11 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=(
-    "usefulsensors/moonshine-streaming-tiny"
-    "usefulsensors/moonshine-streaming-small"
-    "usefulsensors/moonshine-streaming-medium"
-    "usefulsensors/moonshine-base"
-    "usefulsensors/moonshine-tiny"
+    "mistralai/Voxtral-Mini-4B-Realtime-2602"
 )
 BATCH_SIZE=64
 
@@ -17,7 +13,7 @@ for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
 
-    python run_eval.py \
+    python run_eval_realtime.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="voxpopuli" \
@@ -26,7 +22,7 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python run_eval_realtime.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="ami" \
@@ -35,7 +31,7 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python run_eval_realtime.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="earnings22" \
@@ -44,7 +40,7 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python run_eval_realtime.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="gigaspeech" \
@@ -53,7 +49,7 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python run_eval_realtime.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
@@ -62,7 +58,7 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python run_eval_realtime.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="librispeech" \
@@ -71,7 +67,7 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python run_eval_realtime.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="spgispeech" \
@@ -80,7 +76,7 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
-    python run_eval.py \
+    python run_eval_realtime.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
         --dataset="tedlium" \

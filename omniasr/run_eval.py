@@ -1,69 +1,58 @@
 import argparse
 import os
-import torch
-from transformers import (
-    MoonshineForConditionalGeneration,
-    MoonshineStreamingForConditionalGeneration,
-    AutoProcessor,
-)
 
+import torch
+from omnilingual_asr.models.inference.pipeline import ASRInferencePipeline
 import evaluate
 from normalizer import data_utils
 import time
 from tqdm import tqdm
-import numpy as np
 
 wer_metric = evaluate.load("wer")
-torch.set_float32_matmul_precision('high')
 
 def main(args):
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    gen = (
-        MoonshineStreamingForConditionalGeneration
-        if "streaming" in args.model_id
-        else MoonshineForConditionalGeneration
+    # Map model_id to model_card format expected by omnilingual_asr
+    # e.g., "facebook/omniASR-LLM-7B" -> "omniASR_LLM_7B"
+    model_card = args.model_id.split("/")[-1].replace("-", "_")
+
+    # Initialize the ASR pipeline
+    # Convert device integer to torch.device object
+    if args.device >= 0:
+        device = torch.device(f"cuda:{args.device}")
+    else:
+        device = torch.device("cpu")
+
+    pipeline = ASRInferencePipeline(
+        model_card=model_card,
+        device=device
     )
-    model = gen.from_pretrained(args.model_id).to(args.device).to(torch_dtype)
-    processor = AutoProcessor.from_pretrained(args.model_id)
 
-    if args.torch_compile:
-        model.forward = torch.compile(model.forward, mode=args.compile_mode, fullgraph=True)
-        if model.can_generate():
-            # enable static k/v cache for autoregressive models
-            model.generation_config.cache_implementation = "static"
+    MAX_AUDIO_SEC = 40  # Pipeline max audio length (see omnilingual_asr MAX_ALLOWED_AUDIO_SEC)
 
-    def benchmark(batch, min_new_tokens=None):
+    def benchmark(batch):
         # Load audio inputs
-        audios = [audio["array"] for audio in batch["audio"]]
-        minibatch_size = len(audios)
+        minibatch_size = len(batch["audio"])
+
+        # Convert to pipeline input format: list of dicts with waveform and sample_rate
+        # Truncate audio to MAX_AUDIO_SEC to avoid pipeline assert_max_length errors
+        audio_data = []
+        for audio in batch["audio"]:
+            waveform = audio["array"]
+            sample_rate = audio["sampling_rate"]
+            max_samples = int(MAX_AUDIO_SEC * sample_rate)
+            if len(waveform) > max_samples:
+                waveform = waveform[:max_samples]
+            audio_data.append({"waveform": waveform, "sample_rate": sample_rate})
 
         # START TIMING
         start_time = time.time()
 
-        # 1. Pre-Processing
-        # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
-        padding_size = 0
-        if minibatch_size != args.batch_size and args.torch_compile:
-            padding_size = args.batch_size - minibatch_size
-            padding_audios = [audios[-1] for _ in range(padding_size)]
-            audios.extend(padding_audios)
-
-        inputs = processor(audios, return_tensors="pt", padding=True, sampling_rate=16000).to(args.device).to(torch_dtype)
-
-        # Create a mask for output tokens to limit length based on input audio clip length.
-        # Add 2 to token limits to account for <sot> and <eot>.
-        token_generation_limits = [len(clip) * 6.5 // 16000 + 2 for clip in audios]
-        max_new_tokens = torch.tensor(token_generation_limits).reshape((-1, 1)).to(args.device)
-
-        pred_ids = model.generate(**inputs, max_new_tokens=max_new_tokens.max())
-        output_mask = torch.arange(pred_ids.shape[-1]).repeat((pred_ids.shape[0], 1)).to(args.device)
-        output_mask = output_mask > max_new_tokens
-
-        eot_token = model.config.eos_token_id
-        pred_ids.masked_fill(output_mask, eot_token)
-
-        # 3.2 Convert token ids to text transcription
-        pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        lang = [args.language] * minibatch_size
+        transcriptions = pipeline.transcribe(
+            audio_data,
+            lang=lang,
+            batch_size=minibatch_size
+        )
 
         # END TIMING
         runtime = time.time() - start_time
@@ -72,8 +61,7 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # normalize transcriptions with English normalizer
-        pred_text = pred_text if padding_size == 0 else pred_text[:-padding_size]
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
+        batch["predictions"] = [data_utils.normalizer(pred) for pred in transcriptions]
         batch["references"] = batch["norm_text"]
         return batch
 
@@ -86,7 +74,7 @@ def main(args):
             warmup_dataset = dataset.take(num_warmup_samples)
         else:
             warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
@@ -143,7 +131,7 @@ if __name__ == "__main__":
         "--model_id",
         type=str,
         required=True,
-        help="Model identifier. Should be loadable with 🤗 Transformers",
+        help="Model identifier on Hugging Face (e.g., 'facebook/omniASR-LLM-7B')",
     )
     parser.add_argument(
         "--dataset_path",
@@ -189,27 +177,16 @@ if __name__ == "__main__":
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
     )
     parser.add_argument(
-        "--max_new_tokens",
-        type=int,
-        default=None,
-        help="Maximum number of tokens to generate (for auto-regressive models).",
-    )
-    parser.add_argument(
-        "--torch_compile",
-        action="store_true",
-        help="Whether to JIT compile the forward pass of the model.",
-    )
-    parser.add_argument(
-        "--compile_mode",
-        type=str,
-        default="max-autotune",
-        help="Mode for torch compiling model forward pass. Can be either 'default', 'reduce-overhead', 'max-autotune' or 'max-autotune-no-cudagraphs'.",
-    )
-    parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=10,
+        default=2,
         help="Number of warm-up steps to run before launching the timed runs.",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        default="eng_Latn",
+        help="Language code for transcription (e.g., 'eng_Latn' for English). Set to None for language-agnostic transcription.",
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=False)
