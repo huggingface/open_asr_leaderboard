@@ -50,9 +50,9 @@ def load_data(args):
 
     return dataset
 
-def prepare_data(dataset):
-    # Re-sample to 16kHz and normalise transcriptions
-    dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
+def prepare_data(dataset, sampling_rate=16000):
+    # Re-sample and normalise transcriptions
+    dataset = dataset.cast_column("audio", Audio(sampling_rate=sampling_rate))
     dataset = dataset.map(normalize)
     dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
 
