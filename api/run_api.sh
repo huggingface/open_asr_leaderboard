@@ -13,7 +13,7 @@ MODEL_IDs=(
     "openai/gpt-4o-mini-transcribe"
     "openai/whisper-1"
     "assembly/best"
-    "elevenlabs/scribe_v1"
+    "elevenlabs/scribe_v2"
     "revai/machine" # please use --use_url=True
     "revai/fusion" # please use --use_url=True
     "speechmatics/enhanced"
