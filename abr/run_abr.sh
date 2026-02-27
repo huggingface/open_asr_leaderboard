@@ -3,7 +3,7 @@ set -e
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("abr-ai/asr-19m-v2-en-32b")
+MODEL_IDs=("abr-ai/asr-38m-v1-en" "abr-ai/asr-19m-v2-en")
 BATCH_SIZE=256
 MAX_EVAL_SAMPLES=-1
 WARMUP_STEPS=5
