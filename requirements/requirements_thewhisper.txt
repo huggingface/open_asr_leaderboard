@@ -1,7 +1,7 @@
 # TheWhisper requirements
 --extra-index-url https://thestage.jfrog.io/artifactory/api/pypi/pypi-thestage-ai-production/simple
 thestage
-thestage-elastic-models
+thestage-elastic-models==0.1.7
 cupy-cuda12x==13.3.0
 cuda-python==12.8.0
 torch>=2.7.0
