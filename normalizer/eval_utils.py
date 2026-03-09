@@ -149,6 +149,8 @@ def score_results(directory: str, model_id: str = None):
         manifest = read_manifest(result_file)
         model_id_of_file, dataset_id = parse_filepath(result_file)
 
+        manifest = [datum for datum in manifest if datum["text"] != " "]
+
         references = [datum["text"] for datum in manifest]
         predictions = [datum["pred_text"] for datum in manifest]
 
