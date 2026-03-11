@@ -37,6 +37,9 @@ def main(args):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
+        
+        # Compute audio length in seconds (16kHz sampling rate)
+        batch["audio_length_s"] = [len(audio) / 16_000 for audio in audios]
 
         # START TIMING
         start_time = time.time()
@@ -61,7 +64,17 @@ def main(args):
             )
         else:
             # 1.3 Standard Whisper processing: pad audios to 30-seconds and converted to log-mel
-            inputs = processor(audios, sampling_rate=16_000, return_tensors="pt", device=args.device)
+            if args.longform:
+                inputs = processor(
+                    audios,
+                    sampling_rate=16_000,
+                    return_tensors="pt",
+                    truncation=False,
+                    padding="longest",
+                    return_attention_mask=True,
+                )
+            else:
+                inputs = processor(audios, sampling_rate=16_000, return_tensors="pt", device=args.device)
 
         inputs = inputs.to(args.device)
         inputs[model_input_name] = inputs[model_input_name].to(torch.bfloat16)
@@ -70,7 +83,10 @@ def main(args):
         with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
             if model.can_generate():
                 # 2.1 Auto-regressive generation for encoder-decoder models
-                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
+                if args.longform:
+                    pred_ids = model.generate(**inputs, **gen_kwargs, return_timestamps=True)
+                else:   
+                    pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
             else:
                 # 2.2. Single forward pass for CTC
                 with torch.no_grad():
@@ -212,6 +228,11 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Maximum number of tokens to generate (for auto-regressive models).",
+    )
+    parser.add_argument(
+        "--longform",
+        action="store_true",
+        help="Whether to use longform mode.",
     )
     parser.add_argument(
         "--torch_compile",

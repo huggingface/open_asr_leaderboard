@@ -1,6 +1,7 @@
 import argparse
 from typing import Optional
 import datasets
+from datasets import Audio
 import evaluate
 import soundfile as sf
 import tempfile
@@ -17,17 +18,16 @@ from providers import get_provider, PermanentError
 load_dotenv()
 
 
-def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=20):
+def fetch_audio_urls(dataset_path, config_name, split, batch_size=100, max_retries=20):
     API_URL = "https://datasets-server.huggingface.co/rows"
 
-    size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={dataset}&split={split}"
+    size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={config_name}&split={split}"
     size_response = requests.get(size_url).json()
     total_rows = size_response["size"]["config"]["num_rows"]
-    audio_urls = []
     for offset in tqdm(range(0, total_rows, batch_size), desc="Fetching audio URLs"):
         params = {
             "dataset": dataset_path,
-            "config": dataset,
+            "config": config_name,
             "split": split,
             "offset": offset,
             "length": min(batch_size, total_rows - offset),
@@ -92,23 +92,24 @@ def transcribe_with_retry(
 
 def transcribe_dataset(
     dataset_path,
-    dataset,
+    config_name,
     split,
     model_name,
+    language,
     use_url=False,
     max_samples=None,
     max_workers=4,
 ):
     if use_url:
-        audio_rows = fetch_audio_urls(dataset_path, dataset, split)
+        audio_rows = fetch_audio_urls(dataset_path, config_name, split)
         if max_samples:
             audio_rows = itertools.islice(audio_rows, max_samples)
         ds = audio_rows
     else:
-        ds = datasets.load_dataset(dataset_path, dataset, split=split, streaming=False)
-        ds = data_utils.prepare_data(ds)
+        ds = datasets.load_dataset(dataset_path, config_name, split=split, streaming=False)
+        ds = ds.cast_column("audio", Audio(sampling_rate=16000))
         if max_samples:
-            ds = ds.take(max_samples)
+            ds = ds.select(range(min(max_samples, len(ds))))
 
     results = {
         "references": [],
@@ -117,7 +118,7 @@ def transcribe_dataset(
         "transcription_time_s": [],
     }
 
-    print(f"Transcribing with model: {model_name}")
+    print(f"Transcribing with model: {model_name}, language: {language}, config: {config_name}")
 
     def process_sample(sample):
         if use_url:
@@ -126,14 +127,14 @@ def transcribe_dataset(
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, None, sample, use_url=True
+                    model_name, None, sample, use_url=True, language=language
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
                 return None
 
         else:
-            reference = sample.get("norm_text", "").strip() or " "
+            reference = sample.get("text", "").strip() or " "
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
                 sf.write(
                     tmpfile.name,
@@ -149,7 +150,7 @@ def transcribe_dataset(
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, tmp_path, sample, use_url=False
+                    model_name, tmp_path, sample, use_url=False, language=language
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
@@ -182,11 +183,11 @@ def transcribe_dataset(
                 results["transcription_time_s"].append(transcription_time)
 
     results["predictions"] = [
-        data_utils.normalizer(transcription) or " "
+        data_utils.ml_normalizer(transcription) or " "
         for transcription in results["predictions"]
     ]
     results["references"] = [
-        data_utils.normalizer(reference) or " " for reference in results["references"]
+        data_utils.ml_normalizer(reference) or " " for reference in results["references"]
     ]
 
     manifest_path = data_utils.write_manifest(
@@ -194,7 +195,7 @@ def transcribe_dataset(
         results["predictions"],
         model_name.replace("/", "-"),
         dataset_path,
-        dataset,
+        config_name,
         split,
         audio_length=results["audio_length_s"],
         transcription_time=results["transcription_time_s"],
@@ -217,10 +218,11 @@ def transcribe_dataset(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Unified Transcription Script with Concurrency"
+        description="Multilingual API Transcription Script with Concurrency"
     )
     parser.add_argument("--dataset_path", required=True)
-    parser.add_argument("--dataset", required=True)
+    parser.add_argument("--config_name", required=True, help="Dataset config name, e.g. 'fleurs_de'")
+    parser.add_argument("--language", required=True, help="Language code, e.g. 'de'")
     parser.add_argument("--split", default="test")
     parser.add_argument(
         "--model_name",
@@ -241,9 +243,10 @@ if __name__ == "__main__":
 
     transcribe_dataset(
         dataset_path=args.dataset_path,
-        dataset=args.dataset,
+        config_name=args.config_name,
         split=args.split,
         model_name=args.model_name,
+        language=args.language,
         use_url=args.use_url,
         max_samples=args.max_samples,
         max_workers=args.max_workers,
