@@ -50,12 +50,11 @@ def load_data(args):
 
     return dataset
 
-def prepare_data(dataset):
-    # Re-sample to 16kHz and normalise transcriptions
-    dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
-    # Use writer_batch_size=1 to avoid pyarrow offset overflow with large audio blobs
-    dataset = dataset.map(normalize, writer_batch_size=1)
-    dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"], writer_batch_size=1)
+def prepare_data(dataset, sampling_rate=16000):
+    # Re-sample and normalise transcriptions
+    dataset = dataset.cast_column("audio", Audio(sampling_rate=sampling_rate))
+    dataset = dataset.map(normalize)
+    dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
 
     return dataset
 

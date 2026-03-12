@@ -16,7 +16,7 @@ MODEL_IDs=(
     "openai/gpt-4o-transcribe"
     "openai/gpt-4o-mini-transcribe"
     "openai/whisper-1"
-    "assembly/best"
+    "assembly/universal-3-pro"
     "elevenlabs/scribe_v1"
     "speechmatics/enhanced"
 )
