@@ -100,7 +100,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
     # Evaluate results
     RUNDIR=`pwd`
     cd ../normalizer
-    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')"
+    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}', multilingual=True)"
     cd "$RUNDIR"
 
     echo ""
