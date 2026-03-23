@@ -10,6 +10,7 @@ export ASSEMBLYAI_API_KEY="your_api_key"
 export ELEVENLABS_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
+export SPEECHMATICS_API_KEY="your_api_key"
 
 # Configuration
 MODEL_IDs=(
@@ -17,18 +18,18 @@ MODEL_IDs=(
     "openai/gpt-4o-mini-transcribe"
     "openai/whisper-1"
     "assembly/universal-3-pro"
-    "elevenlabs/scribe_v1"
+    "elevenlabs/scribe_v2"
     "speechmatics/enhanced"
 )
 
-MAX_WORKERS=10
+MAX_WORKERS=200
 DATASET_PATH="nithinraok/asr-leaderboard-datasets"
 
 # German, French, Italian, Spanish, Portuguese
-declare -A EVAL_DATASETS
-EVAL_DATASETS["fleurs"]="de fr it es pt"
-EVAL_DATASETS["mcv"]="de es fr it"
-EVAL_DATASETS["mls"]="es fr it pt"
+DATASET_NAMES=("fleurs" "mcv" "mls")
+DATASET_LANGS_fleurs="de fr it es pt"
+DATASET_LANGS_mcv="de es fr it"
+DATASET_LANGS_mls="es fr it pt"
 
 # Function to run evaluation
 run_evaluation() {
@@ -77,10 +78,11 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
     echo "========================================================"
 
     # Run evaluations for all datasets and languages
-    for dataset in "${!EVAL_DATASETS[@]}"; do
-        if [[ ${EVAL_DATASETS[$dataset]} ]]; then
-            languages=${EVAL_DATASETS[$dataset]}
+    for dataset in "${DATASET_NAMES[@]}"; do
+        varname="DATASET_LANGS_${dataset}"
+        languages="${!varname}"
 
+        if [[ -n "$languages" ]]; then
             echo ""
             echo "Processing dataset: $dataset"
             echo "   Languages: $languages"

@@ -4,6 +4,7 @@ export PYTHONPATH="..":$PYTHONPATH
 
 # Available omniASR models
 MODEL_IDs=(
+    "facebook/omniASR-CTC-300M" "facebook/omniASR-CTC-1B" "facebook/omniASR-CTC-3B" "facebook/omniASR-CTC-7B"
     "facebook/omniASR-CTC-300M-v2" "facebook/omniASR-CTC-1B-v2" "facebook/omniASR-CTC-3B-v2" "facebook/omniASR-CTC-7B-v2"
     "facebook/omniASR-LLM-300M" "facebook/omniASR-LLM-1B" "facebook/omniASR-LLM-3B" "facebook/omniASR-LLM-7B"
     "facebook/omniASR-LLM-300M-v2" "facebook/omniASR-LLM-1B-v2" "facebook/omniASR-LLM-3B-v2" "facebook/omniASR-LLM-7B-v2"
@@ -13,10 +14,10 @@ BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
 # Multilingual datasets and languages
 DATASETS="nithinraok/asr-leaderboard-datasets"
 
-declare -A EVAL_DATASETS
-EVAL_DATASETS["fleurs"]="de fr it es pt"
-EVAL_DATASETS["mcv"]="de es fr it"
-EVAL_DATASETS["mls"]="es fr it pt"
+DATASET_NAMES=("fleurs" "mcv" "mls")
+DATASET_LANGS_fleurs="de fr it es pt"
+DATASET_LANGS_mcv="de es fr it"
+DATASET_LANGS_mls="es fr it pt"
 
 # Function to run multilingual evaluation
 run_evaluation() {
@@ -65,9 +66,10 @@ do
     echo "Model: $MODEL_ID"
     echo "========================================================"
 
-    for dataset in fleurs mcv mls; do
-        if [[ ${EVAL_DATASETS[$dataset]} ]]; then
-            languages=${EVAL_DATASETS[$dataset]}
+    for dataset in "${DATASET_NAMES[@]}"; do
+        varname="DATASET_LANGS_${dataset}"
+        languages="${!varname}"
+        if [[ -n "$languages" ]]; then
 
             echo "Processing multilingual dataset: $dataset"
             echo "   Languages: $languages"

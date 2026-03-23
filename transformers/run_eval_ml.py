@@ -4,6 +4,7 @@ import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 import evaluate
 from normalizer import data_utils
+from normalizer.eval_utils import normalize_compound_pairs
 import time
 from tqdm import tqdm
 from datasets import load_dataset, Audio
@@ -88,8 +89,8 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # Normalize with multilingual normalizer
-        batch["predictions"] = [data_utils.ml_normalizer(pred) for pred in pred_text]
-        batch["references"] = [data_utils.ml_normalizer(ref) for ref in batch["text"]]
+        batch["predictions"] = [data_utils.ml_normalizer(pred, lang=args.language) for pred in pred_text]
+        batch["references"] = [data_utils.ml_normalizer(ref, lang=args.language) for ref in batch["text"]]
 
         return batch
 
@@ -139,6 +140,19 @@ def main(args):
         for key in all_results:
             all_results[key].append(result[key])
 
+    # Filter empty references (consistent with English pipeline)
+    filtered = [
+        (ref, pred, dur, time_s)
+        for ref, pred, dur, time_s in zip(
+            all_results["references"], all_results["predictions"],
+            all_results["audio_length_s"], all_results["transcription_time_s"]
+        )
+        if data_utils.is_target_text_in_range(ref)
+    ]
+    if filtered:
+        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"] = zip(*filtered)
+        all_results = {k: list(v) for k, v in all_results.items()}
+
     # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
         all_results["references"],
@@ -152,9 +166,8 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
-    )
+    wer_refs, wer_preds = normalize_compound_pairs(all_results["references"], all_results["predictions"])
+    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print("WER:", wer, "%", "RTFx:", rtfx)
@@ -180,6 +193,12 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Config name for the dataset. E.g. 'fleurs_de' for German FLEURS.",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        required=True,
+        help="Language code, e.g. 'de' for German.",
     )
     parser.add_argument(
         "--split",

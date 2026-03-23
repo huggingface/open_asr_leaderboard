@@ -3,6 +3,7 @@
 import argparse
 import io
 import os
+os.environ["DATASETS_USE_TORCHCODEC"] = "0"
 import torch
 import evaluate
 import soundfile
@@ -10,7 +11,9 @@ import numpy as np
 from tqdm import tqdm
 from datasets import load_dataset
 from normalizer import data_utils
+from normalizer.eval_utils import normalize_compound_pairs
 from nemo.collections.asr.models import ASRModel
+from omegaconf import OmegaConf
 import time
 
 
@@ -66,6 +69,8 @@ def main(args):
     # Configure decoding strategy
     if asr_model.cfg.decoding.strategy != "beam":
         asr_model.cfg.decoding.strategy = "greedy_batch"
+        if hasattr(asr_model.cfg.decoding, "greedy"):
+            OmegaConf.update(asr_model.cfg.decoding, "greedy.use_cuda_graph_decoder", False, force_add=True)
         asr_model.change_decoding_strategy(asr_model.cfg.decoding)
 
     def download_audio_files(batch):
@@ -171,8 +176,19 @@ def main(args):
         references = [data_utils.normalizer(ref) for ref in references]
         predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
     else:
-        references = [data_utils.ml_normalizer(ref) for ref in references]
-        predictions = [data_utils.ml_normalizer(pred.text) for pred in transcriptions]
+        references = [data_utils.ml_normalizer(ref, lang=LANGUAGE) for ref in references]
+        predictions = [data_utils.ml_normalizer(pred.text, lang=LANGUAGE) for pred in transcriptions]
+
+    # Filter empty references (consistent with English pipeline)
+    filtered = [
+        (ref, pred, dur)
+        for ref, pred, dur in zip(references, predictions, all_data["durations"])
+        if data_utils.is_target_text_in_range(ref)
+    ]
+    if filtered:
+        references, predictions, all_data["durations"] = zip(*filtered)
+        references, predictions = list(references), list(predictions)
+        all_data["durations"] = list(all_data["durations"])
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
@@ -191,7 +207,8 @@ def main(args):
     print("Results saved at path:", os.path.abspath(manifest_path))
 
     # Calculate metrics
-    wer = wer_metric.compute(references=references, predictions=predictions)
+    wer_refs, wer_preds = normalize_compound_pairs(references, predictions)
+    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
 
     audio_length = sum(all_data["durations"])
