@@ -7,7 +7,7 @@ export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
 MODEL_IDs=(
-    "openai/whisper-large-v3"
+    # "openai/whisper-large-v3"
     "openai/whisper-large-v3-turbo"
 )
 
@@ -44,6 +44,7 @@ run_evaluation() {
         --model_id="$model_id" \
         --dataset="$DATASETS" \
         --config_name="$config_name" \
+        --language="$language" \
         --split="test" \
         --device="$DEVICE_ID" \
         --batch_size="$BATCH_SIZE" \

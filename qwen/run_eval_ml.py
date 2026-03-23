@@ -4,6 +4,7 @@ import torch
 from qwen_asr import Qwen3ASRModel
 import evaluate
 from normalizer import data_utils
+from normalizer.eval_utils import normalize_compound_pairs
 import time
 from tqdm import tqdm
 from datasets import load_dataset, Audio
@@ -13,6 +14,15 @@ wer_metric = evaluate.load("wer")
 def main(args):
     CONFIG_NAME = args.config_name
     SPLIT_NAME = args.split
+
+    # Extract language from config_name if not provided
+    if args.language:
+        LANGUAGE = args.language
+    else:
+        try:
+            LANGUAGE = CONFIG_NAME.split("_", 1)[1]
+        except IndexError:
+            LANGUAGE = "en"
 
     # Load Qwen3-ASR model
     model = Qwen3ASRModel.from_pretrained(
@@ -76,8 +86,8 @@ def main(args):
         batch["references"] = batch["text"]
 
         # Normalize transcriptions with multilingual normalizer
-        batch["predictions"] = [data_utils.ml_normalizer(pred) for pred in pred_text]
-        batch["references"] = [data_utils.ml_normalizer(ref) for ref in batch["references"]]
+        batch["predictions"] = [data_utils.ml_normalizer(pred, lang=LANGUAGE) for pred in pred_text]
+        batch["references"] = [data_utils.ml_normalizer(ref, lang=LANGUAGE) for ref in batch["references"]]
 
         return batch
 
@@ -121,6 +131,19 @@ def main(args):
         for key in all_results:
             all_results[key].append(result[key])
 
+    # Filter empty references (consistent with English pipeline)
+    filtered = [
+        (ref, pred, dur, time_s)
+        for ref, pred, dur, time_s in zip(
+            all_results["references"], all_results["predictions"],
+            all_results["audio_length_s"], all_results["transcription_time_s"]
+        )
+        if data_utils.is_target_text_in_range(ref)
+    ]
+    if filtered:
+        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"] = zip(*filtered)
+        all_results = {k: list(v) for k, v in all_results.items()}
+
     # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
         all_results["references"],
@@ -134,9 +157,8 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
-    )
+    wer_refs, wer_preds = normalize_compound_pairs(all_results["references"], all_results["predictions"])
+    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print("WER:", wer, "%", "RTFx:", rtfx)
@@ -162,6 +184,12 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Config name for the dataset. *E.g.* `'fleurs_en'` for English FLEURS.",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        default=None,
+        help="Language code (e.g., 'de'). If not provided, extracted from config_name.",
     )
     parser.add_argument(
         "--split",

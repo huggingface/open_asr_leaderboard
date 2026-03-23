@@ -11,17 +11,16 @@ MODEL_IDs=(
     "mistralai/Voxtral-Small-24B-2507"
 )
 
-BATCH_SIZE=8
 DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="nithinraok/asr-leaderboard-datasets"
 
 # Voxtral supports: English, Spanish, French, Portuguese, Hindi, German, Dutch, Italian
-declare -A EVAL_DATASETS
-EVAL_DATASETS["fleurs"]="de fr it es pt hi nl"
-EVAL_DATASETS["mcv"]="de es fr it nl"
-EVAL_DATASETS["mls"]="es fr it pt nl"
+DATASET_NAMES=("fleurs" "mcv" "mls")
+DATASET_LANGS_fleurs="de fr it es pt"
+DATASET_LANGS_mcv="de es fr it"
+DATASET_LANGS_mls="es fr it pt"
 
 # Function to run evaluation
 run_evaluation() {
@@ -36,7 +35,7 @@ run_evaluation() {
     echo "   Dataset: $dataset"
     echo "   Language: $language"
     echo "   Device: $DEVICE_ID"
-    echo "   Batch Size: $BATCH_SIZE"
+    echo "   Batch Size: $batch_size"
     echo "   Time: $(date)"
     echo "----------------------------------------"
 
@@ -46,7 +45,7 @@ run_evaluation() {
         --config_name="$config_name" \
         --split="test" \
         --device="$DEVICE_ID" \
-        --batch_size="$BATCH_SIZE" \
+        --batch_size="$batch_size" \
         --max_eval_samples=-1
 
     local exit_code=$?
@@ -64,23 +63,30 @@ run_evaluation() {
 # Main execution
 echo "========================================================"
 echo "Starting Voxtral Multilingual Evaluation"
-echo "Batch Size: $BATCH_SIZE"
 echo "Device: $DEVICE_ID"
 echo ""
 
 # Run evaluations for all models
 for MODEL_ID in "${MODEL_IDs[@]}"; do
+    # Per-model batch size
+    if [[ "$MODEL_ID" == *"24B"* ]]; then
+        batch_size=24
+    else
+        batch_size=64
+    fi
+
     echo ""
-    echo "📦 Processing Model: $MODEL_ID"
+    echo "Processing Model: $MODEL_ID (batch_size=$batch_size)"
     echo "========================================================"
 
     # Run evaluations for all datasets and languages
-    for dataset in "${!EVAL_DATASETS[@]}"; do
-        if [[ ${EVAL_DATASETS[$dataset]} ]]; then
-            languages=${EVAL_DATASETS[$dataset]}
+    for dataset in "${DATASET_NAMES[@]}"; do
+        varname="DATASET_LANGS_${dataset}"
+        languages="${!varname}"
 
+        if [[ -n "$languages" ]]; then
             echo ""
-            echo "🗂️  Processing dataset: $dataset"
+            echo "Processing dataset: $dataset"
             echo "   Languages: $languages"
             echo ""
 

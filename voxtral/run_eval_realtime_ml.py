@@ -15,6 +15,15 @@ def main(args):
     CONFIG_NAME = args.config_name
     SPLIT_NAME = args.split
 
+    # Extract language from config_name if not provided
+    if args.language:
+        LANGUAGE = args.language
+    else:
+        try:
+            LANGUAGE = CONFIG_NAME.split("_", 1)[1]
+        except IndexError:
+            LANGUAGE = "en"
+
     print(f"Loading model: {args.model_id}")
     processor = AutoProcessor.from_pretrained(args.model_id)
     model = VoxtralRealtimeForConditionalGeneration.from_pretrained(
@@ -65,8 +74,8 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         batch["references"] = batch["text"]
-        batch["predictions"] = [data_utils.ml_normalizer(pred) for pred in pred_text]
-        batch["references"] = [data_utils.ml_normalizer(ref) for ref in batch["references"]]
+        batch["predictions"] = [data_utils.ml_normalizer(pred, lang=LANGUAGE) for pred in pred_text]
+        batch["references"] = [data_utils.ml_normalizer(ref, lang=LANGUAGE) for ref in batch["references"]]
 
         return batch
 
@@ -110,6 +119,19 @@ def main(args):
         for key in all_results:
             all_results[key].append(result[key])
 
+    # Filter empty references (consistent with English pipeline)
+    filtered = [
+        (ref, pred, dur, time_s)
+        for ref, pred, dur, time_s in zip(
+            all_results["references"], all_results["predictions"],
+            all_results["audio_length_s"], all_results["transcription_time_s"]
+        )
+        if data_utils.is_target_text_in_range(ref)
+    ]
+    if filtered:
+        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"] = zip(*filtered)
+        all_results = {k: list(v) for k, v in all_results.items()}
+
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],
@@ -150,6 +172,12 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Config name for the dataset. *E.g.* `'fleurs_en'` for English FLEURS.",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        default=None,
+        help="Language code (e.g., 'de'). If not provided, extracted from config_name.",
     )
     parser.add_argument(
         "--split",

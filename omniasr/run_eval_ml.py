@@ -5,40 +5,12 @@ import torch
 from omnilingual_asr.models.inference.pipeline import ASRInferencePipeline
 import evaluate
 from normalizer import data_utils
+from normalizer.eval_utils import normalize_compound_pairs
 from datasets import load_dataset, Audio
 import time
 from tqdm import tqdm
 
 wer_metric = evaluate.load("wer")
-
-# Mapping from ISO 639-1 language codes to omniASR language codes (BCP 47 / Flores-200 style)
-LANG_CODE_MAP = {
-    "en": "eng_Latn",
-    "de": "deu_Latn",
-    "fr": "fra_Latn",
-    "es": "spa_Latn",
-    "it": "ita_Latn",
-    "pt": "por_Latn",
-    "nl": "nld_Latn",
-    "pl": "pol_Latn",
-    "cs": "ces_Latn",
-    "da": "dan_Latn",
-    "el": "ell_Grek",
-    "et": "est_Latn",
-    "fi": "fin_Latn",
-    "hr": "hrv_Latn",
-    "hu": "hun_Latn",
-    "lt": "lit_Latn",
-    "lv": "lvs_Latn",
-    "mt": "mlt_Latn",
-    "ro": "ron_Latn",
-    "ru": "rus_Cyrl",
-    "sk": "slk_Latn",
-    "sl": "slv_Latn",
-    "sv": "swe_Latn",
-    "uk": "ukr_Cyrl",
-}
-
 
 def main(args):
     CONFIG_NAME = args.config_name
@@ -53,12 +25,8 @@ def main(args):
         except IndexError:
             LANGUAGE = "en"
 
-    # Map to omniASR language code
-    omniasr_lang = LANG_CODE_MAP.get(LANGUAGE, "eng_Latn")
-    print(f"Language: {LANGUAGE} -> omniASR lang code: {omniasr_lang}")
-
-    # Always use the multilingual normalizer
-    text_normalizer = data_utils.ml_normalizer
+    # Always use the multilingual normalizer with number normalization
+    text_normalizer = lambda s: data_utils.ml_normalizer(s, lang=LANGUAGE)
 
     # Map model_id to model_card format expected by omnilingual_asr
     # e.g., "facebook/omniASR-LLM-7B" -> "omniASR_LLM_7B"
@@ -116,10 +84,8 @@ def main(args):
         start_time = time.time()
 
         # Inference with the appropriate language code
-        lang = [omniasr_lang] * minibatch_size
         transcriptions = pipeline.transcribe(
             audio_data,
-            # lang=lang,
             batch_size=minibatch_size
         )
 
@@ -214,9 +180,8 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
-    )
+    wer_refs, wer_preds = normalize_compound_pairs(all_results["references"], all_results["predictions"])
+    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print(f"Dataset: {args.dataset}")

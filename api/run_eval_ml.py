@@ -12,6 +12,7 @@ import itertools
 from tqdm import tqdm
 from dotenv import load_dotenv
 from normalizer import data_utils
+from normalizer.eval_utils import normalize_compound_pairs
 import concurrent.futures
 from providers import get_provider, PermanentError
 
@@ -183,12 +184,26 @@ def transcribe_dataset(
                 results["transcription_time_s"].append(transcription_time)
 
     results["predictions"] = [
-        data_utils.ml_normalizer(transcription) or " "
+        data_utils.ml_normalizer(transcription, lang=language)
         for transcription in results["predictions"]
     ]
     results["references"] = [
-        data_utils.ml_normalizer(reference) or " " for reference in results["references"]
+        data_utils.ml_normalizer(reference, lang=language)
+        for reference in results["references"]
     ]
+
+    # Filter empty references (consistent with English pipeline's prepare_data)
+    filtered = [
+        (ref, pred, dur, time_s)
+        for ref, pred, dur, time_s in zip(
+            results["references"], results["predictions"],
+            results["audio_length_s"], results["transcription_time_s"]
+        )
+        if data_utils.is_target_text_in_range(ref)
+    ]
+    if filtered:
+        results["references"], results["predictions"], results["audio_length_s"], results["transcription_time_s"] = zip(*filtered)
+        results = {k: list(v) for k, v in results.items()}
 
     manifest_path = data_utils.write_manifest(
         results["references"],
@@ -204,9 +219,8 @@ def transcribe_dataset(
     print("Results saved at path:", manifest_path)
 
     wer_metric = evaluate.load("wer")
-    wer = wer_metric.compute(
-        references=results["references"], predictions=results["predictions"]
-    )
+    wer_refs, wer_preds = normalize_compound_pairs(results["references"], results["predictions"])
+    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer_percent = round(100 * wer, 2)
     rtfx = round(
         sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2

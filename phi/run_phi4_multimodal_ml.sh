@@ -19,10 +19,10 @@ DATASETS="nithinraok/asr-leaderboard-datasets"
 default_user_prompt="Transcribe the audio clip into text."
 
 # German, French, Italian, Spanish, Portuguese
-declare -A EVAL_DATASETS
-EVAL_DATASETS["fleurs"]="de fr it es pt"
-EVAL_DATASETS["mcv"]="de es fr it"
-EVAL_DATASETS["mls"]="es fr it pt"
+DATASET_NAMES=("fleurs" "mcv" "mls")
+DATASET_LANGS_fleurs="de fr it es pt"
+DATASET_LANGS_mcv="de es fr it"
+DATASET_LANGS_mls="es fr it pt"
 
 # Function to run evaluation
 run_evaluation() {
@@ -79,9 +79,10 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
     echo "========================================================"
 
     # Run evaluations for all datasets and languages
-    for dataset in "${!EVAL_DATASETS[@]}"; do
-        if [[ ${EVAL_DATASETS[$dataset]} ]]; then
-            languages=${EVAL_DATASETS[$dataset]}
+    for dataset in "${DATASET_NAMES[@]}"; do
+        varname="DATASET_LANGS_${dataset}"
+        languages="${!varname}"
+        if [[ -n "$languages" ]]; then
 
             echo ""
             echo "Processing dataset: $dataset"
