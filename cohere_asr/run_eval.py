@@ -49,43 +49,37 @@ def main(args):
             )
         return records
 
-    def run_batched_inference(records, desc, collect_results):
-        audio_lengths = []
-        transcription_times = []
-        predictions = []
-        references = []
+    def transcribe_records(records, collect_results) -> tuple[list[float], list[float], list[str], list[str]] | None:
 
-        for start_idx in tqdm(range(0, len(records), args.batch_size), desc=desc):
-            batch_records = records[start_idx:start_idx + args.batch_size]
-            audios = [record["audio_array"] for record in batch_records]
-            sample_rates = [record["sampling_rate"] for record in batch_records]
+        audios = [record["audio_array"] for record in records]
+        sample_rates = [record["sampling_rate"] for record in records]
 
-            start_time = time.time()
-            # following canary-1b and canary-1b-flash, we set punctuation=False for English and for other languages, we set punctuation=True 
-            batch_predictions = model.transcribe(
-                processor=processor,
-                audio_arrays=audios,
-                sample_rates=sample_rates,
-                language=args.language,
-                punctuation=args.language != "en",
-                batch_size=args.batch_size,
-                compile=not args.no_torch_compile,
-            )
-            runtime = time.time() - start_time
-            per_sample_runtime = runtime / len(batch_records)
+        start_time = time.time()
+        # following canary-1b and canary-1b-flash, we set punctuation=False for English and for other languages, we set punctuation=True 
+        batch_predictions = model.transcribe(
+            processor=processor,
+            audio_arrays=audios,
+            sample_rates=sample_rates,
+            language=args.language,
+            punctuation=args.language != "en",
+            batch_size=args.batch_size,
+            compile=not args.no_torch_compile,
+        )
+        runtime = time.time() - start_time
+        per_sample_runtime = runtime / len(records)
 
-            if not collect_results:
-                continue
+        if not collect_results:
+            return None
 
-            audio_lengths.extend(record["audio_length_s"] for record in batch_records)
-            transcription_times.extend([per_sample_runtime] * len(batch_records))
+        audio_lengths = [record["audio_length_s"] for record in records]
+        transcription_times = [per_sample_runtime] * len(records)
 
-            normalizer = data_utils.normalizer if args.language == 'en' else data_utils.ml_normalizer
-            predictions.extend(normalizer(remove_brackets(pred)) for pred in batch_predictions)
-            if args.language == 'en':
-                references.extend(record["reference_norm_en"] for record in batch_records)
-            else:
-                references.extend(normalizer(record["reference"]) for record in batch_records)
+        normalizer = data_utils.normalizer if args.language == 'en' else data_utils.ml_normalizer
+        predictions = [normalizer(remove_brackets(pred)) for pred in batch_predictions]
+        if args.language == 'en':
+            references = [record["reference_norm_en"] for record in records]
+        else:
+            references = [normalizer(record["reference"]) for record in records]
 
         return audio_lengths, transcription_times, predictions, references
 
@@ -99,7 +93,7 @@ def main(args):
         else:
             warmup_dataset = warmup_dataset.select(range(min(num_warmup_samples, len(warmup_dataset))))
         warmup_records = build_records(iter(warmup_dataset), desc="Preparing warm-up samples...")
-        run_batched_inference(warmup_records, desc="Warming up...", collect_results=False)
+        transcribe_records(warmup_records, collect_results=False)
 
     dataset = data_utils.load_data(args)
     dataset = data_utils.prepare_data(dataset)
@@ -118,7 +112,7 @@ def main(args):
         transcription_times,
         predictions,
         references,
-    ) = run_batched_inference(records, desc="Samples...", collect_results=True)
+    ) = transcribe_records(records, collect_results=True)
 
     # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
