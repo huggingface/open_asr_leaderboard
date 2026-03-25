@@ -48,7 +48,7 @@ class ZoomProvider(APIProvider):
                   "config": {
                     "language": "en-US",
                     "segmentation_mode": segmentation_mode,
-                    "experimental_feature": {"s2s_model": True},
+                    "experimental_feature": {"model_pro": True},
                     "timestamps": True,
                   }},
             timeout=300,
