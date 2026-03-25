@@ -2,7 +2,7 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("bezzam/VibeVoice-ASR-7B")
+MODEL_IDs=("microsoft/VibeVoice-ASR-HF")
 BATCH_SIZE=16
 
 num_models=${#MODEL_IDs[@]}
