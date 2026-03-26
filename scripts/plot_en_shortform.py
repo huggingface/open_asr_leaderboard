@@ -4,13 +4,13 @@ Plot Pareto frontier for the main (English) ASR leaderboard.
 Setup: pip install pandas matplotlib
 Usage: 
 ```
-python scripts/plot_en_shortform.py <csv_file>
-python scripts/plot_en_shortform.py <csv_file> --highlight "model_id"
+python scripts/plot_en_shortform.py
+python scripts/plot_en_shortform.py --highlight "model_id"
 ```
 
 Example:
 ```
-python scripts/plot_en_shortform.py scripts/data/25032026_en_shortform.csv --highlight "ibm-granite/granite-4.0-1b-speech"
+python scripts/plot_en_shortform.py --highlight "CohereLabs/cohere-transcribe-03-2026"
 ```
 """
 
@@ -24,7 +24,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Plot Pareto frontier for the main (English) ASR leaderboard."
     )
-    parser.add_argument("csv_file", help="Path to the leaderboard CSV file.")
+    parser.add_argument("--csv_file", default="scripts/data/en_shortform.csv", help="Path to the leaderboard CSV file (default: scripts/data/en_shortform.csv).")
     parser.add_argument("--label-col", default="model", help="Column name for model labels (default: model).")
     parser.add_argument("--x-col", default="Avg. WER", help="Column name for x-axis values (default: 'Avg. WER').")
     parser.add_argument("--rtfx-col", default="RTFx", help="Column name for RTFx values (default: RTFx).")

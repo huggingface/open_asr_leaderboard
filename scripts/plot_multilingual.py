@@ -4,13 +4,13 @@ Plot Pareto frontier for the multilingual ASR leaderboard.
 Setup: pip install pandas matplotlib
 Usage:
 ```
-python scripts/plot_multilingual.py <csv_file>
-python scripts/plot_multilingual.py <csv_file> --highlight "model_id"
+python scripts/plot_multilingual.py
+python scripts/plot_multilingual.py --highlight "model_id"
 ```
 
 Example:
 ```
-python scripts/plot_multilingual.py scripts/data/25032026_multilingual.csv --highlight "nvidia/parakeet-tdt-0.6b-v3"
+python scripts/plot_multilingual.py --highlight "CohereLabs/cohere-transcribe-03-2026"
 ```
 """
 
@@ -24,7 +24,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Plot Pareto frontier for the multilingual ASR leaderboard."
     )
-    parser.add_argument("csv_file", help="Path to the multilingual leaderboard CSV file.")
+    parser.add_argument("--csv_file", default="scripts/data/multilingual.csv", help="Path to the multilingual leaderboard CSV file (default: scripts/data/multilingual.csv).")
     parser.add_argument("--label-col", default="model", help="Column name for model labels (default: model).")
     parser.add_argument("--rtfx-col", default="RTFx", help="Column name for RTFx values (default: RTFx).")
     parser.add_argument("--size-col", default="Model size (B)", help="Column name for model size (default: 'Model size (B)').")

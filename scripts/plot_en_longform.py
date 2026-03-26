@@ -4,13 +4,13 @@ Plot Pareto frontier for the longform ASR leaderboard.
 Setup: pip install pandas matplotlib
 Usage:
 ```
-python scripts/plot_longform.py <csv_file>
-python scripts/plot_longform.py <csv_file> --highlight "model_id"
+python scripts/plot_en_longform.py
+python scripts/plot_en_longform.py --highlight "model_id"
 ```
 
 Example:
 ```
-python scripts/plot_longform.py scripts/data/25032026_longform.csv --highlight "nvidia/parakeet-tdt-0.6b-v3"
+python scripts/plot_en_longform.py --highlight "CohereLabs/cohere-transcribe-03-2026"
 ```
 """
 
@@ -24,18 +24,18 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Plot Pareto frontier for the longform ASR leaderboard."
     )
-    parser.add_argument("csv_file", help="Path to the longform leaderboard CSV file.")
+    parser.add_argument("--csv_file", default="scripts/data/en_longform.csv", help="Path to the longform leaderboard CSV file (default: scripts/data/en_longform.csv).")
     parser.add_argument("--label-col", default="model_id", help="Column name for model labels (default: model_id).")
     parser.add_argument("--wer-col", default="Average", help="Column name for average WER (default: Average).")
     parser.add_argument("--rtfx-col", default="RTFx", help="Column name for RTFx values (default: RTFx).")
     parser.add_argument("--size-col", default="Model size (B)", help="Column name for model size (default: 'Model size (B)').")
 
     # RTFx plot limits
-    parser.add_argument("--rtfx-xlim", type=float, nargs=2, default=[10, 25], metavar=("MIN", "MAX"), help="X-axis limits for the RTFx plot (default: 5 25).")
+    parser.add_argument("--rtfx-xlim", type=float, nargs=2, default=[5, 25], metavar=("MIN", "MAX"), help="X-axis limits for the RTFx plot (default: 5 25).")
     parser.add_argument("--rtfx-ylim", type=float, nargs=2, default=[1e2, 1e4], metavar=("MIN", "MAX"), help="Y-axis limits for the RTFx plot (default: 1e1 1e4).")
 
     # Model size plot limits
-    parser.add_argument("--size-xlim", type=float, nargs=2, default=[10, 25], metavar=("MIN", "MAX"), help="X-axis limits for the model-size plot (default: 5 25).")
+    parser.add_argument("--size-xlim", type=float, nargs=2, default=[5, 25], metavar=("MIN", "MAX"), help="X-axis limits for the model-size plot (default: 5 25).")
     parser.add_argument("--size-ylim", type=float, nargs=2, default=None, metavar=("MIN", "MAX"), help="Y-axis limits for the model-size plot (default: None).")
     parser.add_argument("--size-yfact", type=float, default=1e3, help="Multiplicative factor for model size values, e.g. 1e3 to convert B to M (default: 1000).")
 

@@ -1,4 +1,5 @@
 model,Avg. WER,RTFx,Model size (B),License,AMI WER,Earnings22 WER,Gigaspeech WER,LS Clean WER,LS Other WER,SPGISpeech WER,Tedlium WER,Voxpopuli WER
+CohereLabs/cohere-transcribe-03-2026,5.42,524.88,2,Open,8.13,10.86,9.34,1.25,2.37,3.08,2.49,5.87
 zoom/scribe_v1,5.47,-1,-1,Proprietary,10.03,9.53,9.61,1.63,2.81,1.59,3.22,5.37
 ibm-granite/granite-4.0-1b-speech,5.52,280.02,2,Open,8.44,8.48,10.14,1.42,2.85,3.89,3.1,5.84
 nvidia/canary-qwen-2.5b,5.63,418.28,2.5,Open,10.19,10.45,9.43,1.61,3.1,1.9,2.71,5.66
@@ -63,7 +64,7 @@ distil-whisper/distil-medium.en,8.765,279.7331043,0.4,Open,16.12,12.99,11.3,3.69
 nvidia/stt_en_fastconformer_ctc_large,8.965,6399.25031,0.115,Open,18.61,18.81,12.17,1.93,4.04,5.06,4.76,6.34
 nvidia/stt_en_fastconformer_transducer_large,9.0575,4097.432343,0.114,Open,19.09,19.41,12.31,1.8,3.97,4.97,4.46,6.45
 usefulsensors/moonshine-base,9.99,565.97,0.0615,Open,17.49,16.85,12.08,3.38,8.15,5.46,5.65,10.84
-stt_en_conformer_transducer_small,10.2575,3714.361304,-1,Open,20.28,18.13,13.7,2.77,6.47,6.63,6.21,7.87
+nvidia/stt_en_conformer_transducer_small,10.2575,3714.361304,0.014,Open,20.28,18.13,13.7,2.77,6.47,6.63,6.21,7.87
 openai/whisper-base.en,10.3175,320.6738853,0.0726,Open,21.13,15.09,12.83,4.25,10.35,4.26,4.87,9.76
 abr-ai/asr-19m-v2-en-32b,10.61,2862.63,0.019,Open,18.76,13.53,15.44,4.66,11.16,3.94,7.53,9.88
 facebook/omniASR-CTC-7B-v2,10.65,267.43,6.504786132,Open,23.86,17.11,15.37,2.56,5.6,6.07,6.27,8.39
