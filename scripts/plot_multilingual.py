@@ -6,11 +6,13 @@ Usage:
 ```
 python scripts/plot_multilingual.py
 python scripts/plot_multilingual.py --highlight "model_id"
+python scripts/plot_multilingual.py --csv_file <path> --custom-model "model,avg_wer,rtfx,size"
 ```
 
 Example:
 ```
-python scripts/plot_multilingual.py --highlight "CohereLabs/cohere-transcribe-03-2026"
+python scripts/plot_multilingual.py --highlight "nvidia/parakeet-tdt-0.6b-v3"
+python scripts/plot_multilingual.py --custom-model "MY AWESOME MODEL,6.5,800,2.0"
 ```
 """
 
@@ -45,6 +47,9 @@ def parse_args():
 
     # Highlight specific
     parser.add_argument("--highlight", default=None, help="Model name to highlight with a star marker and red label (default: None).")
+    
+    # Custom model to add
+    parser.add_argument("--custom-model", default=None, help="Custom model to add to the plot in format 'model,avg_wer,rtfx,size' (e.g., 'MY MODEL,6.5,800,2.0').")
 
     return parser.parse_args()
 
@@ -53,13 +58,36 @@ if __name__ == "__main__":
     args = parse_args()
 
     df = pd.read_csv(args.csv_file)
+    
+    # Add custom model if provided (before computing averages)
+    if args.custom_model:
+        parts = args.custom_model.split(',')
+        if len(parts) != 4:
+            raise ValueError("Custom model must have format: 'model,avg_wer,rtfx,size'")
+        custom_row = {
+            args.label_col: parts[0].strip(),
+            'Avg. WER': float(parts[1]),
+            args.rtfx_col: float(parts[2]),
+            args.size_col: float(parts[3])
+        }
+        # Add the custom model row to dataframe
+        df = pd.concat([df, pd.DataFrame([custom_row])], ignore_index=True)
+        # Automatically highlight the custom model
+        if args.highlight is None:
+            args.highlight = parts[0].strip()
 
     # Identify language WER columns (all columns except model, Model size (B), and RTFx)
     exclude = set(args.exclude_cols) if args.exclude_cols else {args.label_col, args.size_col, args.rtfx_col}
-    lang_columns = [col for col in df.columns if col not in exclude]
+    lang_columns = [col for col in df.columns if col not in exclude and col != 'Avg. WER']
 
-    # Compute average WER across all languages
-    df['Avg. WER'] = df[lang_columns].mean(axis=1)
+    # Compute average WER across all languages (skip custom model row if Avg. WER already set)
+    if 'Avg. WER' not in df.columns:
+        df['Avg. WER'] = df[lang_columns].mean(axis=1)
+    else:
+        # Only compute for rows without Avg. WER
+        mask = df['Avg. WER'].isna()
+        if mask.any():
+            df.loc[mask, 'Avg. WER'] = df.loc[mask, lang_columns].mean(axis=1)
 
     # Plot 1: WER vs RTFx (multilingual)
     plot_wer_tradeoff(
@@ -75,6 +103,7 @@ if __name__ == "__main__":
         x_lim=tuple(args.rtfx_xlim),
         y_lim=tuple(args.rtfx_ylim),
         highlight_model=args.highlight,
+        title="Multilingual",
     )
 
     # Plot 2: WER vs Model Size (multilingual)
@@ -92,4 +121,5 @@ if __name__ == "__main__":
         y_lim=tuple(args.size_ylim) if args.size_ylim else None,
         y_fact=args.size_yfact,
         highlight_model=args.highlight,
+        title="Multilingual",
     )

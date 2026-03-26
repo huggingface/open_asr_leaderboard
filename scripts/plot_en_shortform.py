@@ -6,11 +6,13 @@ Usage:
 ```
 python scripts/plot_en_shortform.py
 python scripts/plot_en_shortform.py --highlight "model_id"
+python scripts/plot_en_shortform.py --csv_file <path> --custom-model "model,avg_wer,rtfx,size"
 ```
 
 Example:
 ```
 python scripts/plot_en_shortform.py --highlight "CohereLabs/cohere-transcribe-03-2026"
+python scripts/plot_en_shortform.py --custom-model "MY AWESOME MODEL,5.2,500,2.0"
 ```
 """
 
@@ -45,6 +47,9 @@ def parse_args():
 
     # Highlight specific model
     parser.add_argument("--highlight", default=None, help="Model name to highlight with a star marker and red label (default: None).")
+    
+    # Custom model to add
+    parser.add_argument("--custom-model", default=None, help="Custom model to add to the plot in format 'model,avg_wer,rtfx,size' (e.g., 'MY MODEL,5.2,500,2.0').")
 
     return parser.parse_args()
 
@@ -53,6 +58,22 @@ if __name__ == "__main__":
     args = parse_args()
 
     df = pd.read_csv(args.csv_file)
+    
+    # Add custom model if provided
+    if args.custom_model:
+        parts = args.custom_model.split(',')
+        if len(parts) != 4:
+            raise ValueError("Custom model must have format: 'model,avg_wer,rtfx,size'")
+        custom_row = {
+            args.label_col: parts[0].strip(),
+            args.x_col: float(parts[1]),
+            args.rtfx_col: float(parts[2]),
+            args.size_col: float(parts[3])
+        }
+        df = pd.concat([df, pd.DataFrame([custom_row])], ignore_index=True)
+        # Automatically highlight the custom model
+        if args.highlight is None:
+            args.highlight = parts[0].strip()
 
     # Plot 1: WER vs RTFx
     plot_wer_tradeoff(
@@ -68,6 +89,7 @@ if __name__ == "__main__":
         x_lim=tuple(args.rtfx_xlim),
         y_lim=tuple(args.rtfx_ylim),
         highlight_model=args.highlight,
+        title="EN Shortform",
     )
 
     # Plot 2: WER vs Model Size
@@ -85,4 +107,5 @@ if __name__ == "__main__":
         y_lim=tuple(args.size_ylim) if args.size_ylim else None,
         y_fact=args.size_yfact,
         highlight_model=args.highlight,
+        title="EN Shortform",
     )

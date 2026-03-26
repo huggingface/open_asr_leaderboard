@@ -52,6 +52,7 @@ def plot_wer_tradeoff(
     y_fact=1.0,
     font_size=18,
     highlight_model=None,
+    title=None,
 ):
     # -----------------------
     # Drop rows with missing data for this plot
@@ -261,6 +262,8 @@ def plot_wer_tradeoff(
 
     plt.xlabel(x_label, fontsize=font_size, fontweight='bold')
     plt.ylabel(y_label, fontsize=font_size, fontweight='bold')
+    if title:
+        plt.title(title, fontsize=font_size + 2, fontweight='bold', pad=15)
     plt.legend(fontsize=12, loc='best', framealpha=0.9)
     plt.tick_params(axis='both', which='major', labelsize=font_size)
     plt.tick_params(axis='both', which='minor', labelsize=font_size)
