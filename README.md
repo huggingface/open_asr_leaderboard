@@ -10,7 +10,7 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
   The main benchmark datasets used for evaluation are available here: [**ESB test-only sorted collection**](https://huggingface.co/datasets/hf-audio/esb-datasets-test-only-sorted).
 
 * **Long-form Benchmark (recent addition):**
-  The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21, earnings22 and tedlium longform.
+  The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21, earnings22, and tedlium. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
 * **Multilingual Benchmark (recent addition):**
   The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/nithinraok/asr-leaderboard-datasets) dataset includes fleurs, mcv and mls multilingual.
@@ -37,6 +37,29 @@ To reproduce existing results:
 2) Run the bash script for the model you wish to evaluate. For example, `bash run_wav2vec2.sh`.
 
 **Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU, with NVIDIA driver 560.28.03, CUDA 12.6, and PyTorch 2.4.0. You should ensure you use the same configuration when submitting results. If you are unable to create an equivalent machine, please request one of the maintainers to run your scripts for evaluation! 
+
+## Trade-off plots
+
+For open-source models, you can plot tradeoff plots like below with `scripts/plot_all.sh`.
+
+![EN Shortform RTFx vs WER](scripts/data/en_shortform_rtfx_wer.png)
+
+You can highlight a particular model (see `scripts/data` for CSV results as of 26 March 2026):
+```
+./scripts/plot_all.sh --highlight "model_name"
+
+# for example
+./scripts/plot_all.sh --highlight "nvidia/parakeet-tdt-0.6b-v3"
+```
+
+![Highlight model](scripts/data/nvidia_parakeet-tdt-0.6b-v3_en_shortform_rtfx_wer.png)
+
+You can also specify your own model and its performance as such:
+```
+./scripts/plot_all.sh --custom-model "MY MODEL" --model-size 2.0 --en-shortform-wer 5.5 --en-shortform-rtfx 1000
+```
+
+![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
 
 # Add a new library
 
