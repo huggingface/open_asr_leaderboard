@@ -32,12 +32,13 @@ def parse_args():
     parser.add_argument("--rtfx-col", default="RTFx", help="Column name for RTFx values (default: RTFx).")
     parser.add_argument("--size-col", default="Model size (B)", help="Column name for model size (default: 'Model size (B)').")
 
+    # WER axis limits (applies to both plots)
+    parser.add_argument("--wer-lim", type=float, nargs=2, default=[9, 18], metavar=("MIN", "MAX"), help="WER axis limits for both plots (default: 5 25).")
+    
     # RTFx plot limits
-    parser.add_argument("--rtfx-xlim", type=float, nargs=2, default=[5, 25], metavar=("MIN", "MAX"), help="X-axis limits for the RTFx plot (default: 5 25).")
-    parser.add_argument("--rtfx-ylim", type=float, nargs=2, default=[1e2, 1e4], metavar=("MIN", "MAX"), help="Y-axis limits for the RTFx plot (default: 1e1 1e4).")
+    parser.add_argument("--rtfx-ylim", type=float, nargs=2, default=[1e2, 1e4], metavar=("MIN", "MAX"), help="Y-axis limits for the RTFx plot (default: 1e2 1e4).")
 
     # Model size plot limits
-    parser.add_argument("--size-xlim", type=float, nargs=2, default=[5, 25], metavar=("MIN", "MAX"), help="X-axis limits for the model-size plot (default: 5 25).")
     parser.add_argument("--size-ylim", type=float, nargs=2, default=None, metavar=("MIN", "MAX"), help="Y-axis limits for the model-size plot (default: None).")
     parser.add_argument("--size-yfact", type=float, default=1e3, help="Multiplicative factor for model size values, e.g. 1e3 to convert B to M (default: 1000).")
 
@@ -74,6 +75,13 @@ if __name__ == "__main__":
         # Automatically highlight the custom model
         if args.highlight is None:
             args.highlight = parts[0].strip()
+    
+    # Validate that highlight model exists in the dataframe
+    if args.highlight is not None:
+        if args.highlight not in df[args.label_col].values:
+            print(f"Error: Model '{args.highlight}' not found in CSV file '{args.csv_file}'")
+            print(f"Available models: {', '.join(df[args.label_col].values[:5])}...")
+            exit(1)
 
     # Plot 1: WER vs RTFx (longform)
     plot_wer_tradeoff(
@@ -86,7 +94,7 @@ if __name__ == "__main__":
         output_file=args.rtfx_output,
         x_goal="min",
         y_goal="max",
-        x_lim=tuple(args.rtfx_xlim),
+        x_lim=tuple(args.wer_lim),
         y_lim=tuple(args.rtfx_ylim),
         highlight_model=args.highlight,
         title="EN Longform",
@@ -103,7 +111,7 @@ if __name__ == "__main__":
         output_file=args.size_output,
         x_goal="min",
         y_goal="min",
-        x_lim=tuple(args.size_xlim),
+        x_lim=tuple(args.wer_lim),
         y_lim=tuple(args.size_ylim) if args.size_ylim else None,
         y_fact=args.size_yfact,
         highlight_model=args.highlight,

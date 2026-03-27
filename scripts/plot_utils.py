@@ -187,7 +187,9 @@ def plot_wer_tradeoff(
         return (x < x_max * (1 - margin_x)) and (y < y_max * (1 - margin_y))
 
     # First plot non-Pareto labels (lower zorder)
-    for _, row in non_pareto.iterrows():
+    # Sort by WER descending so lower WER models are plotted last (on top)
+    non_pareto_sorted = non_pareto.sort_values(by=x_col, ascending=False)
+    for _, row in non_pareto_sorted.iterrows():
         xval = row[x_col]
         yval = row[y_col] * y_fact
         if y_label.strip().lower() == 'rtfx' and not label_within_bounds(xval, yval):
@@ -211,7 +213,9 @@ def plot_wer_tradeoff(
         )
 
     # Then plot Pareto labels on top (higher zorder)
-    for _, row in pareto_in_view.iterrows():
+    # Sort by WER descending so lower WER models are plotted last (on top)
+    pareto_sorted = pareto_in_view.sort_values(by=x_col, ascending=False)
+    for _, row in pareto_sorted.iterrows():
         xval = row[x_col]
         yval = row[y_col] * y_fact * (y_offset if y_label.strip().lower() == 'rtfx' else 1.0)
         if y_label.strip().lower() == 'rtfx' and not label_within_bounds(xval, yval):
