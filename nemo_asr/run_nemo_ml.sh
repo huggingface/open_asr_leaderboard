@@ -91,7 +91,7 @@ for MODEL_ID in "${MODEL_IDS[@]}"; do
     echo ""
     echo "📊 Scoring results for $MODEL_ID"
     cd ../normalizer
-    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')"
+    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}', multilingual=True)"
     cd "$RUNDIR"
     echo "========================================================"
     echo ""
