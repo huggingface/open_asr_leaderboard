@@ -132,13 +132,15 @@ def write_manifest(
     return manifest_path
 
 
-def score_results(directory: str, model_id: str = None):
+def score_results(directory: str, model_id: str = None, multilingual: bool = False):
     """
     Scores all result files in a directory and returns a composite score over all evaluated datasets.
 
     Args:
         directory: Path to the result directory, containing one or more jsonl files.
         model_id: Optional, model name to filter out result files based on model name.
+        multilingual: If True, apply compound word boundary normalization before
+                      WER computation. Should only be enabled for non-English benchmarks.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -190,10 +192,10 @@ def score_results(directory: str, model_id: str = None):
         duration = [datum["duration"] for datum in manifest]
         compute_rtfx = all(time) and all(duration)
 
-        # Normalize compound word boundaries before WER computation
-        wer_refs, wer_preds = normalize_compound_pairs(references, predictions)
+        if multilingual:
+            references, predictions = normalize_compound_pairs(references, predictions)
 
-        wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
+        wer = wer_metric.compute(references=references, predictions=predictions)
         wer = round(100 * wer, 2)
 
         if compute_rtfx:
