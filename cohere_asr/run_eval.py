@@ -20,11 +20,10 @@ torch.set_float32_matmul_precision("high")
 
 def load_model(model_id, device):
     torch_dtype = torch.bfloat16 if device != "cpu" else torch.float32
-    processor = AutoProcessor.from_pretrained(model_id, revision="refs/pr/6")
+    processor = AutoProcessor.from_pretrained(model_id)
     model = CohereAsrForConditionalGeneration.from_pretrained(
         model_id,
         torch_dtype=torch_dtype,
-        revision="refs/pr/6"
     ).to(device)
     model.eval()
     return processor, model
