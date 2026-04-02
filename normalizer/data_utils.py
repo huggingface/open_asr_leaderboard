@@ -2,7 +2,7 @@ import re
 
 import num2words
 from datasets import load_dataset, Audio
-from normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
+from .normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
 
 from .eval_utils import read_manifest, write_manifest, normalize_compound_pairs
 
