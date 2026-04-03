@@ -16,8 +16,8 @@ def main(args):
     cls_model = AutoModelForSpeechSeq2Seq if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else AutoModelForCTC
     try:
         model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
-    except:
-        print(f"SDPA not available, falling back to eager attention")
+    except Exception as e:
+        print(f"SDPA not available, falling back to eager attention: {e}")
         model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="eager").to(args.device)
     processor = AutoProcessor.from_pretrained(args.model_id)
     model_input_name = processor.model_input_names[0]

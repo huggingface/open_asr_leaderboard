@@ -69,8 +69,9 @@ def main(args):
             backend = SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION
             ctx = sdpa_kernel(backend)
             ctx.__enter__()
-        except Exception:
+        except Exception as e:
             # Fallback if the chosen SDPA backend is not available
+            print(f"Warning: SDPA backend not available, falling back to MATH backend: {e}")
             ctx = sdpa_kernel(SDPBackend.MATH)
             ctx.__enter__()
         try:
