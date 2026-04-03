@@ -15,11 +15,10 @@ Full-scale evaluation on all samples with Whisper `EnglishTextNormalizer`.
 
 ## Setup
 
-These models use a custom architecture. Install dependencies:
+No special dependencies — uses `trust_remote_code=True` which loads the model's bundled preprocessing.
 
 ```bash
-pip install torch transformers>=4.51.0 whisper-normalizer jiwer
-pip install boson-multimodal@git+https://github.com/boson-ai/boson-multimodal.git
+pip install torch transformers>=4.51.0 datasets jiwer whisper-normalizer
 ```
 
 ## Run
@@ -36,9 +35,3 @@ python run_eval_higgs_audio.py \
     --dataset_path hf-audio/esb-datasets-test-only-sorted \
     --dataset ami --split test --device 0
 ```
-
-## Notes
-- Models require `trust_remote_code=True`
-- Audio input: 16kHz mono
-- Uses thinking mode (chain-of-thought before transcription)
-- Batch size 1 (model processes one sample at a time with audio chunking)
