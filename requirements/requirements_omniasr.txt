@@ -1,2 +1,2 @@
-omnilingual-asr
+omnilingual-asr @ git+https://github.com/facebookresearch/omnilingual-asr.git
 soundfile

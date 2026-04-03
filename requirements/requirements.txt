@@ -4,3 +4,4 @@ evaluate
 datasets
 librosa
 jiwer
+num2words

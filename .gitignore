@@ -132,3 +132,9 @@ dmypy.json
 */pretrained_models/*
 */model_checkpoints/*
 */results/*
+
+# Cached audio
+sample_*.wav
+
+# Common
+*_private.sh

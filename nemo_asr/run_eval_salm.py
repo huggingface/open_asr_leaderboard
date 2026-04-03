@@ -1,6 +1,4 @@
 import argparse
-
-import io
 import os
 import torch
 import evaluate
@@ -11,13 +9,10 @@ from tqdm import tqdm
 from normalizer import data_utils
 import numpy as np
 
-from nemo.collections.asr.models import ASRModel
 import time
 
 
 from nemo.collections.speechlm2.models.salm import SALM
-from omegaconf import OmegaConf
-from pathlib import Path
 from transformers import GenerationConfig
 
 
@@ -92,13 +87,27 @@ def main(args):
 
     dataset = data_utils.load_data(args)
 
+    if args.max_eval_samples is not None and args.max_eval_samples > 0:
+        print(f"Subsampling dataset to first {args.max_eval_samples} samples !")
+        dataset = dataset.take(args.max_eval_samples)
+
+    # Prepare data FIRST - this casts audio to proper format with "array" and "sampling_rate" keys
+    dataset = data_utils.prepare_data(dataset)
+
     def download_audio_files(batch):
 
         # download audio files and write the paths, transcriptions and durations to a manifest file
         audio_paths = []
         durations = []
 
-        for id, sample in zip(batch["id"], batch["audio"]):
+        # Use 'id' column if available, otherwise generate sequential IDs
+        if "id" in batch:
+            ids = batch["id"]
+        else:
+            start_idx = len([f for f in os.listdir(CACHE_DIR) if f.endswith('.wav')]) if os.path.exists(CACHE_DIR) else 0
+            ids = [f"sample_{start_idx + i}" for i in range(len(batch["audio"]))]
+
+        for id, audio_sample in zip(ids, batch["audio"]):
 
             # first step added here to make ID and wav filenames unique
             # several datasets like earnings22 have a hierarchical structure
@@ -109,16 +118,9 @@ def main(args):
 
             audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
 
-            if "array" in sample:
-                audio_array = np.float32(sample["array"])
-                sample_rate = 16000
-
-            elif "bytes" in sample: # added to be compatible with latest datasets library (3.x.x) that produces byte stream
-                with io.BytesIO(sample["bytes"]) as audio_file:
-                    audio_array, sample_rate = soundfile.read(audio_file, dtype="float32")
-
-            else:
-                raise ValueError("Sample must have either 'array' or 'bytes' key")
+            # After prepare_data(), audio has "array" and "sampling_rate" keys
+            audio_array = np.float32(audio_sample["array"])
+            sample_rate = audio_sample["sampling_rate"]
 
             if not os.path.exists(audio_path):
                 os.makedirs(os.path.dirname(audio_path), exist_ok=True)
@@ -134,12 +136,6 @@ def main(args):
 
         return batch
 
-
-    if args.max_eval_samples is not None and args.max_eval_samples > 0:
-        print(f"Subsampling dataset to first {args.max_eval_samples} samples !")
-        dataset = dataset.take(args.max_eval_samples)
-
-    dataset = data_utils.prepare_data(dataset)
 
     # prepraing the offline dataset
     dataset = dataset.map(download_audio_files, batch_size=args.batch_size, batched=True, remove_columns=["audio"])
