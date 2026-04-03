@@ -1,0 +1,3 @@
+model,ami,earnings22,gigaspeech,librispeech_asr-test.clean,librispeech_asr-test.other,spgispeech,tedlium,voxpopuli,avg_wer,RTFx
+bosonai/higgs-audio-v3-8b-stt,6.23,11.33,9.34,1.24,2.34,3.14,3.14,5.63,5.30,-1
+bosonai/higgs-audio-v3-stt,10.49,11.48,7.71,1.07,2.03,2.81,2.81,6.93,5.67,-1
