@@ -40,6 +40,10 @@ def main(args):
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
 
+        # Compute audio length in seconds
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
+
         # START TIMING
         start_time = time.time()
 

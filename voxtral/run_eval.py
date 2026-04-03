@@ -23,7 +23,8 @@ def main(args):
     def benchmark(batch):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
-        batch["audio_length_s"] = [len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios]
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
         minibatch_size = len(audios)
 
         # START TIMING
@@ -35,8 +36,10 @@ def main(args):
         for audio in audios:
             inputs = processor.apply_transcription_request(
                 language="en",  # English for benchmark consistency
-                audio=audio,
+                audio=[audio],
                 model_id=args.model_id,
+                sampling_rate=sampling_rate,
+                format=["WAV"],
             )
             inputs = inputs.to(model.device, dtype=torch.bfloat16)
 

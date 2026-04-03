@@ -39,6 +39,8 @@ def main(args):
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
         minibatch_size = len(audios)
         texts=[text] * minibatch_size
 

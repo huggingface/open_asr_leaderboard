@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from transformers import AutoConfig, AutoModel, AutoModelForCTC, AutoProcessor, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING
+from transformers import AutoModel, AutoProcessor
 import evaluate
 from normalizer import data_utils
 import time
@@ -31,6 +31,10 @@ def main(args):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
+
+        # Compute audio length in seconds
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
 
         # START TIMING
         start_time = time.time()
@@ -61,16 +65,28 @@ def main(args):
         inputs[model_input_name] = inputs[model_input_name].to(torch.float16)
 
         # 2. Model Inference
-        with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
+        try:
+            backend = SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION
+            ctx = sdpa_kernel(backend)
+            ctx.__enter__()
+        except Exception:
+            # Fallback if the chosen SDPA backend is not available
+            ctx = sdpa_kernel(SDPBackend.MATH)
+            ctx.__enter__()
+        try:
             forced_decoder_ids = processor.get_decoder_prompt_ids(language="english", task="transcribe")
             if model.can_generate():
                 # 2.1 Auto-regressive generation for encoder-decoder models
-                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens, forced_decoder_ids=forced_decoder_ids)
+                # Set forced_decoder_ids on generation_config (not as kwarg) for newer transformers
+                model.generation_config.forced_decoder_ids = forced_decoder_ids
+                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
             else:
                 # 2.2. Single forward pass for CTC
                 with torch.no_grad():
                     logits = model(**inputs).logits
                     pred_ids = logits.argmax(-1)
+        finally:
+            ctx.__exit__(None, None, None)
 
         # 3. Post-processing
         # 3.1 Strip padded ids from predictions

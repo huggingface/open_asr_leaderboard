@@ -11,7 +11,6 @@ import evaluate
 from normalizer import data_utils
 import time
 from tqdm import tqdm
-import numpy as np
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
@@ -35,6 +34,8 @@ def main(args):
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
         minibatch_size = len(audios)
 
         # START TIMING

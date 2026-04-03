@@ -14,7 +14,11 @@ torch.set_float32_matmul_precision('high')
 def main(args):
     config = AutoConfig.from_pretrained(args.model_id)
     cls_model = AutoModelForSpeechSeq2Seq if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else AutoModelForCTC
-    model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
+    try:
+        model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="sdpa").to(args.device)
+    except:
+        print(f"SDPA not available, falling back to eager attention")
+        model = cls_model.from_pretrained(args.model_id, torch_dtype=torch.bfloat16, attn_implementation="eager").to(args.device)
     processor = AutoProcessor.from_pretrained(args.model_id)
     model_input_name = processor.model_input_names[0]
 
@@ -80,7 +84,11 @@ def main(args):
         inputs[model_input_name] = inputs[model_input_name].to(torch.bfloat16)
 
         # 2. Model Inference
-        with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
+        if args.torch_compile:
+            sdpa_backends = [SDPBackend.MATH]
+        else:
+            sdpa_backends = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+        with sdpa_kernel(sdpa_backends):
             if model.can_generate():
                 # 2.1 Auto-regressive generation for encoder-decoder models
                 if args.longform:

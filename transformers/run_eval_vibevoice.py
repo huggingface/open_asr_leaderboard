@@ -45,6 +45,11 @@ def main(args):
     def benchmark(batch):
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
+
+        # Compute audio length in seconds
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
+
         start_time = time.time()
 
         # Prepare batch inputs

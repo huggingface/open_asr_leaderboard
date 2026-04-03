@@ -42,12 +42,21 @@ class MultipleTokenBatchStoppingCriteria(StoppingCriteria):
 
 
 def main(args):
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-        _attn_implementation="flash_attention_2",
-    ).to(args.device)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            _attn_implementation="flash_attention_2",
+        ).to(args.device)
+    except Exception as e:
+        print(f"Flash Attention 2 not available, falling back to eager attention: {e}")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            _attn_implementation="eager",
+        ).to(args.device)
     model.eval()
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
 
@@ -67,6 +76,10 @@ def main(args):
         # Load audio inputs
         audios = [(audio["array"], audio["sampling_rate"]) for audio in batch["audio"]]
         minibatch_size = len(audios)
+
+        # Compute audio length in seconds
+        batch["audio_length_s"] = [len(audio["array"]) / audio["sampling_rate"] for audio in batch["audio"]]
+
         gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
             [MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=args.num_beams * minibatch_size)]
         )

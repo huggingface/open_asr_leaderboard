@@ -33,6 +33,9 @@ def main(args):
         # Load audio inputs
         minibatch_size = len(batch["audio"])
 
+        # Compute audio length in seconds
+        batch["audio_length_s"] = [len(audio["array"]) / audio["sampling_rate"] for audio in batch["audio"]]
+
         # Convert to pipeline input format: list of dicts with waveform and sample_rate
         # Truncate audio to MAX_AUDIO_SEC to avoid pipeline assert_max_length errors
         audio_data = []
