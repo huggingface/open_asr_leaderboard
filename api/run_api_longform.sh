@@ -26,9 +26,14 @@ MAX_WORKERS=10
 
 num_models=${#MODEL_IDs[@]}
 
+# Note: --use_url may fail for some long-form datasets if the datasets-server /rows
+# endpoint cannot serve very large exported Parquet row groups.
+# If that happens, rerun without --use_url.
+
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
+
     python run_eval.py \
         --dataset_path="hf-audio/asr-leaderboard-longform" \
         --dataset="earnings21" \
