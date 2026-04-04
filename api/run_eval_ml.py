@@ -22,9 +22,18 @@ load_dotenv()
 def fetch_audio_urls(dataset_path, config_name, split, batch_size=100, max_retries=20):
     API_URL = "https://datasets-server.huggingface.co/rows"
 
+    headers = {}
+    if os.environ.get("HF_TOKEN") is not None:
+        headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
+    else:
+        print("HF_TOKEN not set, might experience rate-limiting.")
+
     size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={config_name}&split={split}"
-    size_response = requests.get(size_url).json()
-    total_rows = size_response["size"]["config"]["num_rows"]
+    size_response = requests.get(size_url, headers=headers)
+    size_response.raise_for_status()
+    size_data = size_response.json()
+    total_rows = size_data["size"]["config"]["num_rows"]
+
     for offset in tqdm(range(0, total_rows, batch_size), desc="Fetching audio URLs"):
         params = {
             "dataset": dataset_path,
@@ -37,24 +46,21 @@ def fetch_audio_urls(dataset_path, config_name, split, batch_size=100, max_retri
         retries = 0
         while retries <= max_retries:
             try:
-                headers = {}
-                if os.environ.get("HF_TOKEN") is not None:
-                    headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
-                else:
-                    print("HF_TOKEN not set, might experience rate-limiting.")
-                response = requests.get(API_URL, params=params)
+                response = requests.get(API_URL, params=params, headers=headers)
                 response.raise_for_status()
                 data = response.json()
                 yield from data["rows"]
                 break
             except (requests.exceptions.RequestException, ValueError) as e:
                 retries += 1
-                print(
-                    f"Error fetching data: {e}, retrying ({retries}/{max_retries})..."
-                )
+                print(f"Error fetching data: {e}, retrying ({retries}/{max_retries})...")
                 time.sleep(10)
                 if retries >= max_retries:
-                    raise Exception("Max retries exceeded while fetching data.")
+                    raise RuntimeError(
+                        "Max retries exceeded while fetching dataset rows from the datasets-server /rows endpoint. "
+                        "This can happen for long-form datasets when exported Parquet row groups are too large for /rows. "
+                        "Try rerunning without --use_url."
+                    ) from e
 
 
 def transcribe_with_retry(
@@ -250,7 +256,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_url",
         action="store_true",
-        help="Use URL-based audio fetching instead of datasets",
+        help="Use dataset audio URLs instead of downloading audio locally. This may fail for some long-form datasets because the datasets-server /rows endpoint may not be able to serve very large exported Parquet row groups",
     )
 
     args = parser.parse_args()
