@@ -19,10 +19,31 @@ def main(args):
         max_new_tokens=args.max_new_tokens,
     )
 
+    fallback_sample_idx = 0
+
+    def extract_audio_filepaths(batch, batch_size):
+        nonlocal fallback_sample_idx
+
+        file_names = batch.get("file_name")
+        if file_names is not None:
+            try:
+                file_names = list(file_names)
+            except TypeError:
+                file_names = None
+
+        if isinstance(file_names, list) and len(file_names) == batch_size:
+            return [os.path.basename(str(v)) if v is not None else f"sample_{fallback_sample_idx + i}" for i, v in enumerate(file_names)]
+
+        print("Warning: missing 'file_name' column; using sample_<idx> fallback.")
+        out = [f"sample_{fallback_sample_idx + i}" for i in range(batch_size)]
+        fallback_sample_idx += batch_size
+        return out
+
     def benchmark(batch):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         batch["audio_length_s"] = [len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios]
+        batch["audio_filepath"] = extract_audio_filepaths(batch, len(audios))
         minibatch_size = len(audios)
 
         # START TIMING
@@ -85,6 +106,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -101,6 +123,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

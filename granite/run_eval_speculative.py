@@ -243,6 +243,7 @@ def main(args):
         batch["transcription_time_s"] = [runtime / batch_sz] * batch_sz
         batch["predictions"] = [data_utils.normalizer(p) for p in predictions]
         batch["references"] = batch["norm_text"]
+        batch["audio_filepaths"] = data_utils.extract_audio_filepaths_from_batch(batch, batch_size=batch_sz)
         return batch
 
     # Load and process dataset
@@ -254,7 +255,7 @@ def main(args):
 
     dataset = dataset.map(benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"], desc="Processing")
 
-    all_results = {"audio_length_s": [], "transcription_time_s": [], "predictions": [], "references": []}
+    all_results = {"audio_length_s": [], "transcription_time_s": [], "predictions": [], "references": [], "audio_filepaths": []}
     for result in tqdm(dataset, desc="Samples"):
         for key in all_results:
             all_results[key].append(result[key])
@@ -263,7 +264,8 @@ def main(args):
     manifest_path = data_utils.write_manifest(
         all_results["references"], all_results["predictions"], args.model_id,
         args.dataset_path, args.dataset, args.split,
-        audio_length=all_results["audio_length_s"], transcription_time=all_results["transcription_time_s"]
+        audio_length=all_results["audio_length_s"], transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepaths"],
     )
     print("Results saved at:", os.path.abspath(manifest_path))
 

@@ -54,6 +54,7 @@ def main(args):
     def benchmark(batch):
         audios = [audio["array"] for audio in batch["audio"]]
         batch["audio_length_s"] = [len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, len(audios))
         minibatch_size = len(audios)
 
         # START TIMING
@@ -112,6 +113,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
 
     result_iter = iter(dataset)
@@ -121,15 +123,16 @@ def main(args):
 
     # Filter empty references (consistent with English pipeline)
     filtered = [
-        (ref, pred, dur, time_s)
-        for ref, pred, dur, time_s in zip(
+        (ref, pred, dur, time_s, afp)
+        for ref, pred, dur, time_s, afp in zip(
             all_results["references"], all_results["predictions"],
-            all_results["audio_length_s"], all_results["transcription_time_s"]
+            all_results["audio_length_s"], all_results["transcription_time_s"],
+            all_results["audio_filepath"]
         )
         if data_utils.is_target_text_in_range(ref)
     ]
     if filtered:
-        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"] = zip(*filtered)
+        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"], all_results["audio_filepath"] = zip(*filtered)
         all_results = {k: list(v) for k, v in all_results.items()}
 
     manifest_path = data_utils.write_manifest(
@@ -141,6 +144,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

@@ -55,7 +55,9 @@ def main(args):
 
         # download audio files and write the paths, transcriptions and durations to a manifest file
         audio_paths = []
+        original_audio_paths = []
         durations = []
+        file_names = batch.get("file_name", [None] * len(batch["audio"]))
 
         # Use 'id' column if available, otherwise generate sequential IDs
         if "id" in batch:
@@ -65,7 +67,7 @@ def main(args):
             start_idx = len([f for f in os.listdir(CACHE_DIR) if f.endswith('.wav')]) if os.path.exists(CACHE_DIR) else 0
             ids = [f"sample_{start_idx + i}" for i in range(len(batch["audio"]))]
 
-        for id, audio_sample in zip(ids, batch["audio"]):
+        for id, file_name, audio_sample in zip(ids, file_names, batch["audio"]):
 
             # first step added here to make ID and wav filenames unique
             # several datasets like earnings22 have a hierarchical structure
@@ -85,11 +87,13 @@ def main(args):
                 soundfile.write(audio_path, audio_array, sample_rate)
 
             audio_paths.append(audio_path)
+            original_audio_paths.append(os.path.basename(str(file_name)) if file_name is not None else None)
             durations.append(len(audio_array) / sample_rate)
 
         
         batch["references"] = batch["norm_text"]
         batch["audio_filepaths"] = audio_paths
+        batch["original_audio_filepaths"] = original_audio_paths
         batch["durations"] = durations
 
         return batch
@@ -105,6 +109,7 @@ def main(args):
 
     all_data = {
         "audio_filepaths": [],
+        "original_audio_filepaths": [],
         "durations": [],
         "references": [],
     }
@@ -117,6 +122,7 @@ def main(args):
     # Sort audio_filepaths and references based on durations values
     sorted_indices = sorted(range(len(all_data["durations"])), key=lambda k: all_data["durations"][k], reverse=True)
     all_data["audio_filepaths"] = [all_data["audio_filepaths"][i] for i in sorted_indices]
+    all_data["original_audio_filepaths"] = [all_data["original_audio_filepaths"][i] for i in sorted_indices]
     all_data["references"] = [all_data["references"][i] for i in sorted_indices]
     all_data["durations"] = [all_data["durations"][i] for i in sorted_indices]
     
@@ -161,6 +167,7 @@ def main(args):
         args.split,
         audio_length=all_data["durations"],
         transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
+        audio_filepaths=all_data["original_audio_filepaths"],
     )
 
     print("Results saved at path:", os.path.abspath(manifest_path))

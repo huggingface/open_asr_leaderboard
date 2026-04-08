@@ -91,6 +91,7 @@ def main(args):
         # Normalize with multilingual normalizer
         batch["predictions"] = [data_utils.ml_normalizer(pred, lang=args.language) for pred in pred_text]
         batch["references"] = [data_utils.ml_normalizer(ref, lang=args.language) for ref in batch["text"]]
+        batch["audio_filepaths"] = data_utils.extract_audio_filepaths_from_batch(batch, batch_size=minibatch_size)
 
         return batch
 
@@ -133,6 +134,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepaths": [],
     }
 
     result_iter = iter(dataset)
@@ -142,15 +144,15 @@ def main(args):
 
     # Filter empty references (consistent with English pipeline)
     filtered = [
-        (ref, pred, dur, time_s)
-        for ref, pred, dur, time_s in zip(
+        (ref, pred, dur, time_s, audio_filepath)
+        for ref, pred, dur, time_s, audio_filepath in zip(
             all_results["references"], all_results["predictions"],
-            all_results["audio_length_s"], all_results["transcription_time_s"]
+            all_results["audio_length_s"], all_results["transcription_time_s"], all_results["audio_filepaths"]
         )
         if data_utils.is_target_text_in_range(ref)
     ]
     if filtered:
-        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"] = zip(*filtered)
+        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"], all_results["audio_filepaths"] = zip(*filtered)
         all_results = {k: list(v) for k, v in all_results.items()}
 
     # Write manifest results (WER and RTFX)
@@ -163,6 +165,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepaths"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

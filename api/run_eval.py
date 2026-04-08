@@ -115,6 +115,7 @@ def transcribe_dataset(
         "predictions": [],
         "audio_length_s": [],
         "transcription_time_s": [],
+        "audio_filepaths": [],
     }
 
     print(f"Transcribing with model: {model_name}")
@@ -123,6 +124,7 @@ def transcribe_dataset(
         if use_url:
             reference = sample["row"]["text"].strip() or " "
             audio_duration = sample["row"]["audio_length_s"]
+            audio_filepath = data_utils.extract_audio_filepath_from_sample(sample["row"])
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
@@ -134,6 +136,7 @@ def transcribe_dataset(
 
         else:
             reference = sample.get("norm_text", "").strip() or " "
+            audio_filepath = data_utils.extract_audio_filepath_from_sample(sample)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
                 sf.write(
                     tmpfile.name,
@@ -162,7 +165,7 @@ def transcribe_dataset(
                     print(f"File {tmp_path} does not exist")
 
         transcription_time = time.time() - start
-        return reference, transcription, audio_duration, transcription_time
+    return reference, transcription, audio_duration, transcription_time, audio_filepath
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_sample = {
@@ -175,11 +178,12 @@ def transcribe_dataset(
         ):
             result = future.result()
             if result:
-                reference, transcription, audio_duration, transcription_time = result
+                reference, transcription, audio_duration, transcription_time, audio_filepath = result
                 results["predictions"].append(transcription)
                 results["references"].append(reference)
                 results["audio_length_s"].append(audio_duration)
                 results["transcription_time_s"].append(transcription_time)
+                results["audio_filepaths"].append(audio_filepath)
 
     results["predictions"] = [
         data_utils.normalizer(transcription) or " "
@@ -198,6 +202,7 @@ def transcribe_dataset(
         split,
         audio_length=results["audio_length_s"],
         transcription_time=results["transcription_time_s"],
+        audio_filepaths=results["audio_filepaths"],
     )
 
     print("Results saved at path:", manifest_path)

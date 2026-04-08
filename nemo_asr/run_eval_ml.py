@@ -76,6 +76,7 @@ def main(args):
     def download_audio_files(batch):
         """Process audio files and prepare them for evaluation."""
         audio_paths = []
+        original_audio_paths = []
         durations = []
 
         for i, (file_name, sample, duration, text) in enumerate(zip(
@@ -99,6 +100,7 @@ def main(args):
                 soundfile.write(audio_path, audio_array, sample_rate)
 
             audio_paths.append(audio_path)
+            original_audio_paths.append(data_utils.extract_audio_filepath_from_sample(sample))
             # Use duration from dataset if available, otherwise calculate
             if duration is not None:
                 durations.append(duration)
@@ -107,6 +109,7 @@ def main(args):
 
         batch["references"] = [text for text in batch["text"]]
         batch["audio_filepaths"] = audio_paths
+        batch["original_audio_filepaths"] = original_audio_paths
         batch["durations"] = durations
 
         return batch
@@ -123,6 +126,7 @@ def main(args):
     # Collect all data
     all_data = {
         "audio_filepaths": [],
+        "original_audio_filepaths": [],
         "durations": [],
         "references": [],
     }
@@ -130,6 +134,7 @@ def main(args):
     print("Collecting data...")
     for data in tqdm(dataset, desc="Collecting samples"):
         all_data["audio_filepaths"].append(data["audio_filepaths"])
+        all_data["original_audio_filepaths"].append(data["original_audio_filepaths"])
         all_data["durations"].append(data["durations"])
         all_data["references"].append(data["references"])
 
@@ -137,6 +142,7 @@ def main(args):
     print("Sorting by duration...")
     sorted_indices = sorted(range(len(all_data["durations"])), key=lambda k: all_data["durations"][k], reverse=True)
     all_data["audio_filepaths"] = [all_data["audio_filepaths"][i] for i in sorted_indices]
+    all_data["original_audio_filepaths"] = [all_data["original_audio_filepaths"][i] for i in sorted_indices]
     all_data["references"] = [all_data["references"][i] for i in sorted_indices]
     all_data["durations"] = [all_data["durations"][i] for i in sorted_indices]
 
@@ -202,6 +208,7 @@ def main(args):
         SPLIT_NAME,
         audio_length=all_data["durations"],
         transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
+        audio_filepaths=all_data["original_audio_filepaths"],
     )
 
     print("Results saved at path:", os.path.abspath(manifest_path))

@@ -28,6 +28,7 @@ def main(args) -> None:
         batch["transcription_time_s"] = time.time() - start_time
         batch["predictions"] = data_utils.normalizer("".join([segment["text"] for segment in outputs])).strip()
         batch["references"] = batch["norm_text"]
+        batch["audio_filepaths"] = data_utils.extract_audio_filepaths_from_batch(batch, batch_size=1)[0]
         return batch
 
     if args.warmup_steps is not None:
@@ -59,6 +60,7 @@ def main(args) -> None:
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepaths": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -75,6 +77,7 @@ def main(args) -> None:
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepaths"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

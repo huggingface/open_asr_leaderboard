@@ -1,4 +1,5 @@
 import re
+import os
 
 import num2words
 from datasets import load_dataset, Audio
@@ -59,6 +60,67 @@ def get_text(sample):
 normalizer = EnglishTextNormalizer()
 
 ml_normalizer = MultilingualNormalizer(remove_diacritics=False)
+
+
+AUDIO_FILEPATH_METADATA_KEYS = [
+    "file_name",
+    "audio_filepath",
+    "audio_path",
+    "path",
+    "filepath",
+    "file_path",
+    "filename",
+    "id",
+    "utt_id",
+    "utterance_id",
+    "key",
+    "__key__",
+]
+
+
+def _basename_or_none(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    if value == "":
+        return None
+    return os.path.basename(value)
+
+
+def extract_audio_filepath_from_sample(sample):
+    if sample is None:
+        return None
+
+    for key in AUDIO_FILEPATH_METADATA_KEYS:
+        try:
+            if key in sample:
+                basename = _basename_or_none(sample[key])
+                if basename is not None:
+                    return basename
+        except TypeError:
+            # AudioDecoder / other non-mapping sample types are not subscriptable.
+            return None
+    return None
+
+
+def extract_audio_filepaths_from_batch(batch, batch_size=None):
+    if batch_size is None:
+        if "audio" in batch:
+            batch_size = len(batch["audio"])
+        elif len(batch) > 0:
+            first_value = next(iter(batch.values()))
+            if isinstance(first_value, list):
+                batch_size = len(first_value)
+
+    if batch_size is None:
+        return []
+
+    for key in AUDIO_FILEPATH_METADATA_KEYS:
+        values = batch.get(key)
+        if isinstance(values, list) and len(values) == batch_size:
+            return [_basename_or_none(v) for v in values]
+
+    return [None] * batch_size
 
 
 def normalize(batch):
