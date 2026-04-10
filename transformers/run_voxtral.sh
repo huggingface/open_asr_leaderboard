@@ -2,8 +2,12 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("facebook/mms-1b-all" "facebook/mms-1b-fl102")
-BATCH_SIZE=48
+MODEL_IDs=(
+    "mistralai/Voxtral-Mini-3B-2507"
+    "mistralai/Voxtral-Small-24B-2507"
+)
+BATCH_SIZE=8
+MAX_NEW_TOKENS=500
 
 DATASETS=("voxpopuli" "ami" "earnings22" "gigaspeech" "librispeech" "librispeech" "spgispeech" "tedlium")
 SPLITS=(   "test"      "test" "test"      "test"       "test.clean"  "test.other"  "test"       "test")
@@ -19,12 +23,13 @@ do
     do
         python run_eval.py \
             --model_id=${MODEL_ID} \
-            --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+            --dataset_path="hf-audio/open-asr-leaderboard" \
             --dataset="${DATASETS[$j]}" \
             --split="${SPLITS[$j]}" \
             --device=0 \
             --batch_size=${BATCH_SIZE} \
-            --max_eval_samples=-1
+            --max_eval_samples=-1 \
+            --max_new_tokens=${MAX_NEW_TOKENS}
     done
 
     # Evaluate results

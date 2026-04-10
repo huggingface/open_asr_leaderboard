@@ -31,6 +31,7 @@ def main(args):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
+        batch["audio_length_s"] = [len(audio) / 16000 for audio in audios]
 
         # START TIMING
         start_time = time.time()
