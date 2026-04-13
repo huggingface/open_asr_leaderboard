@@ -5,7 +5,6 @@ from torch.nn.attention import sdpa_kernel, SDPBackend
 from transformers import AutoModel, AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, CompileConfig
 import evaluate
 from normalizer import data_utils
-import time
 from tqdm import tqdm
 import random
 import numpy as np
@@ -15,7 +14,7 @@ torch.set_float32_matmul_precision('high')
 
 def main(args):
 
-    # set seed due to randomness in some models (e.g. VibeVoice's acoustic tokenizer sampling)
+    # Set seed due to randomness in some models (e.g. VibeVoice's acoustic tokenizer sampling)
     seed = 42
     random.seed(seed)
     np.random.seed(seed)
@@ -49,21 +48,54 @@ def main(args):
             }
         )
     else:
-        model = cls_model.from_pretrained(args.model_id, dtype=torch_dtype, attn_implementation="sdpa", trust_remote_code=args.trust_remote_code)
+        model = cls_model.from_pretrained(
+            args.model_id, 
+            dtype=torch_dtype, 
+            attn_implementation=args.attn_implementation,
+            trust_remote_code=args.trust_remote_code
+        )
     model.to(args.device)
     model.eval()
     processor_id = args.processor_id if args.processor_id else args.model_id
     processor = AutoProcessor.from_pretrained(processor_id, trust_remote_code=args.trust_remote_code)
-    # model_input_name = processor.model_input_names[0]
-    sampling_rate = processor.feature_extractor.sampling_rate if processor.feature_extractor is not None else 16_000
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
 
+    # Optional prompt for audio language models, newer models should use `apply_transcription_request`
+    text = None
+    if "granite-speech-3.3" in args.model_id.lower():
+        # create text prompt
+        chat = [
+            {
+                "role": "system",
+                "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: December 19, 2024.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
+            },
+            {
+                "role": "user",
+                "content": "<|audio|>can you transcribe the speech into a written format?",
+            }
+        ]
+
+        text = processor.apply_chat_template(
+            chat, tokenize=False, add_generation_prompt=True
+        )
+
+    # Extract sampling rate
+    if hasattr(processor, "feature_extractor") and processor.feature_extractor is not None:
+        sampling_rate = processor.feature_extractor.sampling_rate
+    elif hasattr(processor, "audio_processor") and processor.audio_processor is not None:
+        sampling_rate = processor.audio_processor.sampling_rate
+    else:
+        sampling_rate = 16_000
+
+    # Set generate arguments
     if model.can_generate():
         gen_kwargs = {"max_new_tokens": args.max_new_tokens}
         if getattr(model.generation_config, "is_multilingual", False) or "whisper" in args.model_id.lower():
             # for multilingual Whisper-checkpoints we see a definitive WER boost by setting the language and task args
             gen_kwargs["language"] = "en"
             gen_kwargs["task"] = "transcribe"
+        if "granite-speech-3.3" in args.model_id.lower():
+            gen_kwargs["repetition_penalty"] = 1.0
     elif args.max_new_tokens:
         raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
@@ -74,6 +106,11 @@ def main(args):
             model.generation_config.cache_implementation = "static"
         else:
             model = torch.compile(model, mode=args.torch_compile, fullgraph=args.compile_fullgraph)     
+
+        # Ensure warm-up runs when using torch.compile
+        if args.warmup_steps is None or args.warmup_steps < 1:
+            print("`--torch_compile` is enabled; forcing `--warmup_steps=10` to trigger compilation before timed runs.")
+            args.warmup_steps = 10
     
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
@@ -81,9 +118,16 @@ def main(args):
         minibatch_size = len(audios)
         sampling_rate = batch["audio"][0]["sampling_rate"]
         batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
+        if text is not None:
+            texts=[text] * minibatch_size
+        else:
+            texts = None
 
         # START TIMING
-        start_time = time.time()
+        torch.cuda.synchronize(device=args.device)
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
 
         # 1. Pre-Processing
         # 1.1 Pad audios to max batch size if using torch compile to prevent re-compilations
@@ -104,6 +148,14 @@ def main(args):
                 )
             else:
                 inputs = processor.apply_transcription_request(audios)
+            prompt_len = inputs["input_ids"].shape[1]
+        elif texts is not None:
+            inputs = processor(
+                texts,
+                audios,
+                device=args.device, # Computation device; returned tensors are put on CPU
+                return_tensors="pt",
+            ).to(args.device)
             prompt_len = inputs["input_ids"].shape[1]
         elif not model.can_generate(): #or len(audios[0]) > processor.feature_extractor.n_samples:
             # 1.2 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
@@ -171,14 +223,16 @@ def main(args):
                     except Exception as sample_error:
                         print(f"Sample {i} decoding failed with error: {sample_error}. Setting to empty transcript.")
                         pred_text.append("")
-        elif has_transcription_processor:
-            # Models with transcription processors (Voxtral, GLM-ASR): strip input prompt tokens
+        elif has_transcription_processor or texts is not None:
+            # Strip input prompt tokens
             pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         else:
             pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 
         # END TIMING
-        runtime = time.time() - start_time
+        end_event.record()
+        torch.cuda.synchronize(device=args.device)
+        runtime = start_event.elapsed_time(end_event) / 1000.0
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
@@ -326,6 +380,12 @@ if __name__ == "__main__":
         type=str,
         default="bfloat16",
         help="The dtype to use for model loading and inference. E.g. 'bfloat16', 'float16', 'float32'.",
+    )
+    parser.add_argument(
+        "--attn_implementation",
+        type=str,
+        default="sdpa",
+        help="Attention implementation to use for model loading (e.g. 'sdpa', 'eager', 'flash_attention_2').",
     )
     parser.add_argument(
         "--processor_id",
