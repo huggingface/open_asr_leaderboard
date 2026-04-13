@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from transformers import AutoModel, AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, CompileConfig
+from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, CompileConfig
 import evaluate
 from normalizer import data_utils
 from tqdm import tqdm
@@ -24,15 +24,13 @@ def main(args):
 
     torch_dtype = getattr(torch, args.dtype)
 
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=args.trust_remote_code)
+    config = AutoConfig.from_pretrained(args.model_id)
     if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING:
         cls_model = AutoModelForSpeechSeq2Seq
     elif type(config) in MODEL_FOR_MULTIMODAL_LM_MAPPING:
         cls_model = AutoModelForMultimodalLM
     elif type(config) in MODEL_FOR_CTC_MAPPING:
         cls_model = AutoModelForCTC
-    elif args.trust_remote_code:
-        cls_model = AutoModel
     else:
         raise ValueError(f"Model config of type {type(config)} not recognized in Transformers mappings.")
 
@@ -40,7 +38,6 @@ def main(args):
         model = cls_model.from_pretrained(
             args.model_id, 
             dtype=torch_dtype, 
-            trust_remote_code=args.trust_remote_code,
             attn_implementation={
                 "acoustic_tokenizer_encoder_config": "eager",
                 "semantic_tokenizer_encoder_config": "eager",
@@ -52,12 +49,10 @@ def main(args):
             args.model_id, 
             dtype=torch_dtype, 
             attn_implementation=args.attn_implementation,
-            trust_remote_code=args.trust_remote_code
         )
     model.to(args.device)
     model.eval()
-    processor_id = args.processor_id if args.processor_id else args.model_id
-    processor = AutoProcessor.from_pretrained(processor_id, trust_remote_code=args.trust_remote_code)
+    processor = AutoProcessor.from_pretrained(args.model_id)
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
 
     # Optional prompt for audio language models, newer models should use `apply_transcription_request`
@@ -386,17 +381,6 @@ if __name__ == "__main__":
         type=str,
         default="sdpa",
         help="Attention implementation to use for model loading (e.g. 'sdpa', 'eager', 'flash_attention_2').",
-    )
-    parser.add_argument(
-        "--processor_id",
-        type=str,
-        default=None,
-        help="Processor identifier. If not set, defaults to --model_id. Use to override the processor, e.g. 'openai/whisper-large-v3-turbo'.",
-    )
-    parser.add_argument(
-        "--trust_remote_code",
-        action="store_true",
-        help="Whether to trust remote code when loading models and processors from the Hub.",
     )
     parser.add_argument(
         "--warmup_steps",
