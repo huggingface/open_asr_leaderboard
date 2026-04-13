@@ -36,7 +36,7 @@ To reproduce existing results:
 1) Change directory into the library you wish to evaluate. For example, `cd transformers`.
 2) Run the bash script for the model you wish to evaluate. For example, `bash run_wav2vec2.sh`.
 
-**Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU, with NVIDIA driver 560.28.03, CUDA 12.6, and PyTorch 2.4.0. You should ensure you use the same configuration when submitting results. If you are unable to create an equivalent machine, please request one of the maintainers to run your scripts for evaluation! 
+**Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU, with NVIDIA driver 560.28.03, CUDA 12.6 (or higher), and PyTorch 2.4.0 (or higher). You should ensure you use the same configuration when submitting results. If you are unable to create an equivalent machine, please request one of the maintainers to run your scripts for evaluation! 
 
 ## Trade-off plots
 
