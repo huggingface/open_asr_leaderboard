@@ -11,6 +11,7 @@ export ELEVENLABS_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
 export SPEECHMATICS_API_KEY="your_api_key"
+export RESON8_API_KEY="your_api_key"
 
 # Configuration
 MODEL_IDs=(
@@ -20,6 +21,8 @@ MODEL_IDs=(
     "assembly/universal-3-pro"
     "elevenlabs/scribe_v2"
     "speechmatics/enhanced"
+    "reson8/resonant-1"
+    "reson8/resonant-1-flash"
 )
 
 MAX_WORKERS=200
