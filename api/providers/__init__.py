@@ -51,3 +51,4 @@ from . import openai_provider
 from . import elevenlabs_provider
 from . import revai_provider
 from . import aquavoice_provider
+from . import zoom_provider
