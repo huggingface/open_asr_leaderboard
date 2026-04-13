@@ -17,6 +17,15 @@ Please report your results (WER on each split, average WER, and RTFx) on the HF 
 - [ ] Create a bash script like [this](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/run_whisper.sh).
     - [ ] Loops over all the [Open ASR Leaderboard](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard) subsets with all models.
     - [ ] Run on A100-SXM4-80GB GPU with maximum possible batch size and report on the HF Hub. (*If you don't have access to such a GPU, let us know so we can run it*).
+- [ ] Verify your evaluation runs inside the Docker container (see [`transformers/README.md`](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/README.md)):
+    ```bash
+    docker build -t open-asr-transformers -f transformers/Dockerfile .
+    docker run --rm --gpus all \
+        -v $(pwd):/app \
+        -v $HF_HOME:/root/.cache/huggingface \
+        open-asr-transformers run_<your_model>.sh
+    ```
+- [ ] If your model requires extra pip dependencies, add them to the [`transformers/Dockerfile`](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/Dockerfile).
 
 ### My model is not in Transformers (yet 🙃)
 - [ ] Besides the main requirements [here](https://github.com/huggingface/open_asr_leaderboard/blob/main/requirements/requirements.txt), create a `requirements_MODEL.txt` file for the necessary dependencies as seen [here](https://github.com/huggingface/open_asr_leaderboard/tree/main/requirements).
@@ -28,6 +37,7 @@ In a new folder for your model:
 - [ ] Create a bash script like [this](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/run_whisper.sh).
     - [ ] Loops over all the [Open ASR Leaderboard](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard) subsets.
     - [ ] Tested on A100-SXM4-80GB GPU with maximum possible batch size (*if you don't have access to such a GPU, let us know so we can run it*).
+- [ ] Provide a Dockerfile for reproducible evaluation.
 
 
 ## New Dataset Checklist

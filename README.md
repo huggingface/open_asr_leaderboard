@@ -31,12 +31,32 @@ Each library has its own set of requirements. We recommend using a clean conda e
 
 Each library has a script `run_eval.py` that acts as the entry point for evaluating a model. The script is run by the corresponding bash script for each model that is being evaluated. The script then outputs a JSONL file containing the predictions of the model on each dataset, and summarizes the Word Error Rate (WER) and Inverse Real-Time Factor (RTFx) of the model on each dataset after completion.
 
-To reproduce existing results:
+**Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU with CUDA 12.6 (or higher) and PyTorch 2.4.0 (or higher). If you are unable to evaluate on such a setup, please request one of the maintainers to run your scripts for evaluation!
 
-1) Change directory into the library you wish to evaluate. For example, `cd transformers`.
-2) Run the bash script for the model you wish to evaluate. For example, `bash run_wav2vec2.sh`.
+## Transformers models (Docker, recommended)
 
-**Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU, with NVIDIA driver 560.28.03, CUDA 12.6 (or higher), and PyTorch 2.4.0 (or higher). You should ensure you use the same configuration when submitting results. If you are unable to create an equivalent machine, please request one of the maintainers to run your scripts for evaluation! 
+For models supported by the 🤗 Transformers library, we provide a Docker image for reproducible evaluation. From the repository root:
+
+```bash
+# Build the image
+docker build -t open-asr-transformers -f transformers/Dockerfile .
+
+# Run a specific evaluation script
+docker run --rm --gpus all \
+    -v $(pwd):/app \
+    -v $HF_HOME:/root/.cache/huggingface \
+    open-asr-transformers run_whisper.sh
+```
+
+See [`transformers/README.md`](./transformers/README.md) for the full list of supported models and detailed Docker usage.
+
+## Other libraries (local setup)
+
+1) Install the common requirements: `pip install -r requirements/requirements.txt`.
+2) Check if the library has additional requirements: `pip install -r requirements/requirements_<library_name>.txt` (e.g. `requirements_nemo.txt`, `requirements_espnet.txt`). See the [`requirements/`](./requirements/) folder for the full list.
+3) Change directory into the library you wish to evaluate. For example, `cd nemo_asr`.
+4) Run the bash script for the model you wish to evaluate. For example, `bash run_parakeet.sh`.
+
 
 ## Trade-off plots
 
@@ -61,19 +81,24 @@ You can also specify your own model and its performance as such:
 
 ![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
 
-# Add a new library
+# Contributing
 
-To add a new library for evaluation in this benchmark, please follow the steps below:
+## Add a new model or library
 
-1) Fork this repository and create a new branch
-2) Create a new directory for your library. For example, `mkdir transformers`.
-3) Copy the template `run_eval.py` script below into your new directory. The script should be updated for the new library by making two modifications. Otherwise, please try to keep the structure of the script the same as in the template. In particular, the data loading, evaluation and manifest writing must be done in the same way as other libraries for consistency.
-   1) Update the model loading logic in the `main` function
-   2) Update the inference logic in the `benchmark` function
+1) Fork this repository and create a new branch.
+2) Follow the checklist in the [pull request template](./.github/PULL_REQUEST_TEMPLATE.md) — it covers both **Transformers models** and **non-Transformers libraries**.
+3) Key guidelines:
+   - Each `run_eval.py` script must use `normalizer/data_utils.py` for data loading, normalization, and manifest writing.
+   - Create one bash script per model type (e.g. `run_whisper.sh`). Different sizes of the same model share a script.
+   - Use the **same decoding hyper-parameters** across all datasets for a given model.
+   - Evaluations must be run on an **A100-SXM4-80GB GPU** with the maximum possible batch size. If you don't have access, ask a maintainer to run your scripts.
+4) Submit a PR with your results.
+
+## Template `run_eval.py` script
 
 <details>
 
-<summary> Template script for Transformers: </summary>
+<summary> Click to expand </summary>
 
 ```python
 import argparse
@@ -82,7 +107,6 @@ import torch
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 import evaluate
 from normalizer import data_utils
-import time
 from tqdm import tqdm
 
 wer_metric = evaluate.load("wer")
@@ -99,7 +123,10 @@ def main(args):
         minibatch_size = len(audios)
 
         # Start timing
-        start_time = time.time()
+        torch.cuda.synchronize(device=args.device)
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
 
         # INFERENCE (FILL ME! Replacing 1-3 with steps from your library)
         # 1. Pre-processing
@@ -111,7 +138,9 @@ def main(args):
         pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 
         # End timing
-        runtime = time.time() - start_time
+        end_event.record()
+        torch.cuda.synchronize(device=args.device)
+        runtime = start_event.elapsed_time(end_event) / 1000.0
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
@@ -247,23 +276,6 @@ if __name__ == "__main__":
 ```
 
 </details>
-
-4) Create one bash file per model type following the conversion `run_<model_type>.sh`.
-    - The bash script should follow the same steps as other libraries. You can copy the example for [run_whisper.sh](./transformers/run_whisper.sh) and update it to your library
-    - Different model sizes of the same type should share the script. For example `Wav2Vec` and `Wav2Vec2` would be two separate scripts, but different size of `Wav2Vec2` would be part of the same script.
-    - **Important:** for a given model, you can tune decoding hyper-parameters to maximize benchmark performance (e.g. batch size, beam size, etc.). However, you must use the **same decoding hyper-parameters** for each dataset in the benchmark. For more details, refer to the [ESB paper](https://arxiv.org/abs/2210.13352).
-5) Submit a PR for your changes.
-
-# Add a new model
-
-To add a model from a new library for evaluation in this benchmark, you can follow the steps noted above.
-
-To add a model from an existing library, we can simplify the steps to:
-
-1) If the model is already supported, but of a different size, simply add the new model size to the list of models run by the corresponding bash script.
-2) If the model is entirely new, create a new bash script based on others of that library and add the new model and its sizes to that script.
-3) Run the evaluation script to obtain a list of predictions for the new model on each of the datasets.
-4) Submit a PR for your changes.
 
 # Citation 
 
