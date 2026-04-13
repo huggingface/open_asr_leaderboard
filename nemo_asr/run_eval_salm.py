@@ -72,7 +72,8 @@ def parse_hyp(answer: torch.Tensor, eos_tokens):
 
 def main(args):
 
-    DATA_CACHE_DIR = os.path.join(os.getcwd(), "audio_cache")
+    data_cache_root = args.data_cache_root if args.data_cache_root is not None else os.getcwd()
+    DATA_CACHE_DIR = os.path.join(data_cache_root, "audio_cache")
     DATASET_NAME = args.dataset
     SPLIT_NAME = args.split
 
@@ -221,6 +222,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--dataset_path', type=str, default='esb/datasets', help='Dataset path. By default, it is `esb/datasets`'
+    )
+    parser.add_argument(
+        '--data_cache_root', type=str, default=None, help='Root directory for audio cache. By default, it is the current working directory.'
     )
     parser.add_argument(
         "--dataset",
