@@ -86,7 +86,6 @@ def main(args):
     if model.can_generate():
         gen_kwargs = {"max_new_tokens": args.max_new_tokens}
         if getattr(model.generation_config, "is_multilingual", False) or "whisper" in args.model_id.lower():
-            # for multilingual Whisper-checkpoints we see a definitive WER boost by setting the language and task args
             gen_kwargs["language"] = "en"
             gen_kwargs["task"] = "transcribe"
         if "granite-speech-3.3" in args.model_id.lower():
@@ -97,7 +96,7 @@ def main(args):
     if args.torch_compile is not None:
         if model.can_generate():
             gen_kwargs["compile_config"] = CompileConfig(mode=args.torch_compile, fullgraph=args.compile_fullgraph)
-            # enable static k/v cache for autoregressive models, TODO check
+            # enable static k/v cache for autoregressive models
             model.generation_config.cache_implementation = "static"
         else:
             model = torch.compile(model, mode=args.torch_compile, fullgraph=args.compile_fullgraph)     

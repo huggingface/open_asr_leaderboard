@@ -19,6 +19,16 @@ This folder contains evaluation scripts for ASR models supported by the 🤗 Tra
 | `run_glm_asr.sh` | GLM-ASR |
 | `run_granite.sh` | Granite Speech |
 
+### Multilingual
+
+| Script | Models |
+|--------|--------|
+| `run_whisper_ml.sh` | OpenAI Whisper (multilingual) |
+| `run_voxtral_ml.sh` | Voxtral Mini, Voxtral Small |
+| `run_voxtral_realtime_ml.sh` | Voxtral Realtime |
+
+Multilingual scripts evaluate on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech) for German, French, Italian, Spanish, and Portuguese. They use `run_eval_ml.py` which applies language-specific normalization. By default, models auto-detect the language during inference as per the leaderboard convention. The argument `--language` can be used to force a specific language.
+
 ## Docker usage (recommended)
 
 From the **repository root**, build the Docker image:

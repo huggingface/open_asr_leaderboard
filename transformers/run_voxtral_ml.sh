@@ -1,24 +1,24 @@
 #!/bin/bash
 
-# Multilingual ASR Evaluation Script for Voxtral Realtime
+# Multilingual ASR Evaluation Script for Voxtral
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech)
 
 export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
 MODEL_IDs=(
-    "mistralai/Voxtral-Mini-4B-Realtime-2602"
+    "mistralai/Voxtral-Mini-3B-2507"
+    "mistralai/Voxtral-Small-24B-2507"
 )
 
-BATCH_SIZE=64
 DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="nithinraok/asr-leaderboard-datasets"
 
-# Voxtral Realtime supports: en, fr, es, de, ru, zh, ja, it, pt, nl, ar, hi, ko
+# Voxtral supports: English, Spanish, French, Portuguese, Hindi, German, Dutch, Italian
 DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt "
+DATASET_LANGS_fleurs="de fr it es pt"
 DATASET_LANGS_mcv="de es fr it"
 DATASET_LANGS_mls="es fr it pt"
 
@@ -27,6 +27,7 @@ run_evaluation() {
     local model_id=$1
     local dataset=$2
     local language=$3
+    local batch_size=$4
     local config_name="${dataset}_${language}"
 
     echo ""
@@ -35,18 +36,21 @@ run_evaluation() {
     echo "   Dataset: $dataset"
     echo "   Language: $language"
     echo "   Device: $DEVICE_ID"
-    echo "   Batch Size: $BATCH_SIZE"
+    echo "   Batch Size: $batch_size"
     echo "   Time: $(date)"
     echo "----------------------------------------"
 
-    python run_eval_realtime_ml.py \
+    # Note: --language is not passed so the model auto-detects the language.
+    # To force a language, add: --language="$language"
+    python run_eval_ml.py \
         --model_id="$model_id" \
         --dataset="$DATASETS" \
         --config_name="$config_name" \
         --split="test" \
         --device="$DEVICE_ID" \
-        --batch_size="$BATCH_SIZE" \
-        --max_eval_samples=-1
+        --batch_size="$batch_size" \
+        --max_eval_samples=-1 \
+        --max_new_tokens=500
 
     local exit_code=$?
 
@@ -62,15 +66,21 @@ run_evaluation() {
 
 # Main execution
 echo "========================================================"
-echo "Starting Voxtral Realtime Multilingual Evaluation"
-echo "Batch Size: $BATCH_SIZE"
+echo "Starting Voxtral Multilingual Evaluation"
 echo "Device: $DEVICE_ID"
 echo ""
 
 # Run evaluations for all models
 for MODEL_ID in "${MODEL_IDs[@]}"; do
+    # Per-model batch size
+    if [[ "$MODEL_ID" == *"24B"* ]]; then
+        BATCH_SIZE=24
+    else
+        BATCH_SIZE=64
+    fi
+
     echo ""
-    echo "Processing Model: $MODEL_ID"
+    echo "Processing Model: $MODEL_ID (batch_size=$BATCH_SIZE)"
     echo "========================================================"
 
     # Run evaluations for all datasets and languages
@@ -85,7 +95,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
             echo ""
 
             for language in $languages; do
-                run_evaluation "$MODEL_ID" "$dataset" "$language"
+                run_evaluation "$MODEL_ID" "$dataset" "$language" "$BATCH_SIZE"
             done
         fi
     done
@@ -96,7 +106,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
     echo "========================================================"
 
     # Evaluate results
-    RUNDIR=`pwd`
+    RUNDIR=$(pwd)
     cd ../normalizer
     python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}', multilingual=True)"
     cd "$RUNDIR"
