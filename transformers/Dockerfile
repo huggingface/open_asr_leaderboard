@@ -1,11 +1,12 @@
-FROM nvidia/cuda:12.9.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.9.0-runtime-ubuntu24.04
 
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Python and system dependencies
+# Ubuntu 24.04 ships FFmpeg 6.1 (torchcodec requires FFmpeg 5+, <8)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 \
+    python3 \
     python3-pip \
     python3-dev \
     git \
@@ -13,8 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Python alias
-RUN ln -sf /usr/bin/python3.10 /usr/bin/python
+# Set Python alias (Ubuntu 24.04 ships Python 3.12)
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+# Allow pip to install packages system-wide in the container (PEP 668)
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # Set working directory
 WORKDIR /app

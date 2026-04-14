@@ -113,6 +113,7 @@ def main(args):
         minibatch_size = len(audios)
         sampling_rate = batch["audio"][0]["sampling_rate"]
         batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
         if text is not None:
             texts=[text] * minibatch_size
         else:
@@ -269,6 +270,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -285,6 +287,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
@@ -390,5 +393,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=False)
+
+    print("*" * 100)
+    print(f"Evaluating {args.model_id} on {args.dataset}")
+    print("*" * 100)
 
     main(args)

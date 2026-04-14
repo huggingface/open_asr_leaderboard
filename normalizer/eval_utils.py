@@ -62,6 +62,7 @@ def write_manifest(
     split: str,
     audio_length: list = None,
     transcription_time: list = None,
+    audio_filepaths: list = None,
 ):
     """
     Writes a manifest file (jsonl format) and returns the path to the file.
@@ -75,7 +76,7 @@ def write_manifest(
         split: Dataset split name.
         audio_length: Length of each audio sample in seconds.
         transcription_time: Transcription time of each sample in seconds.
-
+        audio_filepaths: List of file paths for each audio sample.
     Returns:
         Path to the manifest file.
     """
@@ -99,6 +100,11 @@ def write_manifest(
             f"The number of samples in `transcription_time` ({len(transcription_time)}) "
             f"must match `references` ({len(references)})."
         )
+    if audio_filepaths is not None and len(audio_filepaths) != len(references):
+        raise ValueError(
+            f"The number of samples in `audio_filepaths` ({len(audio_filepaths)}) "
+            f"must match `references` ({len(references)})."
+        )
 
     audio_length = (
         audio_length if audio_length is not None else len(references) * [None]
@@ -107,6 +113,9 @@ def write_manifest(
         transcription_time
         if transcription_time is not None
         else len(references) * [None]
+    )
+    audio_filepaths = (
+        audio_filepaths if audio_filepaths is not None else len(references) * [None]
     )
 
     basedir = "./results/"
@@ -118,11 +127,11 @@ def write_manifest(
     )
 
     with open(manifest_path, "w", encoding="utf-8") as f:
-        for idx, (text, transcript, audio_length, transcription_time) in enumerate(
-            zip(references, transcriptions, audio_length, transcription_time)
+        for idx, (text, transcript, audio_length, transcription_time, audio_filepath) in enumerate(
+            zip(references, transcriptions, audio_length, transcription_time, audio_filepaths)
         ):
             datum = {
-                "audio_filepath": f"sample_{idx}",  # dummy value for Speech Data Processor
+                "audio_filepath": audio_filepath if audio_filepath else f"sample_{idx}",
                 "duration": audio_length,
                 "time": transcription_time,
                 "text": text,
