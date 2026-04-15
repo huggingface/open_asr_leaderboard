@@ -7,7 +7,7 @@ This repository contains the code for the Open ASR Leaderboard. The leaderboard 
 The Open ASR Leaderboard evaluates models on a diverse set of publicly available ASR benchmarks hosted on the Hugging Face Hub. These datasets cover a wide range of domains, languages, and recording conditions to provide a fair and comprehensive comparison across models.
 
 * **Core Test Sets (English, sorted, test-only):**
-  The main benchmark datasets used for evaluation are available here: [**ESB test-only sorted collection**](https://huggingface.co/datasets/hf-audio/esb-datasets-test-only-sorted).
+  The main benchmark datasets used for evaluation are available here: [**ESB test-only sorted collection**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard).
 
 * **Long-form Benchmark (recent addition):**
   The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21, earnings22, and tedlium. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.

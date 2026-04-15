@@ -23,7 +23,7 @@ do
     do
         python run_eval.py \
             --model_id=${MODEL_ID} \
-            --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+            --dataset_path="hf-audio/open-asr-leaderboard" \
             --dataset="${DATASETS[$j]}" \
             --split="${SPLITS[$j]}" \
             --device=0 \

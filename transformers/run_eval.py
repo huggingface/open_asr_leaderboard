@@ -33,6 +33,7 @@ def main(args):
         cls_model = AutoModelForCTC
     else:
         raise ValueError(f"Model config of type {type(config)} not recognized in Transformers mappings.")
+    is_ctc = cls_model == AutoModelForCTC
 
     if "vibevoice" in args.model_id.lower():
         model = cls_model.from_pretrained(
@@ -221,6 +222,9 @@ def main(args):
         elif has_transcription_processor or texts is not None:
             # Strip input prompt tokens
             pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
+        elif is_ctc:
+            # don't use skip_special_tokens as it collapses double letters
+            pred_text = processor.batch_decode(pred_ids)
         else:
             pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 
