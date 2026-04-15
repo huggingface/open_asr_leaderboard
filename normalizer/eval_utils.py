@@ -62,6 +62,7 @@ def write_manifest(
     split: str,
     audio_length: list = None,
     transcription_time: list = None,
+    basedir: str = "./results/",
 ):
     """
     Writes a manifest file (jsonl format) and returns the path to the file.
@@ -75,6 +76,7 @@ def write_manifest(
         split: Dataset split name.
         audio_length: Length of each audio sample in seconds.
         transcription_time: Transcription time of each sample in seconds.
+        basedir: Base directory to save the manifest file.
 
     Returns:
         Path to the manifest file.
@@ -109,7 +111,6 @@ def write_manifest(
         else len(references) * [None]
     )
 
-    basedir = "./results/"
     if not os.path.exists(basedir):
         os.makedirs(basedir)
 
