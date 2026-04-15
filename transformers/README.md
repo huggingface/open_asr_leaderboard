@@ -59,7 +59,7 @@ docker run --gpus '"device=1"' \
     open-asr-transformers run_whisper.sh
 ```
 
-### Run interactivately
+### Run interactively
 
 From the **repository root**, you can also enter the contain to run interactively:
 
