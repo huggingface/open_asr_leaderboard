@@ -13,8 +13,9 @@ Usage:
 import argparse
 import json
 import os
+import sys
 import time
-import importlib.util
+import runpy
 
 import torch
 import numpy as np
@@ -26,13 +27,35 @@ normalizer = EnglishTextNormalizer()
 
 
 def load_transcribe_fn(model_id):
-    """Load the bundled transcribe function from the model repo."""
+    """Load the bundled transcribe function from the model repo.
+
+    Downloads all Python files needed by transcribe.py, then loads
+    it via runpy with the download directory on sys.path so that
+    plain (non-relative) imports resolve to sibling files.
+    """
     from transformers.utils import cached_file
+
+    # Ensure all Python files needed by transcribe.py are downloaded
+    for filename in [
+        "transcribe.py",
+        "higgs_audio_collator.py",
+        "modeling_higgs_audio_xcodec.py",
+        "utils.py",
+        "common.py",
+        "configuration_higgs_audio.py",
+    ]:
+        cached_file(model_id, filename)
+
     path = cached_file(model_id, "transcribe.py")
-    spec = importlib.util.spec_from_file_location("transcribe", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.transcribe
+    module_dir = os.path.dirname(path)
+
+    sys.path.insert(0, module_dir)
+    try:
+        module_globals = runpy.run_path(path)
+    finally:
+        sys.path.pop(0)
+
+    return module_globals["transcribe"]
 
 
 def main():
@@ -57,6 +80,10 @@ def main():
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model_id)
     model.eval()
+
+    # Required for generation stop conditions
+    model.audio_out_bos_token_id = tokenizer.convert_tokens_to_ids("<|audio_out_bos|>")
+    model.audio_eos_token_id = tokenizer.convert_tokens_to_ids("<|audio_eos|>")
 
     transcribe = load_transcribe_fn(args.model_id)
 
