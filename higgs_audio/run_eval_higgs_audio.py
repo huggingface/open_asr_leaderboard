@@ -7,7 +7,7 @@ Usage:
     python run_eval_higgs_audio.py \
         --model_id bosonai/higgs-audio-v3-8b-stt \
         --dataset_path hf-audio/esb-datasets-test-only-sorted \
-        --dataset ami --split test --device 0
+        --dataset ami --split test --device 0 --batch_size 4
 """
 
 import argparse
@@ -26,16 +26,15 @@ from normalizer import EnglishTextNormalizer
 normalizer = EnglishTextNormalizer()
 
 
-def load_transcribe_fn(model_id):
-    """Load the bundled transcribe function from the model repo.
+def load_transcribe_fns(model_id):
+    """Load the bundled transcribe + transcribe_batch functions from the model repo.
 
-    Downloads all Python files needed by transcribe.py, then loads
-    it via runpy with the download directory on sys.path so that
-    plain (non-relative) imports resolve to sibling files.
+    Downloads all Python files needed by transcribe.py, then loads it via
+    runpy with the download directory on sys.path so plain (non-relative)
+    imports resolve to sibling files.
     """
     from transformers.utils import cached_file
 
-    # Ensure all Python files needed by transcribe.py are downloaded
     for filename in [
         "transcribe.py",
         "higgs_audio_collator.py",
@@ -55,7 +54,7 @@ def load_transcribe_fn(model_id):
     finally:
         sys.path.pop(0)
 
-    return module_globals["transcribe"]
+    return module_globals["transcribe"], module_globals["transcribe_batch"]
 
 
 def main():
@@ -65,6 +64,8 @@ def main():
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--split", type=str, default="test")
     parser.add_argument("--device", type=int, default=0)
+    parser.add_argument("--batch_size", type=int, default=1,
+                        help="Parallel transcription batch size (1 = single-sample loop)")
     parser.add_argument("--max_eval_samples", type=int, default=-1)
     args = parser.parse_args()
 
@@ -85,7 +86,7 @@ def main():
     model.audio_out_bos_token_id = tokenizer.convert_tokens_to_ids("<|audio_out_bos|>")
     model.audio_eos_token_id = tokenizer.convert_tokens_to_ids("<|audio_eos|>")
 
-    transcribe = load_transcribe_fn(args.model_id)
+    transcribe, transcribe_batch = load_transcribe_fns(args.model_id)
 
     print(f"Loading dataset {args.dataset_path}/{args.dataset} ({args.split})...")
     dataset = load_dataset(args.dataset_path, args.dataset, split=args.split)
@@ -94,31 +95,40 @@ def main():
     if args.max_eval_samples > 0:
         dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
 
-    print(f"Evaluating {len(dataset)} samples...")
+    print(f"Evaluating {len(dataset)} samples (batch_size={args.batch_size})...")
 
     predictions = []
     references = []
     total_audio_duration = 0.0
     total_inference_time = 0.0
 
-    for i, sample in enumerate(dataset):
-        audio = sample["audio"]
-        audio_np = np.array(audio["array"], dtype=np.float32)
-        ref_text = sample.get("norm_text", sample.get("text", ""))
-        total_audio_duration += len(audio_np) / audio["sampling_rate"]
+    # Iterate in batches
+    n = len(dataset)
+    i = 0
+    while i < n:
+        batch_end = min(i + args.batch_size, n)
+        batch_samples = [dataset[j] for j in range(i, batch_end)]
+
+        audios = [np.array(s["audio"]["array"], dtype=np.float32) for s in batch_samples]
+        refs = [s.get("norm_text", s.get("text", "")) for s in batch_samples]
+
+        for a in audios:
+            total_audio_duration += len(a) / 16000
 
         t0 = time.time()
-        pred = transcribe(model, tokenizer, audio_np)
+        if args.batch_size > 1:
+            preds = transcribe_batch(model, tokenizer, audios, sample_rates=16000)
+        else:
+            preds = [transcribe(model, tokenizer, audios[0])]
         total_inference_time += time.time() - t0
 
-        pred_norm = normalizer(pred)
-        ref_norm = normalizer(ref_text)
+        for pred, ref in zip(preds, refs):
+            predictions.append(normalizer(pred))
+            references.append(normalizer(ref))
 
-        predictions.append(pred_norm)
-        references.append(ref_norm)
-
-        if (i + 1) % 100 == 0:
-            print(f"  {i+1}/{len(dataset)} done", flush=True)
+        i = batch_end
+        if i % 100 == 0 or i == n:
+            print(f"  {i}/{n} done", flush=True)
 
     from jiwer import wer
     wer_score = round(wer(references, predictions) * 100, 2)
@@ -132,6 +142,7 @@ def main():
         "model_id": args.model_id,
         "dataset": args.dataset,
         "split": args.split,
+        "batch_size": args.batch_size,
         "wer": wer_score,
         "rtfx": rtfx,
         "num_samples": len(dataset),

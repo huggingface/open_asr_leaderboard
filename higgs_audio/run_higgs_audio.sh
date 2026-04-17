@@ -31,7 +31,7 @@ for MODEL in "${MODELS[@]}"; do
             --dataset "$DATASET" \
             --split "$SPLIT" \
             --device 0 \
-            --batch_size 1 \
+            --batch_size 4 \
             --max_eval_samples -1
     done
     echo "=== Done: $MODEL ==="
