@@ -6,7 +6,7 @@ MODEL_IDs=(
     "bosonai/higgs-audio-v3-8b-stt"
     "bosonai/higgs-audio-v3-stt"
 )
-BATCH_SIZE=4
+BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
 
