@@ -22,8 +22,8 @@ MODEL_IDs=(
     # "revai/fusion" # please use --use_url=True
     # "speechmatics/enhanced"
     # "aquavoice/avalon-v1-en"
-    "reson8/resonant-1"
-    "reson8/resonant-1-flash"
+    "reson8/resonant-1" # please use --use_url
+    "reson8/resonant-1-flash" # please use --use_url
     # "zoom/scribe_v1" # please use --use_url
 )
 
