@@ -11,23 +11,22 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import sys
 import time
 import runpy
 
 import torch
-import numpy as np
-from datasets import load_dataset, Audio
+import evaluate
+from normalizer import data_utils
 from transformers import AutoModel, AutoTokenizer
-from normalizer import EnglishTextNormalizer
+from tqdm import tqdm
 
-normalizer = EnglishTextNormalizer()
+wer_metric = evaluate.load("wer")
 
 
-def load_transcribe_fns(model_id):
-    """Load the bundled transcribe + transcribe_batch functions from the model repo.
+def load_transcribe_fn(model_id):
+    """Load the bundled transcribe_batch function from the model repo.
 
     Downloads all Python files needed by transcribe.py, then loads it via
     runpy with the download directory on sys.path so plain (non-relative)
@@ -54,24 +53,12 @@ def load_transcribe_fns(model_id):
     finally:
         sys.path.pop(0)
 
-    return module_globals["transcribe"], module_globals["transcribe_batch"]
+    return module_globals["transcribe_batch"]
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_id", type=str, required=True)
-    parser.add_argument("--dataset_path", type=str, default="hf-audio/esb-datasets-test-only-sorted")
-    parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--split", type=str, default="test")
-    parser.add_argument("--device", type=int, default=0)
-    parser.add_argument("--batch_size", type=int, default=1,
-                        help="Parallel transcription batch size (1 = single-sample loop)")
-    parser.add_argument("--max_eval_samples", type=int, default=-1)
-    args = parser.parse_args()
-
+def main(args):
     device = f"cuda:{args.device}" if args.device >= 0 else "cpu"
 
-    print(f"Loading model {args.model_id}...")
     model = AutoModel.from_pretrained(
         args.model_id,
         torch_dtype=torch.bfloat16,
@@ -86,77 +73,169 @@ def main():
     model.audio_out_bos_token_id = tokenizer.convert_tokens_to_ids("<|audio_out_bos|>")
     model.audio_eos_token_id = tokenizer.convert_tokens_to_ids("<|audio_eos|>")
 
-    transcribe, transcribe_batch = load_transcribe_fns(args.model_id)
+    transcribe_batch = load_transcribe_fn(args.model_id)
 
-    print(f"Loading dataset {args.dataset_path}/{args.dataset} ({args.split})...")
-    dataset = load_dataset(args.dataset_path, args.dataset, split=args.split)
-    dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
+    def benchmark(batch):
+        # Load audio inputs
+        audios = [audio["array"] for audio in batch["audio"]]
+        batch["audio_length_s"] = [
+            len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios
+        ]
+        minibatch_size = len(audios)
 
-    if args.max_eval_samples > 0:
-        dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
+        # START TIMING
+        start_time = time.time()
 
-    print(f"Evaluating {len(dataset)} samples (batch_size={args.batch_size})...")
+        # INFERENCE
+        pred_text = transcribe_batch(
+            model, tokenizer, audios, sample_rates=16000,
+            max_new_tokens=args.max_new_tokens,
+        )
 
-    predictions = []
-    references = []
-    total_audio_duration = 0.0
-    total_inference_time = 0.0
+        # END TIMING
+        runtime = time.time() - start_time
 
-    # Iterate in batches
-    n = len(dataset)
-    i = 0
-    while i < n:
-        batch_end = min(i + args.batch_size, n)
-        batch_samples = [dataset[j] for j in range(i, batch_end)]
+        # normalize by minibatch size since we want the per-sample time
+        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-        audios = [np.array(s["audio"]["array"], dtype=np.float32) for s in batch_samples]
-        refs = [s.get("norm_text", s.get("text", "")) for s in batch_samples]
+        # normalize transcriptions with English normalizer
+        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
+        batch["references"] = batch["norm_text"]
+        return batch
 
-        for a in audios:
-            total_audio_duration += len(a) / 16000
+    if args.warmup_steps is not None:
+        warmup_dataset = data_utils.load_data(args)
+        warmup_dataset = data_utils.prepare_data(warmup_dataset)
 
-        t0 = time.time()
-        if args.batch_size > 1:
-            preds = transcribe_batch(model, tokenizer, audios, sample_rates=16000)
+        num_warmup_samples = args.warmup_steps * args.batch_size
+        if args.streaming:
+            warmup_dataset = warmup_dataset.take(num_warmup_samples)
         else:
-            preds = [transcribe(model, tokenizer, audios[0])]
-        total_inference_time += time.time() - t0
+            warmup_dataset = warmup_dataset.select(
+                range(min(num_warmup_samples, len(warmup_dataset)))
+            )
+        warmup_dataset = iter(
+            warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True)
+        )
 
-        for pred, ref in zip(preds, refs):
-            predictions.append(normalizer(pred))
-            references.append(normalizer(ref))
+        for _ in tqdm(warmup_dataset, desc="Warming up..."):
+            continue
 
-        i = batch_end
-        if i % 100 == 0 or i == n:
-            print(f"  {i}/{n} done", flush=True)
+    dataset = data_utils.load_data(args)
+    dataset = data_utils.prepare_data(dataset)
 
-    from jiwer import wer
-    wer_score = round(wer(references, predictions) * 100, 2)
-    rtfx = round(total_audio_duration / total_inference_time, 2) if total_inference_time > 0 else 0
+    if args.max_eval_samples is not None and args.max_eval_samples > 0:
+        print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
+        if args.streaming:
+            dataset = dataset.take(args.max_eval_samples)
+        else:
+            dataset = dataset.select(
+                range(min(args.max_eval_samples, len(dataset)))
+            )
 
-    print(f"\nResults for {args.model_id} on {args.dataset}:")
-    print(f"  WER: {wer_score}%")
-    print(f"  RTFx: {rtfx}")
+    dataset = dataset.map(
+        benchmark, batch_size=args.batch_size, batched=True,
+        remove_columns=["audio"],
+    )
 
-    manifest = {
-        "model_id": args.model_id,
-        "dataset": args.dataset,
-        "split": args.split,
-        "batch_size": args.batch_size,
-        "wer": wer_score,
-        "rtfx": rtfx,
-        "num_samples": len(dataset),
-        "predictions": predictions,
-        "references": references,
+    all_results = {
+        "audio_length_s": [],
+        "transcription_time_s": [],
+        "predictions": [],
+        "references": [],
     }
+    result_iter = iter(dataset)
+    for result in tqdm(result_iter, desc="Samples..."):
+        for key in all_results:
+            all_results[key].append(result[key])
 
-    out_dir = os.path.join("results", args.model_id.replace("/", "__"))
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"{args.dataset}_{args.split}.json")
-    with open(out_path, "w") as f:
-        json.dump(manifest, f, indent=2)
-    print(f"  Saved to {out_path}")
+    # Write manifest results (WER and RTFX)
+    manifest_path = data_utils.write_manifest(
+        all_results["references"],
+        all_results["predictions"],
+        args.model_id,
+        args.dataset_path,
+        args.dataset,
+        args.split,
+        audio_length=all_results["audio_length_s"],
+        transcription_time=all_results["transcription_time_s"],
+    )
+    print("Results saved at path:", os.path.abspath(manifest_path))
+
+    wer = wer_metric.compute(
+        references=all_results["references"], predictions=all_results["predictions"]
+    )
+    wer = round(100 * wer, 2)
+    rtfx = round(
+        sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2
+    )
+    print("WER:", wer, "%", "RTFx:", rtfx)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--model_id",
+        type=str,
+        required=True,
+        help="Model identifier. Should be a HiggsAudio3 checkpoint on the HF Hub.",
+    )
+    parser.add_argument(
+        "--dataset_path",
+        type=str,
+        default="esb/datasets",
+        help="Dataset path. By default, it is `esb/datasets`.",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+        help="Dataset name.",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        help="Split of the dataset.",
+    )
+    parser.add_argument(
+        "--device",
+        type=int,
+        default=-1,
+        help="The device to run the pipeline on. -1 for CPU (default), 0 for the first GPU and so on.",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=4,
+        help="Number of samples to go through each streamed batch.",
+    )
+    parser.add_argument(
+        "--max_eval_samples",
+        type=int,
+        default=None,
+        help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
+    )
+    parser.add_argument(
+        "--no-streaming",
+        dest="streaming",
+        action="store_false",
+        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=1024,
+        help="Maximum number of tokens to generate (includes the chain-of-thought block).",
+    )
+    parser.add_argument(
+        "--warmup_steps",
+        type=int,
+        default=10,
+        help="Number of warm-up steps to run before launching the timed runs.",
+    )
+    args = parser.parse_args()
+    parser.set_defaults(streaming=False)
+
+    main(args)

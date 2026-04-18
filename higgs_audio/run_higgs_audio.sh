@@ -1,38 +1,95 @@
 #!/bin/bash
-# Evaluate Higgs Audio v3 8B STT on all ESB datasets
 
-MODELS=(
+export PYTHONPATH="..":$PYTHONPATH
+
+MODEL_IDs=(
     "bosonai/higgs-audio-v3-8b-stt"
     "bosonai/higgs-audio-v3-stt"
 )
+BATCH_SIZE=4
 
-DATASETS=(
-    "ami"
-    "earnings22"
-    "gigaspeech"
-    "librispeech_asr:test.clean"
-    "librispeech_asr:test.other"
-    "spgispeech"
-    "tedlium"
-    "voxpopuli"
-)
+num_models=${#MODEL_IDs[@]}
 
-export PYTHONPATH="..:$PYTHONPATH"
+for (( i=0; i<${num_models}; i++ ));
+do
+    MODEL_ID=${MODEL_IDs[$i]}
 
-for MODEL in "${MODELS[@]}"; do
-    echo "=== Evaluating $MODEL ==="
-    for DS_ENTRY in "${DATASETS[@]}"; do
-        IFS=':' read -r DATASET SPLIT <<< "$DS_ENTRY"
-        SPLIT=${SPLIT:-test}
-        echo "  Dataset: $DATASET ($SPLIT)"
-        python run_eval_higgs_audio.py \
-            --model_id "$MODEL" \
-            --dataset_path "hf-audio/esb-datasets-test-only-sorted" \
-            --dataset "$DATASET" \
-            --split "$SPLIT" \
-            --device 0 \
-            --batch_size 4 \
-            --max_eval_samples -1
-    done
-    echo "=== Done: $MODEL ==="
+    python run_eval_higgs_audio.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="voxpopuli" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    python run_eval_higgs_audio.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="ami" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    python run_eval_higgs_audio.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="earnings22" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    python run_eval_higgs_audio.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="gigaspeech" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    python run_eval_higgs_audio.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="librispeech" \
+        --split="test.clean" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    python run_eval_higgs_audio.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="librispeech" \
+        --split="test.other" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    python run_eval_higgs_audio.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="spgispeech" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    python run_eval_higgs_audio.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset="tedlium" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    # Evaluate results
+    RUNDIR=`pwd` && \
+    cd ../normalizer && \
+    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')" && \
+    cd $RUNDIR
+
 done
