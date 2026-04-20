@@ -2,36 +2,44 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
+MAX_NEW_TOKENS=200
+
+# ── Models + batch sizes (paired arrays) ────────────────────────────────────
 MODEL_IDs=(
     "ibm-granite/granite-speech-3.3-2b"
     "ibm-granite/granite-speech-3.3-8b"
 )
-
 BATCH_SIZEs=(
     160
     64
 )
 
-MAX_NEW_TOKENS=200
-
-DATASETS=("voxpopuli" "ami" "earnings22" "gigaspeech" "librispeech" "librispeech" "spgispeech" "tedlium")
-SPLITS=(   "test"      "test" "test"      "test"       "test.clean"  "test.other"  "test"       "test")
+# ── Datasets: "name split" (comment / uncomment to select) ──────────────────
+DATASET_CONFIGS=(
+    "voxpopuli test"
+    "ami test"
+    "earnings22 test"
+    "gigaspeech test"
+    "librispeech test.clean"
+    "librispeech test.other"
+    "spgispeech test"
+    "tedlium test"
+)
 
 num_models=${#MODEL_IDs[@]}
-num_datasets=${#DATASETS[@]}
 
-for (( i=0; i<${num_models}; i++ ));
-do
+for (( i=0; i<${num_models}; i++ )); do
     MODEL_ID=${MODEL_IDs[$i]}
     BATCH_SIZE=${BATCH_SIZEs[$i]}
 
-    for (( j=0; j<${num_datasets}; j++ ));
-    do
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET SPLIT <<< "$cfg"
+
         python run_eval.py \
             --model_id=${MODEL_ID} \
             --dataset_path="hf-audio/open-asr-leaderboard" \
-            --dataset="${DATASETS[$j]}" \
-            --split="${SPLITS[$j]}" \
+            --dataset="${DATASET}" \
+            --split="${SPLIT}" \
             --device=0 \
             --batch_size=${BATCH_SIZE} \
             --max_eval_samples=-1 \

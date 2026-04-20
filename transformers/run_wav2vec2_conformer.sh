@@ -2,30 +2,40 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("facebook/wav2vec2-conformer-rel-pos-large-960h-ft" "facebook/wav2vec2-conformer-rope-large-960h-ft")
 BATCH_SIZE=24
 
-DATASETS=("voxpopuli" "ami" "earnings22" "gigaspeech" "librispeech" "librispeech" "spgispeech" "tedlium")
-SPLITS=(   "test"      "test" "test"      "test"       "test.clean"  "test.other"  "test"       "test")
+# ── Models (comment / uncomment to select) ──────────────────────────────────
+MODEL_IDs=(
+    "facebook/wav2vec2-conformer-rel-pos-large-960h-ft"
+    "facebook/wav2vec2-conformer-rope-large-960h-ft"
+)
 
-num_models=${#MODEL_IDs[@]}
-num_datasets=${#DATASETS[@]}
+# ── Datasets: "name split" (comment / uncomment to select) ──────────────────
+DATASET_CONFIGS=(
+    "voxpopuli test"
+    "ami test"
+    "earnings22 test"
+    "gigaspeech test"
+    "librispeech test.clean"
+    "librispeech test.other"
+    "spgispeech test"
+    "tedlium test"
+)
 
-for (( i=0; i<${num_models}; i++ ));
-do
-    MODEL_ID=${MODEL_IDs[$i]}
+for MODEL_ID in "${MODEL_IDs[@]}"; do
 
-    for (( j=0; j<${num_datasets}; j++ ));
-    do
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET SPLIT <<< "$cfg"
+
         python run_eval.py \
             --model_id=${MODEL_ID} \
             --dataset_path="hf-audio/open-asr-leaderboard" \
-            --dataset="${DATASETS[$j]}" \
-            --split="${SPLITS[$j]}" \
+            --dataset="${DATASET}" \
+            --split="${SPLIT}" \
             --device=0 \
-            --attn_implementation=eager \
             --batch_size=${BATCH_SIZE} \
-            --max_eval_samples=-1
+            --max_eval_samples=-1 \
+            --attn_implementation=eager
     done
 
     # Evaluate results

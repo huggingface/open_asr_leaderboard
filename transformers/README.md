@@ -61,7 +61,7 @@ docker run --gpus '"device=1"' \
 
 ### Run interactively
 
-From the **repository root**, you can also enter the contain to run interactively:
+From the **repository root**, you can also enter the container to run interactively:
 
 ```bash
 docker run --gpus all -it \
