@@ -186,7 +186,6 @@ def main(args):
         else:
             sdpa_backends = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
         with sdpa_kernel(sdpa_backends):
-        # with sdpa_kernel(SDPBackend.MATH if args.torch_compile else SDPBackend.FLASH_ATTENTION):
             if model.can_generate():
                 # 2.1 Auto-regressive generation for LM-based models
                 if args.longform:
