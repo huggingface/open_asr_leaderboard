@@ -20,7 +20,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="voxpopuli" \
         --split="test" \
         --device=0 \
@@ -29,7 +29,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="ami" \
         --split="test" \
         --device=0 \
@@ -38,7 +38,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="earnings22" \
         --split="test" \
         --device=0 \
@@ -47,7 +47,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="gigaspeech" \
         --split="test" \
         --device=0 \
@@ -56,7 +56,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="librispeech" \
         --split="test.clean" \
         --device=0 \
@@ -65,7 +65,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="librispeech" \
         --split="test.other" \
         --device=0 \
@@ -74,7 +74,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="spgispeech" \
         --split="test" \
         --device=0 \
@@ -83,7 +83,7 @@ do
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+        --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="tedlium" \
         --split="test" \
         --device=0 \

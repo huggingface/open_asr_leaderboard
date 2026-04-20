@@ -44,6 +44,7 @@ def main(args):
         asr_model.change_attention_model("rel_pos_local_attn", [128, 128])  # local attn
     asr_model.to(compute_dtype)
     asr_model.eval()
+    print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     dataset = data_utils.load_data(args)
 
@@ -178,14 +179,14 @@ if __name__ == "__main__":
         "--model_id", type=str, required=True, help="Model identifier. Should be loadable with NVIDIA NeMo.",
     )
     parser.add_argument(
-        '--dataset_path', type=str, default='esb/datasets', help='Dataset path. By default, it is `esb/datasets`'
+        '--dataset_path', type=str, default='hf-audio/open-asr-leaderboard', help='Dataset path. By default, it is `hf-audio/open-asr-leaderboard`'
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--split",
@@ -209,10 +210,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest='streaming',
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--longform",
@@ -220,6 +220,5 @@ if __name__ == "__main__":
         help="Whether to use longform mode.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
 
     main(args)

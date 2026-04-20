@@ -16,6 +16,7 @@ def main(args):
         args.model_id, trust_remote_code=True
     ).cuda()
     model = AutoModel.from_pretrained(args.model_id, trust_remote_code=True).cuda()
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
     tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
 
     def get_sub_batch_output(sub_batch):
@@ -174,15 +175,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="esb/datasets",
-        help="Dataset path. By default, it is `esb/datasets`",
+        default="hf-audio/open-asr-leaderboard",
+        help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--split",

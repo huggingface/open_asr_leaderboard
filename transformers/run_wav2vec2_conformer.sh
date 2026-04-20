@@ -3,7 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=("facebook/wav2vec2-conformer-rel-pos-large-960h-ft" "facebook/wav2vec2-conformer-rope-large-960h-ft")
-BATCH_SIZE=32
+BATCH_SIZE=24
 
 DATASETS=("voxpopuli" "ami" "earnings22" "gigaspeech" "librispeech" "librispeech" "spgispeech" "tedlium")
 SPLITS=(   "test"      "test" "test"      "test"       "test.clean"  "test.other"  "test"       "test")

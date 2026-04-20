@@ -244,10 +244,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--warmup_steps",
@@ -256,6 +255,5 @@ if __name__ == "__main__":
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=False)
 
     main(args)

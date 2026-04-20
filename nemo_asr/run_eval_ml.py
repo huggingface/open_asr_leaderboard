@@ -56,6 +56,7 @@ def main(args):
     
     asr_model.to(compute_dtype)
     asr_model.eval()
+    print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     # Load dataset using the HuggingFace dataset repository
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
@@ -270,12 +271,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no-streaming",
-        dest='streaming',
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
 
     main(args) 

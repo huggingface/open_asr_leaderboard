@@ -26,6 +26,7 @@ def main(args):
     tokenizer = processor.tokenizer
     model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16).to(device)
     model.eval()
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
 
     logits_scaling = getattr(model.language_model.config, 'logits_scaling', 1.0)
 
@@ -273,7 +274,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, required=True)
-    parser.add_argument("--dataset_path", type=str, default="esb/datasets")
+    parser.add_argument("--dataset_path", type=str, default="hf-audio/open-asr-leaderboard")
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--split", type=str, default="test")
     parser.add_argument("--device", type=int, default=-1)
@@ -283,7 +284,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--confidence_threshold", type=float, default=0.01)
     parser.add_argument("--ctc_threshold", type=float, default=0.5)
-    parser.add_argument("--no-streaming", dest="streaming", action="store_false")
+    parser.add_argument("--streaming", action="store_true", help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation.")
     args = parser.parse_args()
-    args.streaming = False
     main(args)

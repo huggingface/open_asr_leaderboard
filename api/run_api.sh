@@ -25,7 +25,7 @@ MODEL_IDs=(
 )
 
 MAX_WORKERS=32
-DATASET_PATH="hf-audio/esb-datasets-test-only-sorted"
+DATASET_PATH="hf-audio/open-asr-leaderboard"
 
 declare -a EVAL_DATASETS=(
     "ami:test"
