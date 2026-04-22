@@ -51,3 +51,8 @@ WORKDIR /app/transformers
 
 # Default entrypoint
 ENTRYPOINT ["bash"]
+
+# Keep-alive CMD so the Space runtime stays healthy. HF Jobs and `docker run`
+# override this with their own command (e.g. `run_cohere.sh`).
+EXPOSE 7860
+CMD ["-c", "python3 -m http.server 7860"]
