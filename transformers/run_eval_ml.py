@@ -36,6 +36,7 @@ def main(args):
         cls_model = AutoModelForCTC
     else:
         raise ValueError(f"Model config of type {type(config)} not recognized in Transformers mappings.")
+    is_ctc = cls_model == AutoModelForCTC
 
     model = cls_model.from_pretrained(
         args.model_id,
@@ -56,15 +57,19 @@ def main(args):
     else:
         sampling_rate = 16_000
 
-    gen_kwargs = {}
-    if args.max_new_tokens is not None:
-        gen_kwargs["max_new_tokens"] = args.max_new_tokens
+    # Set generate arguments (only for auto-regressive models)
+    if model.can_generate():
+        gen_kwargs = {}
+        if args.max_new_tokens is not None:
+            gen_kwargs["max_new_tokens"] = args.max_new_tokens
 
-    # For multilingual models, set task to transcribe and pass language (None = auto-detect)
-    if getattr(model.generation_config, "is_multilingual", False):
-        gen_kwargs["task"] = "transcribe"
-        if args.language is not None:
-            gen_kwargs["language"] = args.language
+        # For multilingual models, set task to transcribe and pass language (None = auto-detect)
+        if getattr(model.generation_config, "is_multilingual", False):
+            gen_kwargs["task"] = "transcribe"
+            if args.language is not None:
+                gen_kwargs["language"] = args.language
+    elif args.max_new_tokens:
+        raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
     CONFIG_NAME = args.config_name
     SPLIT_NAME = args.split
@@ -142,6 +147,16 @@ def main(args):
             else:
                 inputs = processor.apply_transcription_request(audios)
             prompt_len = inputs["input_ids"].shape[1]
+        elif not model.can_generate():
+            # CTC pre-processing: normalize to mean 0, std 1
+            inputs = processor(
+                audios,
+                sampling_rate=sampling_rate,
+                truncation=False,
+                padding="longest",
+                return_tensors="pt",
+                return_attention_mask=True,
+            )
         else:
             # Standard Whisper processing: pad audios to 30-seconds and convert to log-mel
             inputs = processor(audios, sampling_rate=sampling_rate, return_tensors="pt", device=args.device)
@@ -154,7 +169,13 @@ def main(args):
         else:
             sdpa_backends = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
         with sdpa_kernel(sdpa_backends):
-            pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
+            if model.can_generate():
+                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
+            else:
+                # Single forward pass for CTC
+                with torch.no_grad():
+                    logits = model(**inputs).logits
+                    pred_ids = logits.argmax(-1)
 
         # 3. Post-processing
         # Strip padded ids from predictions
@@ -164,6 +185,9 @@ def main(args):
         # Convert token ids to text transcription
         if has_transcription_processor:
             pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
+        elif is_ctc:
+            # don't use skip_special_tokens as it collapses double letters
+            pred_text = processor.batch_decode(pred_ids)
         else:
             pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 
