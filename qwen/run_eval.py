@@ -18,7 +18,7 @@ def main(args):
         max_inference_batch_size=args.batch_size,
         max_new_tokens=args.max_new_tokens,
     )
-    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
+    print(f"Model size: {sum(p.numel() for p in model.model.parameters()) / 1e9:.2f}B parameters")
 
     def benchmark(batch):
         # Load audio inputs
