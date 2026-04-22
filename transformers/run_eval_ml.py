@@ -159,7 +159,14 @@ def main(args):
             )
         else:
             # Standard Whisper processing: pad audios to 30-seconds and convert to log-mel
-            inputs = processor(audios, sampling_rate=sampling_rate, return_tensors="pt", device=args.device)
+            inputs = processor(
+                audios,
+                sampling_rate=sampling_rate,
+                return_tensors="pt",
+                padding="longest",
+                return_attention_mask=True,
+                device=args.device,
+            )
 
         inputs = inputs.to(args.device, dtype=torch_dtype)
 
