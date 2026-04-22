@@ -642,6 +642,14 @@ class EnglishTextNormalizer:
         # Hardcoded compound words that become two tokens after hyphen/symbol removal
         self.compound_words = {
             r"\bwi\s+fi\b": "wifi",
+            r"\bhi\s+fi\b": "hifi",
+            r"\blo\s+fi\b": "lofi",
+            r"\bsci\s+fi\b": "scifi",
+            r"\be\s+mail\b": "email",
+            r"\be\s+book\b": "ebook",
+            r"\be\s+commerce\b": "ecommerce",
+            r"\bx\s+ray\b": "xray",
+            r"\bt\s+shirt\b": "tshirt",
         }
 
     def __call__(self, s: str):
