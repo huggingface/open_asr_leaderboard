@@ -6,19 +6,11 @@ BATCH_SIZE=64
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
-    "openai/whisper-large-v3-turbo"
-    # "openai/whisper-tiny.en"
-    # "openai/whisper-small.en"
-    # "openai/whisper-base.en"
-    # "openai/whisper-medium.en"
-    # "openai/whisper-large"
-    # "openai/whisper-large-v2"
-    # "openai/whisper-large-v3"
-    # "distil-whisper/distil-medium.en"
-    # "distil-whisper/distil-large-v2"
-    # "distil-whisper/distil-large-v3"
-    # "nyrahealth/CrisperWhisper"
+    "CohereLabs/cohere-transcribe-03-2026"
 )
+
+# TODO: remove this after merging transformer native changes to the HF model
+REVISION="refs/pr/11"
 
 # ── Datasets: "name split" (comment / uncomment to select) ──────────────────
 DATASET_CONFIGS=(
@@ -44,7 +36,9 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
             --split="${SPLIT}" \
             --device=0 \
             --batch_size=${BATCH_SIZE} \
-            --max_eval_samples=-1
+            --max_eval_samples=-1 \
+            --max_new_tokens=500 \
+            --revision=${REVISION}
     done
 
     # Evaluate results

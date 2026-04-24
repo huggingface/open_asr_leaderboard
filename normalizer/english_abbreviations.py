@@ -1783,8 +1783,6 @@ english_name_normalizer = {
     "cristopher": "christopher",
     "kristina": "christina",
     "kristen": "kristin",
-    "christen": "kristin",
-    "christian": "kristian",
     # ── C/K variants ────────────────────────────────────────────────────────
     "karl": "carl",
     "kathy": "cathy",
@@ -1826,6 +1824,7 @@ english_name_normalizer = {
     "denis": "dennis",
     "laurence": "lawrence",
     "tomas": "thomas",
+    "tobey": "toby",
     # ── Mac/Mc extensions ───────────────────────────────────────────────────
     "macarthur": "mcarthur",
     "macartney": "mccartney",
@@ -1893,7 +1892,6 @@ english_name_normalizer = {
     "gayle": "gail",
     "rhonda": "ronda",
     "yvonne": "ivonne",
-    "derrick": "derek",
     "stewart": "stuart",
     "walther": "walter",
     "symon": "simon",

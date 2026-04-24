@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
 from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, CompileConfig
@@ -11,6 +12,20 @@ import numpy as np
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
+
+
+def remove_brackets(text):
+    """
+    Remove parentheses from text, replacing them with spaces.
+
+    Some models (e.g. Cohere ASR) output parentheses that would cause the
+    normalizer to delete the enclosed text entirely, leading to false
+    deletion errors in the predictions.
+    """
+    text = text.replace("(", " ").replace(")", " ")
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
 
 def main(args):
 
@@ -24,7 +39,7 @@ def main(args):
 
     torch_dtype = getattr(torch, args.dtype)
 
-    config = AutoConfig.from_pretrained(args.model_id)
+    config = AutoConfig.from_pretrained(args.model_id, revision=args.revision)
     if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING:
         cls_model = AutoModelForSpeechSeq2Seq
     elif type(config) in MODEL_FOR_MULTIMODAL_LM_MAPPING:
@@ -49,13 +64,15 @@ def main(args):
         model = cls_model.from_pretrained(
             args.model_id, 
             dtype=torch_dtype, 
+            revision=args.revision,
             attn_implementation=args.attn_implementation,
         )
     model.to(args.device)
     model.eval()
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
-    processor = AutoProcessor.from_pretrained(args.model_id)
+    processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
+    is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
 
     # Optional prompt for audio language models, newer models should use `apply_transcription_request`
     text = None
@@ -134,7 +151,15 @@ def main(args):
             padding_audios = [audios[-1] for _ in range(padding_size)]
             audios.extend(padding_audios)
 
-        if has_transcription_processor:
+        if is_cohere:
+            inputs = processor(
+                audios,
+                sampling_rate=sampling_rate,
+                return_tensors="pt",
+                language="en",
+                punctuation=False,
+            )
+        elif has_transcription_processor:
             if "voxtral" in args.model_id.lower():
                 inputs = processor.apply_transcription_request(
                     language="en",  # English for benchmark consistency
@@ -204,7 +229,14 @@ def main(args):
             pred_ids = pred_ids[:-padding_size, ...]
 
         # 3.2 Convert token ids to text transcription
-        if "vibevoice" in args.model_id.lower():
+        if is_cohere:
+            audio_chunk_index = inputs.get("audio_chunk_index")
+            pred_text = processor.decode(
+                pred_ids, skip_special_tokens=True,
+                audio_chunk_index=audio_chunk_index, language="en",
+            )
+            pred_text = [remove_brackets(t) for t in pred_text]
+        elif "vibevoice" in args.model_id.lower():
             # VibeVoice: strip the input prompt tokens then use the model's own decode API
             generated_ids = pred_ids[:, prompt_len:]
             try:
@@ -221,12 +253,12 @@ def main(args):
                         pred_text.append("")
         elif has_transcription_processor or texts is not None:
             # Strip input prompt tokens
-            pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
+            pred_text = processor.decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_ctc:
             # don't use skip_special_tokens as it collapses double letters
             pred_text = processor.batch_decode(pred_ids)
         else:
-            pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+            pred_text = processor.decode(pred_ids, skip_special_tokens=True)
 
         # END TIMING
         end_event.record()
@@ -281,6 +313,13 @@ def main(args):
             all_results[key].append(result[key])
 
     # Write manifest results (WER and RTFX)
+    # -- Filter out samples where the reference is empty, e.g. all-filler words as they would be removed by normalization
+    valid = [i for i, ref in enumerate(all_results["references"]) if ref.strip()]
+    if len(valid) < len(all_results["references"]):
+        print(f"Filtered {len(all_results['references']) - len(valid)} empty references")
+        for key in all_results:
+            all_results[key] = [all_results[key][i] for i in valid]
+
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],
@@ -392,6 +431,12 @@ if __name__ == "__main__":
         type=int,
         default=10,
         help="Number of warm-up steps to run before launching the timed runs.",
+    )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Model revision to use (e.g. 'refs/pr/11' for a PR branch). Defaults to the main branch.",
     )
     args = parser.parse_args()
 

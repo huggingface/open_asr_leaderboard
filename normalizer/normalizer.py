@@ -549,12 +549,14 @@ class EnglishAcronymNormalizer:
                 while j < len(words) and len(words[j]) == 1 and words[j].isalnum():
                     run.append(words[j])
                     j += 1
-                if len(run) >= 2:
-                    # Two or more single-char tokens in a row -> join them
+                # Require 3+ tokens if the run contains common words "a" or "i",
+                # otherwise 2+ is enough (e.g. "5 g" -> "5g")
+                has_common_word = any(c in ("a", "i") for c in run)
+                min_run = 3 if has_common_word else 2
+                if len(run) >= min_run:
                     result.append("".join(run))
                 else:
-                    # Lone single-char token (e.g. "a", "i") -> leave as-is
-                    result.append(run[0])
+                    result.extend(run)
                 i = j
             else:
                 result.append(words[i])
@@ -579,7 +581,7 @@ class EnglishNameNormalizer:
 
 class EnglishTextNormalizer:
     def __init__(self, english_spelling_mapping=english_spelling_normalizer):
-        self.ignore_patterns = r"\b(hmm|mm|mhm|mmm|uh|um)\b"
+        self.ignore_patterns = r"\b(hmm|mm|mhm|mmm|uh|um|ah|aha|ahh|ahm|eh|ehehe|em|hm|huh|hum|mhum|uhm|umm|uhuh)\b"
         self.replacers = {
             # common contractions
             r"\bwon't\b": "will not",

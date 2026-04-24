@@ -2,7 +2,7 @@ import re
 import os
 
 import num2words
-from datasets import load_dataset, Audio
+from datasets import load_dataset, Audio, IterableDataset
 from normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
 
 from .eval_utils import read_manifest, write_manifest, normalize_compound_pairs
@@ -80,9 +80,12 @@ def load_data(args):
     return dataset
 
 def prepare_data(dataset, sampling_rate=16000):
-    # Re-sample and normalise transcriptions
+    # Re-sample and normalize transcriptions
     dataset = dataset.cast_column("audio", Audio(sampling_rate=sampling_rate))
-    dataset = dataset.map(normalize)
+    # NOTE (ebezzam) don't load from cache to account for potential changes in normalization logic
+    # IterableDataset (streaming) has no cache, so the kwarg is only needed for Dataset
+    map_kwargs = {} if isinstance(dataset, IterableDataset) else {"load_from_cache_file": False}
+    dataset = dataset.map(normalize, **map_kwargs)
     dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
 
     return dataset
