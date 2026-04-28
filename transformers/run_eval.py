@@ -104,9 +104,16 @@ def main(args):
     # Set generate arguments
     if model.can_generate():
         gen_kwargs = {"max_new_tokens": args.max_new_tokens}
-        if getattr(model.generation_config, "is_multilingual", False) or "whisper" in args.model_id.lower():
+        if getattr(model.generation_config, "is_multilingual", False):
             gen_kwargs["language"] = "en"
             gen_kwargs["task"] = "transcribe"
+        # Clear deprecated Whisper generation config fields to suppress warnings
+        if hasattr(model.generation_config, "forced_decoder_ids"):
+            model.generation_config.forced_decoder_ids = None
+        if hasattr(model.generation_config, "suppress_tokens"):
+            model.generation_config.suppress_tokens = []
+        if hasattr(model.generation_config, "begin_suppress_tokens"):
+            model.generation_config.begin_suppress_tokens = []
         if "granite-speech-3.3" in args.model_id.lower():
             gen_kwargs["repetition_penalty"] = 1.0
     elif args.max_new_tokens:
@@ -313,13 +320,7 @@ def main(args):
             all_results[key].append(result[key])
 
     # Write manifest results (WER and RTFX)
-    # -- Filter out samples where the reference is empty, e.g. all-filler words as they would be removed by normalization
-    valid = [i for i, ref in enumerate(all_results["references"]) if ref.strip()]
-    if len(valid) < len(all_results["references"]):
-        print(f"Filtered {len(all_results['references']) - len(valid)} empty references")
-        for key in all_results:
-            all_results[key] = [all_results[key][i] for i in valid]
-
+    # Filtering of empty references is handled inside write_manifest.
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],

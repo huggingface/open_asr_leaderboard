@@ -106,6 +106,25 @@ def write_manifest(
             f"must match `references` ({len(references)})."
         )
 
+    # Filter out samples where the normalized reference is empty,
+    # e.g. all-filler words removed by normalization. Mutates the caller's
+    # lists in-place (via slice assignment) so downstream WER computation
+    # in caller scripts also sees the filtered data.
+    valid_indices = [
+        i for i, ref in enumerate(references) if isinstance(ref, str) and ref.strip()
+    ]
+    n_filtered = len(references) - len(valid_indices)
+    if n_filtered > 0:
+        print(f"Filtered {n_filtered} empty references")
+        references[:] = [references[i] for i in valid_indices]
+        transcriptions[:] = [transcriptions[i] for i in valid_indices]
+        if audio_length is not None:
+            audio_length[:] = [audio_length[i] for i in valid_indices]
+        if transcription_time is not None:
+            transcription_time[:] = [transcription_time[i] for i in valid_indices]
+        if audio_filepaths is not None:
+            audio_filepaths[:] = [audio_filepaths[i] for i in valid_indices]
+
     audio_length = (
         audio_length if audio_length is not None else len(references) * [None]
     )

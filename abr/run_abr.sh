@@ -3,97 +3,45 @@ set -e
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("abr-ai/asr-19m-v2-en-32b")
 BATCH_SIZE=256
 MAX_EVAL_SAMPLES=-1
 WARMUP_STEPS=5
 SUBBATCH_SAMPLES=30000000
+REVISION="dab6545337495482f2fc05455432a7a05c88d3cc"
 
-num_models=${#MODEL_IDs[@]}
+# ── Models (comment / uncomment to select) ──────────────────────────────────
+MODEL_IDs=(
+    "abr-ai/niagara-19m-batch.en"
+)
 
-for (( i=0; i<${num_models}; i++ ));
-do
-    MODEL_ID=${MODEL_IDs[$i]}
+# ── Datasets: "name split" (comment / uncomment to select) ──────────────────
+DATASET_CONFIGS=(
+    "voxpopuli test"
+    "ami test"
+    "earnings22 test"
+    "gigaspeech test"
+    "librispeech test.clean"
+    "librispeech test.other"
+    "spgispeech test"
+    "tedlium test"
+)
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="voxpopuli" \
-        --split="test" \
-        --batch_size=${BATCH_SIZE} \
-        --warmup_steps=${WARMUP_STEPS} \
-        --subbatch_samples=${SUBBATCH_SAMPLES} \
-        --max_eval_samples=${MAX_EVAL_SAMPLES}
+for MODEL_ID in "${MODEL_IDs[@]}"; do
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="ami" \
-        --split="test" \
-        --batch_size=${BATCH_SIZE} \
-        --warmup_steps=${WARMUP_STEPS} \
-        --subbatch_samples=${SUBBATCH_SAMPLES} \
-        --max_eval_samples=${MAX_EVAL_SAMPLES}
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET SPLIT <<< "$cfg"
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="earnings22" \
-        --split="test" \
-        --batch_size=${BATCH_SIZE} \
-        --warmup_steps=${WARMUP_STEPS} \
-        --subbatch_samples=${SUBBATCH_SAMPLES} \
-        --max_eval_samples=${MAX_EVAL_SAMPLES}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="gigaspeech" \
-        --split="test" \
-        --batch_size=${BATCH_SIZE} \
-        --warmup_steps=${WARMUP_STEPS} \
-        --subbatch_samples=${SUBBATCH_SAMPLES} \
-        --max_eval_samples=${MAX_EVAL_SAMPLES}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="librispeech" \
-        --split="test.clean" \
-        --batch_size=${BATCH_SIZE} \
-        --warmup_steps=${WARMUP_STEPS} \
-        --subbatch_samples=${SUBBATCH_SAMPLES} \
-        --max_eval_samples=${MAX_EVAL_SAMPLES}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="librispeech" \
-        --split="test.other" \
-        --batch_size=${BATCH_SIZE} \
-        --warmup_steps=${WARMUP_STEPS} \
-        --subbatch_samples=${SUBBATCH_SAMPLES} \
-        --max_eval_samples=${MAX_EVAL_SAMPLES}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="spgispeech" \
-        --split="test" \
-        --batch_size=${BATCH_SIZE} \
-        --warmup_steps=${WARMUP_STEPS} \
-        --subbatch_samples=${SUBBATCH_SAMPLES} \
-        --max_eval_samples=${MAX_EVAL_SAMPLES}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="tedlium" \
-        --split="test" \
-        --batch_size=${BATCH_SIZE} \
-        --warmup_steps=${WARMUP_STEPS} \
-        --subbatch_samples=${SUBBATCH_SAMPLES} \
-        --max_eval_samples=${MAX_EVAL_SAMPLES}
+        python run_eval.py \
+            --model_id=${MODEL_ID} \
+            --revision=${REVISION} \
+            --dataset_path="hf-audio/open-asr-leaderboard" \
+            --dataset="${DATASET}" \
+            --split="${SPLIT}" \
+            --batch_size=${BATCH_SIZE} \
+            --warmup_steps=${WARMUP_STEPS} \
+            --subbatch_samples=${SUBBATCH_SAMPLES} \
+            --max_eval_samples=${MAX_EVAL_SAMPLES}
+    done
 
     # Evaluate results
     RUNDIR=`pwd` && \

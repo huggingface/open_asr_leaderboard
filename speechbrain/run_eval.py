@@ -61,20 +61,28 @@ def get_model(
 
     run_opts = {**run_opt_defaults}
 
-    overrides = {}
+    overrides_dict = {}
     if beam_size:
-        overrides["test_beam_size"] = beam_size
-    
-    if ctc_weight_decode == 0.0:
-        overrides["scorer"] = None
-    overrides["ctc_weight_decode"] = ctc_weight_decode
+        overrides_dict["test_beam_size"] = beam_size
+    if ctc_weight_decode is not None:
+        overrides_dict["ctc_weight_decode"] = ctc_weight_decode
+
+    # Build overrides as a YAML string so hyperpyyaml applies them during
+    # parsing (before class imports), preventing ImportError for missing classes.
+    override_lines = []
+    if ctc_weight_decode is not None and ctc_weight_decode == 0.0:
+        override_lines.append("scorer: null")
+    for k, v in overrides_dict.items():
+        override_lines.append(f"{k}: {v}")
+    overrides_str = "\n".join(override_lines) if override_lines else None
 
     kwargs = {
         "source": f"{speechbrain_repository}",
         "savedir": f"pretrained_models/{speechbrain_repository}",
         "run_opts": run_opts,
-        "overrides": overrides,
     }
+    if overrides_str:
+        kwargs["overrides"] = overrides_str
 
     try:
         model_class = getattr(ASR, speechbrain_pretrained_class_name)
@@ -106,6 +114,9 @@ def main(args):
         # Load audio inputs
         audios = [torch.from_numpy(sample["array"]) for sample in batch["audio"]]
         minibatch_size = len(audios)
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(sample["array"]) / sampling_rate for sample in batch["audio"]]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         audios, audio_lens = batch_pad_right(audios)
         audios = audios.to(device)
@@ -156,6 +167,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -172,6 +184,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
@@ -258,8 +271,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ctc_weight_decode",
         type=float,
-        default=0.3,
-        help="Weight of CTC for joint CTC/Att. decoding"
+        default=None,
+        help="Weight of CTC for joint CTC/Att. decoding. Only pass for models that support it (e.g. EncoderDecoderASR)."
     )
     args = parser.parse_args()
 

@@ -25,6 +25,7 @@ def main(args):
         audios = [audio["array"] for audio in batch["audio"]]
         batch["audio_length_s"] = [len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios]
         minibatch_size = len(audios)
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
         start_time = time.time()
@@ -86,6 +87,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -102,6 +104,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

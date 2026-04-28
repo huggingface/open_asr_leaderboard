@@ -652,6 +652,9 @@ class EnglishTextNormalizer:
             r"\be\s+commerce\b": "ecommerce",
             r"\bx\s+ray\b": "xray",
             r"\bt\s+shirt\b": "tshirt",
+            r"\ba\s+m\b": "am",
+            r"\bp\s+m\b": "pm",
+            r"\bo\s+k\b": "okay",
         }
 
     def __call__(self, s: str):

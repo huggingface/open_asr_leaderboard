@@ -2,90 +2,42 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 export TOKENIZERS_PARALLELISM=false
+export HF_AUDIO_DECODER_BACKEND="soundfile"
 
-MODEL_IDs=(
-    nvidia/canary-qwen-2.5b
-)
 BATCH_SIZE=192
 DEVICE_ID=0
 
-num_models=${#MODEL_IDs[@]}
+# ── Models (comment / uncomment to select) ──────────────────────────────────
+MODEL_IDs=(
+    "nvidia/canary-qwen-2.5b"
+)
 
-for (( i=0; i<${num_models}; i++ ));
-do
-    MODEL_ID=${MODEL_IDs[$i]}
+# ── Datasets: "name split" (comment / uncomment to select) ──────────────────
+DATASET_CONFIGS=(
+    "voxpopuli test"
+    "ami test"
+    "earnings22 test"
+    "gigaspeech test"
+    "librispeech test.clean"
+    "librispeech test.other"
+    "spgispeech test"
+    "tedlium test"
+)
 
-    python run_eval_salm.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="ami" \
-        --split="test" \
-        --device=${DEVICE_ID} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+for MODEL_ID in "${MODEL_IDs[@]}"; do
 
-    python run_eval_salm.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="earnings22" \
-        --split="test" \
-        --device=${DEVICE_ID} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET SPLIT <<< "$cfg"
 
-    python run_eval_salm.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="gigaspeech" \
-        --split="test" \
-        --device=${DEVICE_ID} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
-    python run_eval_salm.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="librispeech" \
-        --split="test.clean" \
-        --device=${DEVICE_ID} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
-    python run_eval_salm.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="librispeech" \
-        --split="test.other" \
-        --device=${DEVICE_ID} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
-    python run_eval_salm.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="spgispeech" \
-        --split="test" \
-        --device=${DEVICE_ID} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
-    python run_eval_salm.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="tedlium" \
-        --split="test" \
-        --device=${DEVICE_ID} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
-    python run_eval_salm.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="voxpopuli" \
-        --split="test" \
-        --device=${DEVICE_ID} \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        python run_eval_salm.py \
+            --model_id=${MODEL_ID} \
+            --dataset_path="hf-audio/open-asr-leaderboard" \
+            --dataset="${DATASET}" \
+            --split="${SPLIT}" \
+            --device=${DEVICE_ID} \
+            --batch_size=${BATCH_SIZE} \
+            --max_eval_samples=-1
+    done
 
     # Evaluate results
     RUNDIR=`pwd` && \

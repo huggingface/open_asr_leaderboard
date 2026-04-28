@@ -3,6 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 BATCH_SIZE=64
+MAX_NEW_TOKENS=128
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
@@ -33,7 +34,8 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
             --split="${SPLIT}" \
             --device=0 \
             --batch_size=${BATCH_SIZE} \
-            --max_eval_samples=-1
+            --max_eval_samples=-1 \
+            --max_new_tokens=${MAX_NEW_TOKENS}
     done
 
     # Evaluate results

@@ -33,6 +33,7 @@ def main(args):
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
         batch["audio_length_s"] = [len(audio) / 16000 for audio in audios]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
         start_time = time.time()
@@ -67,7 +68,9 @@ def main(args):
             forced_decoder_ids = processor.get_decoder_prompt_ids(language="english", task="transcribe")
             if model.can_generate():
                 # 2.1 Auto-regressive generation for encoder-decoder models
-                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens, forced_decoder_ids=forced_decoder_ids)
+                # Set forced_decoder_ids on generation_config (not as kwarg) for newer transformers
+                model.generation_config.forced_decoder_ids = forced_decoder_ids
+                pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
             else:
                 # 2.2. Single forward pass for CTC
                 with torch.no_grad():
@@ -125,6 +128,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -141,6 +145,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

@@ -32,6 +32,8 @@ def main(args):
     def benchmark(batch):
         # Load audio inputs
         minibatch_size = len(batch["audio"])
+        batch["audio_length_s"] = [len(audio["array"]) / audio["sampling_rate"] for audio in batch["audio"]]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # Convert to pipeline input format: list of dicts with waveform and sample_rate
         # Truncate audio to MAX_AUDIO_SEC to avoid pipeline assert_max_length errors
@@ -97,6 +99,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -113,6 +116,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

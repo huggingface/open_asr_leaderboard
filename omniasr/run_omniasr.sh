@@ -2,101 +2,42 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-# Available omniASR-LLM models
+BATCH_SIZE=64
+LANGUAGE="eng_Latn"
+
+# ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
-    "facebook/omniASR-CTC-300M-v2" "facebook/omniASR-CTC-1B-v2" "facebook/omniASR-CTC-3B-v2" "facebook/omniASR-CTC-7B-v2"
-    "facebook/omniASR-CTC-300M" "facebook/omniASR-CTC-1B" "facebook/omniASR-CTC-3B" "facebook/omniASR-CTC-7B"
-    "facebook/omniASR-LLM-300M" "facebook/omniASR-LLM-1B" "facebook/omniASR-LLM-3B" "facebook/omniASR-LLM-7B"
-    "facebook/omniASR-LLM-300M-v2" "facebook/omniASR-LLM-1B-v2" "facebook/omniASR-LLM-3B-v2" "facebook/omniASR-LLM-7B-v2"
-    )
-BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
-LANGUAGE="eng_Latn"  # English language code for omniASR
+    "omniASR_CTC_7B_v2"
+    "omniASR_LLM_7B_v2"
+)
 
-num_models=${#MODEL_IDs[@]}
+# ── Datasets: "name split" (comment / uncomment to select) ──────────────────
+DATASET_CONFIGS=(
+    "voxpopuli test"
+    "ami test"
+    "earnings22 test"
+    "gigaspeech test"
+    "librispeech test.clean"
+    "librispeech test.other"
+    "spgispeech test"
+    "tedlium test"
+)
 
-for (( i=0; i<${num_models}; i++ ));
-do
-    MODEL_ID=${MODEL_IDs[$i]}
+for MODEL_ID in "${MODEL_IDs[@]}"; do
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="voxpopuli" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --language=${LANGUAGE}
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET SPLIT <<< "$cfg"
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="ami" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --language=${LANGUAGE}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="earnings22" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --language=${LANGUAGE}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="gigaspeech" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --language=${LANGUAGE}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="librispeech" \
-        --split="test.clean" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --language=${LANGUAGE}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="librispeech" \
-        --split="test.other" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --language=${LANGUAGE}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="spgispeech" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --language=${LANGUAGE}
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="tedlium" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1 \
-        --language=${LANGUAGE}
+        python run_eval.py \
+            --model_id=${MODEL_ID} \
+            --dataset_path="hf-audio/open-asr-leaderboard" \
+            --dataset="${DATASET}" \
+            --split="${SPLIT}" \
+            --device=0 \
+            --batch_size=${BATCH_SIZE} \
+            --max_eval_samples=-1 \
+            --language=${LANGUAGE}
+    done
 
     # Evaluate results
     RUNDIR=`pwd` && \

@@ -89,6 +89,7 @@ def main(args):
         audios = [(audio["array"], audio["sampling_rate"]) for audio in batch["audio"]]
         batch["audio_length_s"] = [len(audio[0]) / audio[1] for audio in audios]
         minibatch_size = len(audios)
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
         gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
             [MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=args.num_beams * minibatch_size)]
         )
@@ -171,6 +172,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
 
     result_iter = iter(dataset)
@@ -180,15 +182,16 @@ def main(args):
 
     # Filter empty references (consistent with English pipeline)
     filtered = [
-        (ref, pred, dur, time_s)
-        for ref, pred, dur, time_s in zip(
+        (ref, pred, dur, time_s, afp)
+        for ref, pred, dur, time_s, afp in zip(
             all_results["references"], all_results["predictions"],
-            all_results["audio_length_s"], all_results["transcription_time_s"]
+            all_results["audio_length_s"], all_results["transcription_time_s"],
+            all_results["audio_filepath"],
         )
         if data_utils.is_target_text_in_range(ref)
     ]
     if filtered:
-        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"] = zip(*filtered)
+        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"], all_results["audio_filepath"] = zip(*filtered)
         all_results = {k: list(v) for k, v in all_results.items()}
 
     # Write manifest results (WER and RTFX)
@@ -201,6 +204,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

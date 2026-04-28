@@ -5,3 +5,4 @@ datasets
 librosa
 jiwer
 num2words
+peft

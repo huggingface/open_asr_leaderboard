@@ -2,116 +2,48 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("microsoft/Phi-4-multimodal-instruct")
 BATCH_SIZE=160
 NUM_BEAMS=1
 MAX_NEW_TOKENS=128
+USER_PROMPT="Transcribe the audio clip into text."
 
-num_models=${#MODEL_IDs[@]}
-default_user_prompt="Transcribe the audio clip into text."
+# ── Models (comment / uncomment to select) ──────────────────────────────────
+MODEL_IDs=(
+    "microsoft/Phi-4-multimodal-instruct"
+)
 
-for (( i=0; i<${num_models}; i++ ));
-do
-    MODEL_ID=${MODEL_IDs[$i]}
+# ── Datasets: "name split" (comment / uncomment to select) ──────────────────
+DATASET_CONFIGS=(
+    "voxpopuli test"
+    "ami test"
+    "earnings22 test"
+    "gigaspeech test"
+    "librispeech test.clean"
+    "librispeech test.other"
+    "spgispeech test"
+    "tedlium test"
+)
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="voxpopuli" \
-        --split="test" \
-        --device=0 \
-        --batch_size=$((5 * BATCH_SIZE / 10)) \
-        --num_beams=${NUM_BEAMS} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS} \
-        --user_prompt="${default_user_prompt}"
+for MODEL_ID in "${MODEL_IDs[@]}"; do
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="ami" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --num_beams=${NUM_BEAMS} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS} \
-        --user_prompt="${default_user_prompt}"
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET SPLIT <<< "$cfg"
 
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="earnings22" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --num_beams=${NUM_BEAMS} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS} \
-        --user_prompt="Transcribe the audio clip to English text."
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="gigaspeech" \
-        --split="test" \
-        --device=0 \
-        --batch_size=$((9 * BATCH_SIZE / 10)) \
-        --num_beams=${NUM_BEAMS} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS} \
-        --user_prompt="${default_user_prompt}"
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="librispeech" \
-        --split="test.clean" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --num_beams=${NUM_BEAMS} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS} \
-        --user_prompt="${default_user_prompt}"
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="librispeech" \
-        --split="test.other" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --num_beams=${NUM_BEAMS} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS} \
-        --user_prompt="${default_user_prompt}"
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="spgispeech" \
-        --split="test" \
-        --device=0 \
-        --batch_size=$((9 * BATCH_SIZE / 10)) \
-        --num_beams=${NUM_BEAMS} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS} \
-        --user_prompt="${default_user_prompt}"
-
-    python run_eval.py \
-        --model_id=${MODEL_ID} \
-        --dataset_path="hf-audio/open-asr-leaderboard" \
-        --dataset="tedlium" \
-        --split="test" \
-        --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --num_beams=${NUM_BEAMS} \
-        --max_eval_samples=-1 \
-        --max_new_tokens=${MAX_NEW_TOKENS} \
-        --user_prompt="${default_user_prompt}"
+        python run_eval.py \
+            --model_id=${MODEL_ID} \
+            --dataset_path="hf-audio/open-asr-leaderboard" \
+            --dataset="${DATASET}" \
+            --split="${SPLIT}" \
+            --device=0 \
+            --batch_size=${BATCH_SIZE} \
+            --num_beams=${NUM_BEAMS} \
+            --max_eval_samples=-1 \
+            --max_new_tokens=${MAX_NEW_TOKENS} \
+            --user_prompt="${USER_PROMPT}"
+    done
 
     # Evaluate results
-    RUNDIR=`pwd` && \
+    RUNDIR=$(pwd) && \
     cd ../normalizer && \
     python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')" && \
     cd $RUNDIR

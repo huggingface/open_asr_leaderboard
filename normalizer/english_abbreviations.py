@@ -1,4 +1,5 @@
 english_spelling_normalizer = {
+  "ok": "okay",
   "accessorise": "accessorize",
   "accessorised": "accessorized",
   "accessorises": "accessorizes",

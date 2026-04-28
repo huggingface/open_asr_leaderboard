@@ -42,12 +42,21 @@ class MultipleTokenBatchStoppingCriteria(StoppingCriteria):
 
 
 def main(args):
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-        _attn_implementation="flash_attention_2",
-    ).to(args.device)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            _attn_implementation="flash_attention_2",
+        ).to(args.device)
+    except Exception as e:
+        print(f"Flash Attention 2 not available, falling back to eager attention: {e}")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            _attn_implementation="eager",
+        ).to(args.device)
     model.eval()
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
@@ -68,6 +77,8 @@ def main(args):
         # Load audio inputs
         audios = [(audio["array"], audio["sampling_rate"]) for audio in batch["audio"]]
         minibatch_size = len(audios)
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
+        batch["audio_length_s"] = [len(audio["array"]) / audio["sampling_rate"] for audio in batch["audio"]]
         gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
             [MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=args.num_beams * minibatch_size)]
         )
@@ -147,6 +158,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -163,6 +175,7 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 

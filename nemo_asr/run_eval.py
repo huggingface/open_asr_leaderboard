@@ -19,7 +19,8 @@ wer_metric = evaluate.load("wer")
 
 def main(args):
 
-    DATA_CACHE_DIR = os.path.join(os.getcwd(), "audio_cache")
+    data_cache_root = args.data_cache_root if args.data_cache_root is not None else os.getcwd()
+    DATA_CACHE_DIR = os.path.join(data_cache_root, "audio_cache")
     DATASET_NAME = args.dataset
     SPLIT_NAME = args.split
 
@@ -33,7 +34,6 @@ def main(args):
     else:
         device = torch.device("cpu")
         compute_dtype=torch.float32
-        
 
     if args.model_id.endswith(".nemo"):
         asr_model = ASRModel.restore_from(args.model_id, map_location=device)
@@ -46,13 +46,30 @@ def main(args):
 
     dataset = data_utils.load_data(args)
 
+    if args.max_eval_samples is not None and args.max_eval_samples > 0:
+        print(f"Subsampling dataset to first {args.max_eval_samples} samples !")
+        dataset = dataset.take(args.max_eval_samples)
+
+    # Prepare data FIRST - this casts audio to proper format with "array" and "sampling_rate" keys
+    dataset = data_utils.prepare_data(dataset)
+
     def download_audio_files(batch):
 
         # download audio files and write the paths, transcriptions and durations to a manifest file
         audio_paths = []
+        original_audio_paths = []
         durations = []
+        file_names = batch.get("file_name", [None] * len(batch["audio"]))
 
-        for id, sample in zip(batch["id"], batch["audio"]):
+        # Use 'id' column if available, otherwise generate sequential IDs
+        if "id" in batch:
+            ids = batch["id"]
+        else:
+            # Generate IDs based on index
+            start_idx = len([f for f in os.listdir(CACHE_DIR) if f.endswith('.wav')]) if os.path.exists(CACHE_DIR) else 0
+            ids = [f"sample_{start_idx + i}" for i in range(len(batch["audio"]))]
+
+        for id, file_name, audio_sample in zip(ids, file_names, batch["audio"]):
 
             # first step added here to make ID and wav filenames unique
             # several datasets like earnings22 have a hierarchical structure
@@ -62,38 +79,25 @@ def main(args):
             id = id.replace('/', '_').removesuffix('.wav')
 
             audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
-
-            if "array" in sample:
-                audio_array = np.float32(sample["array"])
-                sample_rate = 16000
-
-            elif "bytes" in sample: # added to be compatible with latest datasets library (3.x.x) that produces byte stream
-                with io.BytesIO(sample["bytes"]) as audio_file:
-                    audio_array, sample_rate = soundfile.read(audio_file, dtype="float32")
-
-            else:
-                raise ValueError("Sample must have either 'array' or 'bytes' key")
+            audio_array = np.float32(audio_sample["array"])
+            sample_rate = audio_sample["sampling_rate"]
 
             if not os.path.exists(audio_path):
                 os.makedirs(os.path.dirname(audio_path), exist_ok=True)
                 soundfile.write(audio_path, audio_array, sample_rate)
 
             audio_paths.append(audio_path)
+            original_audio_paths.append(os.path.basename(str(file_name)) if file_name is not None else None)
             durations.append(len(audio_array) / sample_rate)
 
         
         batch["references"] = batch["norm_text"]
         batch["audio_filepaths"] = audio_paths
+        batch["original_audio_filepaths"] = original_audio_paths
         batch["durations"] = durations
 
         return batch
 
-
-    if args.max_eval_samples is not None and args.max_eval_samples > 0:
-        print(f"Subsampling dataset to first {args.max_eval_samples} samples !")
-        dataset = dataset.take(args.max_eval_samples)
-
-    dataset = data_utils.prepare_data(dataset)
     if asr_model.cfg.decoding.strategy != "beam":
         asr_model.cfg.decoding.strategy = "greedy_batch"
         asr_model.change_decoding_strategy(asr_model.cfg.decoding)
@@ -105,6 +109,7 @@ def main(args):
 
     all_data = {
         "audio_filepaths": [],
+        "original_audio_filepaths": [],
         "durations": [],
         "references": [],
     }
@@ -117,6 +122,7 @@ def main(args):
     # Sort audio_filepaths and references based on durations values
     sorted_indices = sorted(range(len(all_data["durations"])), key=lambda k: all_data["durations"][k], reverse=True)
     all_data["audio_filepaths"] = [all_data["audio_filepaths"][i] for i in sorted_indices]
+    all_data["original_audio_filepaths"] = [all_data["original_audio_filepaths"][i] for i in sorted_indices]
     all_data["references"] = [all_data["references"][i] for i in sorted_indices]
     all_data["durations"] = [all_data["durations"][i] for i in sorted_indices]
     
@@ -161,6 +167,7 @@ def main(args):
         args.split,
         audio_length=all_data["durations"],
         transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
+        audio_filepaths=all_data["original_audio_filepaths"],
     )
 
     print("Results saved at path:", os.path.abspath(manifest_path))
@@ -185,6 +192,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--dataset_path', type=str, default='hf-audio/open-asr-leaderboard', help='Dataset path. By default, it is `hf-audio/open-asr-leaderboard`'
+    )
+    parser.add_argument(
+        '--data_cache_root', type=str, default=None, help='Root directory for audio cache. By default, it is the current working directory.'
     )
     parser.add_argument(
         "--dataset",
