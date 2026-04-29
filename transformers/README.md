@@ -67,7 +67,7 @@ From the **repository root**, you can also enter the container to run interactiv
 docker run --gpus all -it \
     -v $(pwd):/app \
     -v $HF_HOME:/root/.cache/huggingface \
-    open-asr-transformers
+    open-asr-transformers -i
 ```
 
 This drops you into a bash shell inside `/app/transformers`. From there, run any evaluation script:
