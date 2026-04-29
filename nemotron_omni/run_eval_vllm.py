@@ -28,7 +28,7 @@ SAMPLE_RATE = 16_000
 
 
 def transcribe_one(client, model_id, audio_array, user_prompt, max_tokens,
-                   tmpdir, idx):
+                   seed, tmpdir, idx):
     wav_path = Path(tmpdir) / f"sample_{os.getpid()}_{idx}.wav"
     sf.write(str(wav_path), audio_array, SAMPLE_RATE)
     audio_url = wav_path.resolve().as_uri()
@@ -45,7 +45,8 @@ def transcribe_one(client, model_id, audio_array, user_prompt, max_tokens,
                 }
             ],
             max_tokens=max_tokens,
-            temperature=0.2,
+            temperature=0,
+            seed=seed,
             extra_body={
                 "top_k": 1,
                 "chat_template_kwargs": {"enable_thinking": False},
@@ -78,6 +79,7 @@ def main(args):
                     audio,
                     args.user_prompt,
                     args.max_new_tokens,
+                    args.seed,
                     tmpdir,
                     i,
                 )
@@ -174,6 +176,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-streaming", dest="streaming", action="store_false")
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--warmup_steps", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--user_prompt",
         type=str,

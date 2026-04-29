@@ -11,15 +11,21 @@ PORT="${PORT:-8000}"
 TP="${TP:-1}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-131072}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-384}"
+SEED="${SEED:-0}"
 
 EXTRA_ARGS=()
-# FP8 KV cache only for the FP8 checkpoint per the model card.
+# FP8 KV cache for the FP8 and NVFP4 checkpoints per the model card; BF16 omits.
 case "${MODEL_ID}" in
-    *FP8*) EXTRA_ARGS+=(--kv-cache-dtype fp8) ;;
+    *FP8*|*NVFP4*) EXTRA_ARGS+=(--kv-cache-dtype fp8) ;;
 esac
-# RTX Pro hardware needs the Triton MoE backend per the model card. Override
-# with MOE_BACKEND="" to disable, or to a different backend name to swap.
-MOE_BACKEND="${MOE_BACKEND-triton}"
+# Default MoE backend per the model card:
+#   - BF16/FP8 on RTX Pro: triton
+#   - NVFP4: flashinfer_cutlass (triton is not supported for NvFP4 MoE)
+# Override with MOE_BACKEND="" to disable, or to a different backend name to swap.
+case "${MODEL_ID}" in
+    *NVFP4*) MOE_BACKEND="${MOE_BACKEND-flashinfer_cutlass}" ;;
+    *)       MOE_BACKEND="${MOE_BACKEND-triton}" ;;
+esac
 if [[ -n "${MOE_BACKEND}" ]]; then
     EXTRA_ARGS+=(--moe-backend "${MOE_BACKEND}")
 fi
@@ -38,6 +44,7 @@ vllm serve "${MODEL_ID}" \
     --tensor-parallel-size "${TP}" \
     --trust-remote-code \
     --max-num-seqs "${MAX_NUM_SEQS}" \
+    --seed "${SEED}" \
     --video-pruning-rate 0.5 \
     --allowed-local-media-path / \
     --media-io-kwargs '{"video": {"fps": 2, "num_frames": 256}}' \
