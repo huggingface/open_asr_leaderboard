@@ -23,6 +23,13 @@ MOE_BACKEND="${MOE_BACKEND-triton}"
 if [[ -n "${MOE_BACKEND}" ]]; then
     EXTRA_ARGS+=(--moe-backend "${MOE_BACKEND}")
 fi
+# Some environments hit a torch.compile bug in vllm 0.20.0
+# (`AlwaysHitShapeEnv has no attribute 'var_to_hint_override'`). Setting
+# EAGER=1 skips torch.compile and avoids the broken codepath at the cost of
+# ~10-25% decode throughput.
+if [[ "${EAGER:-0}" == "1" ]]; then
+    EXTRA_ARGS+=(--enforce-eager)
+fi
 
 vllm serve "${MODEL_ID}" \
     --host "${HOST}" \
