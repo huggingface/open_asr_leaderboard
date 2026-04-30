@@ -46,6 +46,7 @@ def transcribe_one(client, model_id, audio_array, user_prompt, max_tokens,
             ],
             max_tokens=max_tokens,
             temperature=0,
+            top_p=1.0,
             seed=seed,
             extra_body={
                 "top_k": 1,
