@@ -32,6 +32,15 @@ RUN pip install --no-cache-dir -r requirements/requirements.txt
 # version (older releases hit an ABI mismatch and refuse to load).
 RUN pip install --no-cache-dir openai num2words torchcodec==0.11.1
 
+# HF transformers path extras (run_eval.py + run_nemotron_omni.sh). The model's
+# trust_remote_code modeling files import open_clip, timm, accelerate, librosa,
+# soundfile and (for the audio encoder) the mamba-ssm + causal-conv1d CUDA
+# extensions. No prebuilt wheels exist for the base image's torch 2.11 / CUDA 13
+# combo, so causal-conv1d and mamba-ssm are compiled from source — adds ~10 min
+# to the build. --no-build-isolation reuses the already-installed torch/cuda.
+RUN pip install --no-cache-dir accelerate librosa open-clip-torch soundfile timm
+RUN pip install --no-cache-dir --no-build-isolation causal-conv1d mamba-ssm
+
 # Copy the full repo (the .dockerignore at the root keeps results/oldbkp out).
 COPY . /app
 

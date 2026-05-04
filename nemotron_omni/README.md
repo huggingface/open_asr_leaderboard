@@ -6,9 +6,10 @@ This folder contains evaluation scripts for [`nvidia/Nemotron-3-Nano-Omni-30B-A3
 
 | Script | Path | Notes |
 |--------|------|-------|
-| `run_nemotron_omni_vllm.sh` | vLLM OpenAI-compatible server | Production runner. Talks to `vllm serve` over HTTP. |
+| `run_nemotron_omni_vllm.sh` | vLLM OpenAI-compatible server | Production runner. Talks to `vllm serve` over HTTP. Verified on H100 and newer GPUs. |
+| `run_nemotron_omni.sh` | HF transformers `model.generate()` | Reference runner. Loads the checkpoint in-process via `AutoModelForCausalLM`. Verified on A100+ and newer GPUs. |
 
-The vLLM path follows the model card's deployment guide (vllm 0.20.0, `--reasoning-parser nemotron_v3`, `--tool-call-parser qwen3_coder`, audio extras) and is what the Dockerfile is built around.
+The vLLM path follows the model card's deployment guide (vllm 0.20.0, `--reasoning-parser nemotron_v3`, `--tool-call-parser qwen3_coder`, audio extras). The HF path drives the same checkpoint through `transformers.AutoModelForCausalLM` with `trust_remote_code=True`. Both share the Dockerfile.
 
 ## Docker usage (recommended)
 
@@ -18,9 +19,9 @@ From the **repository root**, build the Docker image:
 docker build -t open-asr-nemotron-omni -f nemotron_omni/Dockerfile .
 ```
 
-The image is layered on top of `vllm/vllm-openai:v0.20.0` and adds `vllm[audio]`, the leaderboard runtime deps, the OpenAI client, and `num2words` for the shared normalizer.
+The image is layered on top of `vllm/vllm-openai:v0.20.0` and adds `vllm[audio]`, the leaderboard runtime deps, the OpenAI client, `num2words` for the shared normalizer, and the HF transformers extras (`accelerate`, `causal-conv1d`, `mamba-ssm`, `open-clip-torch`, `timm`, …) so the same image can drive either runner.
 
-### Run the full sweep
+### Run the full sweep (vLLM path, default)
 
 `run_docker.sh` starts the vLLM server, waits for `/health`, runs the 8-dataset leaderboard sweep, and shuts the server down on exit:
 
@@ -32,6 +33,19 @@ docker run --gpus all \
 ```
 
 Results are written to `nemotron_omni/results/` and persist on the host since the repo is mounted.
+
+### Run the full sweep (HF transformers path)
+
+`run_docker_hf.sh` drives the 8-dataset sweep through `run_eval.py` (HF `model.generate()`) — no server is started; the model is loaded in-process by each invocation:
+
+```bash
+docker run --gpus all \
+    -v $(pwd):/app \
+    -v $HF_HOME:/root/.cache/huggingface \
+    open-asr-nemotron-omni run_docker_hf.sh
+```
+
+Tunables go on the same env-var path as the vLLM runner (`MODEL_ID`, `BATCH_SIZE`, `BATCH_SIZE_VOXPOPULI`, `MAX_NEW_TOKENS`, `WARMUP_STEPS`, `DEVICE_ID`). Default `BATCH_SIZE=128` fits a single 96 GB GPU; voxpopuli has the longest clips and falls back to `BATCH_SIZE_VOXPOPULI=64`.
 
 To select a specific GPU (e.g. GPU 1):
 
@@ -60,7 +74,7 @@ docker run --gpus all -it \
     open-asr-nemotron-omni
 ```
 
-This drops you into a bash shell inside `/app/nemotron_omni`. From there you can drive the two halves separately, which is useful when iterating on the client without paying the ~1-minute server warm-up each time:
+This drops you into a bash shell inside `/app/nemotron_omni`. From there you can drive any of the runners directly. For the vLLM path you can split server and client across two terminals to avoid paying the ~1-minute server warm-up each time:
 
 ```bash
 # Terminal A (or `&` in the background):
@@ -77,6 +91,20 @@ python run_eval_vllm.py \
     --dataset="librispeech" --split="test.clean" \
     --batch_size=256 --concurrency=256 \
     --max_eval_samples=-1
+```
+
+For the HF transformers path:
+
+```bash
+# Full sweep:
+./run_nemotron_omni.sh
+
+# Single-dataset smoke test:
+python run_eval.py \
+    --model_id=nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16 \
+    --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+    --dataset="librispeech" --split="test.clean" \
+    --device=0 --batch_size=128 --max_eval_samples=-1
 ```
 
 ### Docker cheat sheet
