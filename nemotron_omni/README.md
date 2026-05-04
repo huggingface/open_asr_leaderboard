@@ -7,7 +7,7 @@ This folder contains evaluation scripts for [`nvidia/Nemotron-3-Nano-Omni-30B-A3
 | Script | Path | Notes |
 |--------|------|-------|
 | `run_nemotron_omni_vllm.sh` | vLLM OpenAI-compatible server | Production runner. Talks to `vllm serve` over HTTP. Verified on H100 and newer GPUs. |
-| `run_nemotron_omni.sh` | HF transformers `model.generate()` | Reference runner. Loads the checkpoint in-process via `AutoModelForCausalLM`. Verified on A100+ and newer GPUs. |
+| `run_nemotron_omni.sh` | HF transformers `model.generate()` | Reference runner. Loads the checkpoint in-process via `AutoModelForCausalLM`. Verified on A100 and newer GPUs. |
 
 The vLLM path follows the model card's deployment guide (vllm 0.20.0, `--reasoning-parser nemotron_v3`, `--tool-call-parser qwen3_coder`, audio extras). The HF path drives the same checkpoint through `transformers.AutoModelForCausalLM` with `trust_remote_code=True`. Both share the Dockerfile.
 
