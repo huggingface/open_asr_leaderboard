@@ -2,7 +2,7 @@ import os
 import requests
 from typing import Optional
 
-from . import APIProvider, register
+from . import APIProvider, PermanentError, register
 
 
 @register("smallestai")
@@ -31,6 +31,7 @@ class SmallestAIProvider(APIProvider):
                 },
                 json={"url": audio_url},
                 params={"language": language},
+                timeout=300,
             )
         else:
             with open(audio_file_path, "rb") as audio_file:
@@ -43,6 +44,11 @@ class SmallestAIProvider(APIProvider):
                 },
                 data=audio_data,
                 params={"language": language},
+                timeout=300,
+            )
+        if response.status_code != 429 and 400 <= response.status_code < 500:
+            raise PermanentError(
+                f"Smallest AI API returned {response.status_code}: {response.text}"
             )
         response.raise_for_status()
-        return response.json().get("transcription", "")
+        return response.json().get("transcription", "") or "."
