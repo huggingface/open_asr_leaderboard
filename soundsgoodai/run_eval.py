@@ -92,7 +92,7 @@ class OfflineZipformerTransducer:
                 features,
                 feature_lengths,
             )
-            hyp_tokens = self._decode(encoder_out, encoder_out_lens)
+            hyp_tokens = self.decode(encoder_out, encoder_out_lens)
 
         return self.sp.decode(hyp_tokens)
 
@@ -121,7 +121,7 @@ class OfflineZipformerTransducer:
             return torch.empty(0, self.params.feature_dim, dtype=torch.float32)
         return torch.stack(frames).to(torch.float32)
 
-    def _decode(self, encoder_out, encoder_out_lens) -> list[list[int]]:
+    def decode(self, encoder_out, encoder_out_lens) -> list[list[int]]:
         return modified_beam_search(
             model=self.model,
             encoder_out=encoder_out,
