@@ -66,8 +66,9 @@ def main(args):
         attn_implementation="eager",
         device_map=device,
     )
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
     model.eval()
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
 
     # Required for generation stop conditions
     model.audio_out_bos_token_id = tokenizer.convert_tokens_to_ids("<|audio_out_bos|>")
