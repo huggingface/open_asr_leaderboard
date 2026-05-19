@@ -32,7 +32,7 @@ for MODEL in "${MODELS[@]}"; do
 
         python run_eval_higgs_audio.py \
             --model_id="${MODEL}" \
-            --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+            --dataset_path="hf-audio/open-asr-leaderboard" \
             --dataset="${DATASET}" \
             --split="${SPLIT}" \
             --device=0 \

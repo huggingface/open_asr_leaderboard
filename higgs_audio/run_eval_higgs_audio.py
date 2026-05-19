@@ -185,8 +185,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="esb/datasets",
-        help="Dataset path. By default, it is `esb/datasets`.",
+        default="hf-audio/open-asr-leaderboard",
+        help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`.",
     )
     parser.add_argument(
         "--dataset",
