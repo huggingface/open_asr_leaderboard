@@ -11,7 +11,7 @@ MIME_MAP = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".fl
 
 @register("azure")
 class AzureProvider(APIProvider):
-    ENDPOINT = "https://eastus.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
+    ENDPOINT = "https://northeurope.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
 
     def transcribe(
         self,
@@ -29,7 +29,8 @@ class AzureProvider(APIProvider):
         definition = {
             "enhancedMode": {
                 "enabled": True,
-                "task": "transcribe"
+                "task": "transcribe",
+                "targetLanguage": language,
             }
         }
         if prompt is not None:
@@ -51,7 +52,6 @@ class AzureProvider(APIProvider):
                 "audio": (audio_file_path, open(audio_file_path, "rb"), mime),
                 "definition": (None, json.dumps(definition), "application/json"),
             }
-
         resp = requests.post(
             self.ENDPOINT,
             headers={"Ocp-Apim-Subscription-Key": api_key},

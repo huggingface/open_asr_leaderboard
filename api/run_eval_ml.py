@@ -64,12 +64,16 @@ def transcribe_with_retry(
     max_retries=10,
     use_url=False,
     language="en",
+    prompt=None,
 ):
     provider, variant = get_provider(model_name)
+    kwargs = dict(use_url=use_url, language=language)
+    if prompt is not None:
+        kwargs["prompt"] = prompt
     retries = 0
     while retries <= max_retries:
         try:
-            return provider.transcribe(variant, audio_file_path, sample, use_url=use_url, language=language)
+            return provider.transcribe(variant, audio_file_path, sample, **kwargs)
         except PermanentError:
             raise
         except Exception as e:
@@ -100,6 +104,7 @@ def transcribe_dataset(
     use_url=False,
     max_samples=None,
     max_workers=4,
+    prompt=None,
 ):
     if use_url:
         audio_rows = fetch_audio_urls(dataset_path, config_name, split)
@@ -128,7 +133,7 @@ def transcribe_dataset(
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, None, sample, use_url=True, language=language
+                    model_name, None, sample, use_url=True, language=language, prompt=prompt
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
@@ -151,7 +156,7 @@ def transcribe_dataset(
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, tmp_path, sample, use_url=False, language=language
+                    model_name, tmp_path, sample, use_url=False, language=language, prompt=prompt
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
@@ -252,6 +257,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Use URL-based audio fetching instead of datasets",
     )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default=None,
+        help="Optional prompt to pass to the provider (e.g., 'Output must be in lexical format.')",
+    )
 
     args = parser.parse_args()
 
@@ -264,4 +275,5 @@ if __name__ == "__main__":
         use_url=args.use_url,
         max_samples=args.max_samples,
         max_workers=args.max_workers,
+        prompt=args.prompt,
     )
