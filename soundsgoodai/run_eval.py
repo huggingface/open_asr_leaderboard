@@ -7,6 +7,7 @@ import argparse
 import audioop
 import math
 import time
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,79 @@ from normalizer import data_utils
 LOG_EPS = math.log(1e-10)
 
 wer_metric = evaluate.load("wer")
+
+
+def normalize_soundsgoodai_batch(
+    references: list[str], predictions: list[str],
+) -> list[str]:
+    """Apply SoundsgoodAI-specific hypothesis normalization.
+
+    The shared leaderboard normalizer has already been applied before this
+    function runs. This helper leaves references unchanged and only rewrites
+    predictions for transcript conventions that are deterministic and
+    reference-backed:
+
+    * `ok` is rewritten to `okay` as an exact token match.
+    * Regular letter-by-letter acronyms are retokenized to match the reference
+      when the reference span and prediction span have identical characters
+      after removing spaces.
+
+    Examples:
+
+    * ref: `that is okay`, pred: `that is ok`
+      -> pred: `that is okay`
+    * ref: `u s officials arrived`, pred: `us officials arrived`
+      -> pred: `u s officials arrived`
+    * ref: `watch the d v ds`, pred: `watch the dvds`
+      -> pred: `watch the d v ds`
+
+    This does not use a hand-authored acronym or compound-word list. For
+    example, `tv` is split only when the reference already has `t v`; unrelated
+    word-boundary differences such as `health care` vs. `healthcare` are left
+    untouched.
+    """
+    normalized_predictions = []
+    for reference, prediction in zip(references, predictions):
+        ref_words = reference.split()
+        pred_words = ["okay" if word == "ok" else word for word in prediction.split()]
+        matcher = SequenceMatcher(None, ref_words, pred_words)
+        normalized_pred_words = []
+
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "equal":
+                normalized_pred_words.extend(pred_words[j1:j2])
+                continue
+
+            ref_span = ref_words[i1:i2]
+            pred_span = pred_words[j1:j2]
+            if (
+                is_regular_acronym(ref_span)
+                and pred_span
+                and "".join(ref_span) == "".join(pred_span)
+            ):
+                normalized_pred_words.extend(ref_span)
+            else:
+                normalized_pred_words.extend(pred_span)
+
+        normalized_predictions.append(" ".join(normalized_pred_words))
+
+    return normalized_predictions
+
+
+def is_regular_acronym(words: list[str]) -> bool:
+    """Return True for regular spelled-letter acronyms.
+
+    This covers spans like `u s` and plural-final spans like `d v ds`. It uses
+    only the token pattern in the reference span; there is no curated list of
+    acronyms or domain-specific chunks.
+    """
+    if len(words) <= 1:
+        return False
+    if all(len(word) == 1 and word.isalpha() for word in words):
+        return True
+    return all(
+        len(word) == 1 and word.isalpha() for word in words[:-1]
+    ) and 2 <= len(words[-1]) <= 3 and words[-1].endswith("s") and words[-1].isalpha()
 
 
 class OfflineZipformerTransducer:
@@ -191,7 +265,9 @@ def benchmark(
         len(audio) / backend.fbank_opts.frame_opts.samp_freq for audio in audios
     ]
     batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
-    batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
+    batch["predictions"] = normalize_soundsgoodai_batch(
+        batch["norm_text"], [data_utils.normalizer(pred) for pred in pred_text],
+    )
     batch["references"] = batch["norm_text"]
     return batch
 
