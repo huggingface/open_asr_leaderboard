@@ -11,7 +11,7 @@ export PYTHONPATH="${ICEFALL_PATH}:${ICEFALL_PATH}/egs/librispeech/ASR/zipformer
 
 ARGS=(
     --model_id="${MODEL_ID}"
-    --dataset_path="hf-audio/esb-datasets-test-only-sorted"
+    --dataset_path="hf-audio/open-asr-leaderboard"
     --device="${DEVICE_ID}"
     --batch_size="${BATCH_SIZE}"
     --max_eval_samples=-1
