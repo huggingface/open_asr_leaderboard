@@ -1,6 +1,3 @@
-import sys
-sys.path.append("/speech/users/zhangweiyu/train_env/git_code/asr_llm_train/dist_env/hojo_asr")
-
 import argparse
 import os
 import torch
