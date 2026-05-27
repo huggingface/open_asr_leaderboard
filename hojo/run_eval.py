@@ -58,6 +58,19 @@ def main(args):
         for key in all_results:
             all_results[key].append(result[key])
 
+    # Write manifest results (WER and RTFX)
+    manifest_path = data_utils.write_manifest(
+        all_results["references"],
+        all_results["predictions"],
+        args.model_id,
+        args.dataset_path,
+        args.dataset,
+        args.split,
+        audio_length=all_results["audio_length_s"],
+        transcription_time=all_results["transcription_time_s"],
+    )
+    print("Results saved at path:", os.path.abspath(manifest_path))
+
     wer = wer_metric.compute(
         references=all_results["references"], predictions=all_results["predictions"]
     )
