@@ -22,12 +22,12 @@ MODEL_IDs=(
     # "revai/fusion" # please use --use_url=True
     # "speechmatics/enhanced"
     # "aquavoice/avalon-v1-en"
-    "zoom/scribe_v1" # please use --use_url
-    "azure/fastllm"
+    # "zoom/scribe_v1" # please use --use_url
+    "microsoft/azure-speech-05-2026"
 )
 
-MAX_WORKERS=32
-DATASET_PATH="hf-audio/esb-datasets-test-only-sorted"
+MAX_WORKERS=20
+DATASET_PATH="hf-audio/open-asr-leaderboard"
 
 declare -a EVAL_DATASETS=(
     "ami:test"
@@ -40,6 +40,9 @@ declare -a EVAL_DATASETS=(
     "voxpopuli:test"
 )
 
+# Datasets that require lexical format prompt
+LEXICAL_DATASETS="librispeech gigaspeech tedlium"
+
 num_models=${#MODEL_IDs[@]}
 
 for (( i=0; i<${num_models}; i++ ));
@@ -50,13 +53,18 @@ do
         DATASET="${entry%%:*}"
         SPLIT="${entry##*:}"
 
+        PROMPT_ARGS=()
+        if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" $DATASET "* ]]; then
+            PROMPT_ARGS=(--prompt "Output must be in lexical format.")
+        fi
+
         python run_eval.py \
             --dataset_path="$DATASET_PATH" \
             --dataset="$DATASET" \
             --split="$SPLIT" \
             --model_name ${MODEL_ID} \
             --max_workers ${MAX_WORKERS} \
-            --use_url
+            "${PROMPT_ARGS[@]}"
     done
 
     # Evaluate results
