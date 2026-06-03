@@ -1,5 +1,6 @@
 import argparse
 import io
+import json
 import os
 import re
 import sys
@@ -10,6 +11,7 @@ from typing import Any, Iterable
 
 import evaluate
 import numpy as np
+import pyarrow.parquet as pq
 import soundfile as sf
 import torch
 from datasets import Audio, load_dataset
@@ -212,6 +214,102 @@ def prepare_dataset(args):
     dataset = dataset.cast_column("audio", Audio(decode=False))
     dataset = dataset.map(data_utils.normalize)
     return dataset.filter(data_utils.is_target_text_in_range, input_columns=["norm_text"])
+
+
+def iter_local_parquet_batches(
+    local_parquet_dir: str,
+    *,
+    batch_size: int,
+    skip_samples: int,
+    max_samples: int | None,
+) -> Iterable[dict[str, list[Any]]]:
+    parquet_files = sorted(Path(local_parquet_dir).glob("*.parquet"))
+    if not parquet_files:
+        raise RuntimeError(f"No parquet files found under {local_parquet_dir}")
+
+    yielded = 0
+    seen = 0
+    batch = {"audio": [], "norm_text": []}
+    for parquet_file in parquet_files:
+        pf = pq.ParquetFile(parquet_file)
+        for row_group_index in range(pf.num_row_groups):
+            rows = pf.read_row_group(row_group_index).to_pylist()
+            for row in rows:
+                normalized_text = data_utils.normalizer(data_utils.get_text(row))
+                if not data_utils.is_target_text_in_range(normalized_text):
+                    continue
+                if seen < skip_samples:
+                    seen += 1
+                    continue
+                if max_samples is not None and max_samples > 0 and yielded >= max_samples:
+                    if batch["audio"]:
+                        yield batch
+                    return
+
+                batch["audio"].append(row["audio"])
+                batch["norm_text"].append(normalized_text)
+                yielded += 1
+                seen += 1
+                if len(batch["audio"]) >= batch_size:
+                    yield batch
+                    batch = {"audio": [], "norm_text": []}
+
+    if batch["audio"]:
+        yield batch
+
+
+def build_manifest_path(model_id: str, dataset_path: str, dataset_name: str, split: str, suffix: str | None = None) -> str:
+    model_id = model_id.replace("/", "-")
+    dataset_path = dataset_path.replace("/", "-")
+    dataset_name = dataset_name.replace("/", "-")
+    split = split.replace("/", "-")
+
+    basedir = "./results/"
+    os.makedirs(basedir, exist_ok=True)
+    stem = f"MODEL_{model_id}_DATASET_{dataset_path}_{dataset_name}_{split}"
+    if suffix:
+        suffix = suffix.strip().replace("/", "-")
+        stem = f"{stem}_{suffix}"
+    return os.path.join(basedir, f"{stem}.jsonl")
+
+
+def write_manifest_records(
+    manifest_path: str,
+    references: list[str],
+    predictions: list[str],
+    audio_length: list[float],
+    transcription_time: list[float],
+    append: bool = False,
+) -> None:
+    if len(references) != len(predictions):
+        raise ValueError(
+            f"The number of samples in `references` ({len(references)}) "
+            f"must match `predictions` ({len(predictions)})."
+        )
+    if len(audio_length) != len(references):
+        raise ValueError(
+            f"The number of samples in `audio_length` ({len(audio_length)}) "
+            f"must match `references` ({len(references)})."
+        )
+    if len(transcription_time) != len(references):
+        raise ValueError(
+            f"The number of samples in `transcription_time` ({len(transcription_time)}) "
+            f"must match `references` ({len(references)})."
+        )
+
+    mode = "a" if append else "w"
+    with open(manifest_path, mode, encoding="utf-8") as f:
+        for idx, (text, transcript, duration, runtime) in enumerate(
+            zip(references, predictions, audio_length, transcription_time)
+        ):
+            datum = {
+                "audio_filepath": f"sample_{idx}",
+                "duration": duration,
+                "time": runtime,
+                "text": text,
+                "pred_text": transcript,
+            }
+            f.write(f"{json.dumps(datum, ensure_ascii=False)}\n")
 
 
 def decode_audio(audio: dict[str, Any], target_sr: int) -> tuple[np.ndarray, int]:
@@ -435,32 +533,19 @@ def main(args):
         return batch
 
     if args.warmup_steps is not None and args.warmup_steps > 0:
-        warmup_dataset = prepare_dataset(args)
-        num_warmup_samples = args.warmup_steps * args.batch_size
-        if args.streaming:
-            warmup_dataset = warmup_dataset.take(num_warmup_samples)
+        if args.local_parquet_dir:
+            print("Skipping warmup for local parquet input.")
         else:
-            warmup_dataset = warmup_dataset.select(range(min(num_warmup_samples, len(warmup_dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
+            warmup_dataset = prepare_dataset(args)
+            num_warmup_samples = args.warmup_steps * args.batch_size
+            if args.streaming:
+                warmup_dataset = warmup_dataset.take(num_warmup_samples)
+            else:
+                warmup_dataset = warmup_dataset.select(range(min(num_warmup_samples, len(warmup_dataset))))
+            warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
 
-        for _ in tqdm(warmup_dataset, desc="Warming up..."):
-            continue
-
-    dataset = prepare_dataset(args)
-
-    if args.max_eval_samples is not None and args.max_eval_samples > 0:
-        print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
-        if args.streaming:
-            dataset = dataset.take(args.max_eval_samples)
-        else:
-            dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-
-    dataset = dataset.map(
-        benchmark,
-        batch_size=args.batch_size,
-        batched=True,
-        remove_columns=["audio"],
-    )
+            for _ in tqdm(warmup_dataset, desc="Warming up..."):
+                continue
 
     all_results = {
         "audio_length_s": [],
@@ -468,10 +553,84 @@ def main(args):
         "predictions": [],
         "references": [],
     }
-    result_iter = iter(dataset)
-    for result in tqdm(result_iter, desc="Samples..."):
-        for key in all_results:
-            all_results[key].append(result[key])
+    manifest_path = None
+    if args.incremental_manifest:
+        manifest_path = build_manifest_path(
+            args.model_id,
+            args.dataset_path,
+            args.dataset,
+            args.split,
+            suffix=args.manifest_suffix,
+        )
+        open(manifest_path, "w", encoding="utf-8").close()
+
+    if args.local_parquet_dir:
+        result_iter = (
+            benchmark(batch)
+            for batch in iter_local_parquet_batches(
+                args.local_parquet_dir,
+                batch_size=args.batch_size,
+                skip_samples=args.skip_eval_samples,
+                max_samples=args.max_eval_samples,
+            )
+        )
+        for batch_result in tqdm(result_iter, desc="Batches..."):
+            batch_len = len(batch_result["references"])
+            for index in range(batch_len):
+                for key in all_results:
+                    all_results[key].append(batch_result[key][index])
+                if args.incremental_manifest:
+                    write_manifest_records(
+                        manifest_path,
+                        [batch_result["references"][index]],
+                        [batch_result["predictions"][index]],
+                        [batch_result["audio_length_s"][index]],
+                        [batch_result["transcription_time_s"][index]],
+                        append=True,
+                    )
+    else:
+        warmup_dataset = prepare_dataset(args)
+        dataset = warmup_dataset
+
+        if args.skip_eval_samples is not None and args.skip_eval_samples > 0:
+            print(f"Skipping first {args.skip_eval_samples} samples!")
+            if args.streaming:
+                dataset = dataset.skip(args.skip_eval_samples)
+            else:
+                if args.skip_eval_samples >= len(dataset):
+                    raise RuntimeError(
+                        f"skip_eval_samples={args.skip_eval_samples} leaves no samples "
+                        f"for {args.dataset}:{args.split}."
+                    )
+                dataset = dataset.select(range(args.skip_eval_samples, len(dataset)))
+
+        if args.max_eval_samples is not None and args.max_eval_samples > 0:
+            print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
+            if args.streaming:
+                dataset = dataset.take(args.max_eval_samples)
+            else:
+                dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
+
+        dataset = dataset.map(
+            benchmark,
+            batch_size=args.batch_size,
+            batched=True,
+            remove_columns=["audio"],
+        )
+
+        result_iter = iter(dataset)
+        for result in tqdm(result_iter, desc="Samples..."):
+            for key in all_results:
+                all_results[key].append(result[key])
+            if args.incremental_manifest:
+                write_manifest_records(
+                    manifest_path,
+                    [result["references"]],
+                    [result["predictions"]],
+                    [result["audio_length_s"]],
+                    [result["transcription_time_s"]],
+                    append=True,
+                )
 
     if not all_results["references"]:
         raise RuntimeError(
@@ -479,16 +638,40 @@ def main(args):
             "Check the dataset config/files and filtering before writing a manifest."
         )
 
-    manifest_path = data_utils.write_manifest(
-        all_results["references"],
-        all_results["predictions"],
-        args.model_id,
-        args.dataset_path,
-        args.dataset,
-        args.split,
-        audio_length=all_results["audio_length_s"],
-        transcription_time=all_results["transcription_time_s"],
-    )
+    if args.incremental_manifest:
+        write_manifest_records(
+            manifest_path,
+            all_results["references"],
+            all_results["predictions"],
+            all_results["audio_length_s"],
+            all_results["transcription_time_s"],
+        )
+    elif args.manifest_suffix:
+        manifest_path = build_manifest_path(
+            args.model_id,
+            args.dataset_path,
+            args.dataset,
+            args.split,
+            suffix=args.manifest_suffix,
+        )
+        write_manifest_records(
+            manifest_path,
+            all_results["references"],
+            all_results["predictions"],
+            all_results["audio_length_s"],
+            all_results["transcription_time_s"],
+        )
+    else:
+        manifest_path = data_utils.write_manifest(
+            all_results["references"],
+            all_results["predictions"],
+            args.model_id,
+            args.dataset_path,
+            args.dataset,
+            args.split,
+            audio_length=all_results["audio_length_s"],
+            transcription_time=all_results["transcription_time_s"],
+        )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
     wer = wer_metric.compute(
@@ -514,9 +697,22 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_revision", type=str, default=None, help="Optional Hugging Face dataset revision.")
     parser.add_argument("--dataset", type=str, required=True, help="Dataset name.")
     parser.add_argument("--split", type=str, default="test", help="Dataset split.")
+    parser.add_argument(
+        "--local_parquet_dir",
+        type=str,
+        default=None,
+        help="Optional local directory containing parquet shards for this dataset split.",
+    )
     parser.add_argument("--device", type=int, default=-1, help="Device index. Use -1 for CPU.")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of samples per batch.")
+    parser.add_argument("--skip_eval_samples", type=int, default=0, help="Number of prepared evaluation samples to skip.")
     parser.add_argument("--max_eval_samples", type=int, default=None, help="Number of samples to evaluate.")
+    parser.add_argument("--manifest_suffix", type=str, default=None, help="Optional suffix for writing a partial manifest.")
+    parser.add_argument(
+        "--incremental_manifest",
+        action="store_true",
+        help="Write the manifest as samples are produced, then rewrite it once at the end.",
+    )
     parser.add_argument("--no-streaming", dest="streaming", action="store_false", help="Disable dataset streaming.")
     parser.add_argument("--max_new_tokens", type=int, default=256, help="Maximum number of tokens to generate.")
     parser.add_argument("--warmup_steps", type=int, default=10, help="Number of warm-up batches.")
