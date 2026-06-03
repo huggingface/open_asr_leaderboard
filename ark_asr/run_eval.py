@@ -155,6 +155,18 @@ def resolve_torch_dtype(dtype_name: str, device: str) -> torch.dtype:
     return mapping[dtype_name]
 
 
+def limit_cuda_memory(device: str, limit_gb: float | None) -> None:
+    if limit_gb is None or limit_gb <= 0 or not device.startswith("cuda"):
+        return
+    if ":" in device:
+        device_index = int(device.split(":", 1)[1])
+    else:
+        device_index = torch.cuda.current_device()
+    total_memory = torch.cuda.get_device_properties(device_index).total_memory
+    fraction = min(float(limit_gb) * (1024 ** 3) / total_memory, 1.0)
+    torch.cuda.set_per_process_memory_fraction(fraction, device=device_index)
+
+
 def load_model(model_id: str, device: str, torch_dtype: torch.dtype, attn_impl: str):
     if attn_impl == "auto":
         candidates = ["flash_attention_2", "sdpa"] if device.startswith("cuda") else ["eager"]
@@ -336,6 +348,15 @@ def decode_audio(audio: dict[str, Any], target_sr: int) -> tuple[np.ndarray, int
     return np.asarray(array, dtype=np.float32), sampling_rate
 
 
+def pad_audio_to_min_seconds(audio: np.ndarray, sampling_rate: int, min_seconds: float) -> np.ndarray:
+    if min_seconds <= 0:
+        return audio
+    min_samples = int(round(min_seconds * sampling_rate))
+    if len(audio) >= min_samples:
+        return audio
+    return np.pad(audio, (0, min_samples - len(audio)), mode="constant")
+
+
 class TemporaryWavBatch:
     def __init__(self, audios: list[np.ndarray], sampling_rates: list[int], enabled: bool) -> None:
         self.audios = audios
@@ -495,6 +516,7 @@ class ArkAsrInferencer:
 
 def main(args):
     device = resolve_device(args.device)
+    limit_cuda_memory(device, args.gpu_memory_limit_gb)
     inferencer = ArkAsrInferencer(
         args.model_id,
         args.processor_id,
@@ -508,7 +530,10 @@ def main(args):
 
     def benchmark(batch):
         decoded = [decode_audio(audio, args.target_sr) for audio in batch["audio"]]
-        audios = [audio for audio, _ in decoded]
+        audios = [
+            pad_audio_to_min_seconds(audio, sampling_rate, args.min_audio_seconds)
+            for audio, sampling_rate in decoded
+        ]
         sampling_rates = [sampling_rate for _, sampling_rate in decoded]
         batch["audio_length_s"] = [len(audio) / sampling_rate for audio, sampling_rate in zip(audios, sampling_rates)]
         minibatch_size = len(audios)
@@ -704,6 +729,7 @@ if __name__ == "__main__":
         help="Optional local directory containing parquet shards for this dataset split.",
     )
     parser.add_argument("--device", type=int, default=-1, help="Device index. Use -1 for CPU.")
+    parser.add_argument("--gpu_memory_limit_gb", type=float, default=None, help="Optional per-process CUDA memory limit.")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of samples per batch.")
     parser.add_argument("--skip_eval_samples", type=int, default=0, help="Number of prepared evaluation samples to skip.")
     parser.add_argument("--max_eval_samples", type=int, default=None, help="Number of samples to evaluate.")
@@ -717,6 +743,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_new_tokens", type=int, default=256, help="Maximum number of tokens to generate.")
     parser.add_argument("--warmup_steps", type=int, default=10, help="Number of warm-up batches.")
     parser.add_argument("--target_sr", type=int, default=16000, help="Evaluation sampling rate.")
+    parser.add_argument("--min_audio_seconds", type=float, default=0.0, help="Right-pad audio shorter than this length.")
     parser.add_argument(
         "--audio_decode",
         choices=["soundfile", "datasets"],
