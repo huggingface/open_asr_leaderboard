@@ -1,5 +1,6 @@
+numpy
+tqdm
 accelerate
-librosa
 num2words
 pyarrow
 soundfile
