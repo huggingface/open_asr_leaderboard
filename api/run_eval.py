@@ -20,8 +20,14 @@ load_dotenv()
 def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=20):
     API_URL = "https://datasets-server.huggingface.co/rows"
 
+    headers = {}
+    if os.environ.get("HF_TOKEN") is not None:
+        headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
+    else:
+        print("HF_TOKEN not set, might experience rate-limiting.")
+
     size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={dataset}&split={split}"
-    size_response = requests.get(size_url).json()
+    size_response = requests.get(size_url, headers=headers).json()
     total_rows = size_response["size"]["config"]["num_rows"]
     audio_urls = []
     for offset in tqdm(range(0, total_rows, batch_size), desc="Fetching audio URLs"):
@@ -36,12 +42,7 @@ def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=2
         retries = 0
         while retries <= max_retries:
             try:
-                headers = {}
-                if os.environ.get("HF_TOKEN") is not None:
-                    headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
-                else:
-                    print("HF_TOKEN not set, might experience rate-limiting.")
-                response = requests.get(API_URL, params=params)
+                response = requests.get(API_URL, params=params, headers=headers)
                 response.raise_for_status()
                 data = response.json()
                 yield from data["rows"]
@@ -63,12 +64,13 @@ def transcribe_with_retry(
     max_retries=10,
     use_url=False,
     language="en",
+    prompt=None,
 ):
     provider, variant = get_provider(model_name)
     retries = 0
     while retries <= max_retries:
         try:
-            return provider.transcribe(variant, audio_file_path, sample, use_url=use_url, language=language)
+            return provider.transcribe(variant, audio_file_path, sample, use_url=use_url, language=language, prompt=prompt)
         except PermanentError:
             raise
         except Exception as e:
@@ -98,6 +100,7 @@ def transcribe_dataset(
     use_url=False,
     max_samples=None,
     max_workers=4,
+    prompt=None,
 ):
     if use_url:
         audio_rows = fetch_audio_urls(dataset_path, dataset, split)
@@ -126,7 +129,7 @@ def transcribe_dataset(
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, None, sample, use_url=True
+                    model_name, None, sample, use_url=True, prompt=prompt
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
@@ -149,7 +152,7 @@ def transcribe_dataset(
             start = time.time()
             try:
                 transcription = transcribe_with_retry(
-                    model_name, tmp_path, sample, use_url=False
+                    model_name, tmp_path, sample, use_url=False, prompt=prompt
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
@@ -236,6 +239,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Use URL-based audio fetching instead of datasets",
     )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default=None,
+        help="Optional prompt to pass to the provider (e.g., 'Output must be in lexical format.')",
+    )
 
     args = parser.parse_args()
 
@@ -247,4 +256,5 @@ if __name__ == "__main__":
         use_url=args.use_url,
         max_samples=args.max_samples,
         max_workers=args.max_workers,
+        prompt=args.prompt,
     )

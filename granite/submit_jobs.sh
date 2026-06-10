@@ -1,22 +1,22 @@
 #!/bin/bash
-# Local script to submit HF Jobs for ABR ASR evaluation.
+# Local script to submit HF Jobs for Granite ASR evaluation.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="hf-audio/open-asr-leaderboard-abr"
+SPACE="hf-audio/open-asr-leaderboard-granite"
 RESULTS_BUCKET="hf-audio/asr_leaderboard"
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 FLAVOR="a100-large"
-BATCH_SIZE=512
-WARMUP_STEPS=5
-SUBBATCH_SAMPLES=30000000
 
-# ── Models: "model_id revision" ──────────────────────────────────────────────
+# ── Models: "model_id type batch_size [additional_params]" ────────────────────
+# Types: speculative, speculative_bpe, nar
 MODEL_CONFIGS=(
-    "abr-ai/niagara-19m-batch.en dab6545337495482f2fc05455432a7a05c88d3cc"
+    "ibm-granite/granite-4.0-1b-speech speculative 256"
+    "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
+    "ibm-granite/granite-speech-4.1-2b-nar nar 256"
 )
 
-# ── Datasets: "name split" ────────────────────────────────────────────────────
+# ── Datasets: "name split" ───────────────────────────────────────────────────
 DATASET_CONFIGS=(
     "voxpopuli test"
     "ami test"
@@ -29,36 +29,51 @@ DATASET_CONFIGS=(
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID REVISION <<< "$model_cfg"
+    read -r MODEL_ID MODEL_TYPE BATCH_SIZE <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
-    echo "  Evaluating: ${MODEL_ID}"
+    echo "  Evaluating: ${MODEL_ID} (${MODEL_TYPE}, batch_size=${BATCH_SIZE})"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET SPLIT <<< "$cfg"
 
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE}"
+
+        # Build command based on model type
+        if [[ "$MODEL_TYPE" == "speculative" ]]; then
+            EVAL_SCRIPT="run_eval_speculative.py"
+            EXTRA_ARGS="--num_beams=2 --max_new_tokens=200 --confidence_threshold=0.2 --ctc_threshold=0.7"
+        elif [[ "$MODEL_TYPE" == "speculative_bpe" ]]; then
+            EVAL_SCRIPT="run_eval_speculative_bpe.py"
+            EXTRA_ARGS="--num_beams=2 --max_new_tokens=200 --confidence_threshold=0.4 --ctc_threshold=0.0"
+        elif [[ "$MODEL_TYPE" == "nar" ]]; then
+            EVAL_SCRIPT="run_eval_nar.py"
+            EXTRA_ARGS=""
+        else
+            echo "ERROR: Unknown model type: ${MODEL_TYPE}" >&2
+            exit 1
+        fi
 
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND=soundfile \
+            --env PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
+            --env PYTORCH_ALLOC_CONF="expandable_segments:True" \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
-                PYTHONPATH=/app python run_eval.py \
+                PYTHONPATH=/app python ${EVAL_SCRIPT} \
                     --model_id=${MODEL_ID} \
-                    --revision=${REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
+                    --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --warmup_steps=${WARMUP_STEPS} \
-                    --subbatch_samples=${SUBBATCH_SAMPLES} \
-                    --max_eval_samples=-1 &&
+                    --max_eval_samples=-1 \
+                    ${EXTRA_ARGS} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &

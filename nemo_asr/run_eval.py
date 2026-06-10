@@ -76,6 +76,7 @@ def main(args):
             # for eg. earnings22/test/4432298/281.wav, earnings22/test/4450488/281.wav
             # lhotse uses the filename (281.wav) here as unique ID to create and name cuts
             # ref: https://github.com/lhotse-speech/lhotse/blob/master/lhotse/dataset/collation.py#L186
+            original_id = id  # preserve before sanitization for use as audio_filepath
             id = id.replace('/', '_').removesuffix('.wav')
 
             audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
@@ -87,7 +88,13 @@ def main(args):
                 soundfile.write(audio_path, audio_array, sample_rate)
 
             audio_paths.append(audio_path)
-            original_audio_paths.append(os.path.basename(str(file_name)) if file_name is not None else None)
+            # Prefer the original file_name from the dataset; fall back to the
+            # sample id (before path-sanitization) so audio_filepath in the
+            # JSONL is always a meaningful identifier rather than "sample_N".
+            if file_name is not None:
+                original_audio_paths.append(os.path.basename(str(file_name)))
+            else:
+                original_audio_paths.append(original_id)
             durations.append(len(audio_array) / sample_rate)
 
         

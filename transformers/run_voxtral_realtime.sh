@@ -3,7 +3,6 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 BATCH_SIZE=64
-MAX_NEW_TOKENS=128
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
@@ -19,7 +18,6 @@ DATASET_CONFIGS=(
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "tedlium test"
 )
 
 for MODEL_ID in "${MODEL_IDs[@]}"; do
@@ -34,8 +32,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
             --split="${SPLIT}" \
             --device=0 \
             --batch_size=${BATCH_SIZE} \
-            --max_eval_samples=-1 \
-            --max_new_tokens=${MAX_NEW_TOKENS}
+            --max_eval_samples=-1
     done
 
     # Evaluate results

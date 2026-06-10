@@ -160,7 +160,7 @@ def write_manifest(
     return manifest_path
 
 
-def score_results(directory: str, model_id: str = None, multilingual: bool = False):
+def score_results(directory: str, model_id: str = None, multilingual: bool = False, csv_only: bool = False):
     """
     Scores all result files in a directory and returns a composite score over all evaluated datasets.
 
@@ -169,6 +169,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         model_id: Optional, model name to filter out result files based on model name.
         multilingual: If True, apply compound word boundary normalization before
                       WER computation. Should only be enabled for non-English benchmarks.
+        csv_only: If True, suppress all output except the CSV summary block.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -183,6 +184,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
     result_files = list(sorted(result_files))
 
     # Filter files belonging to a specific model id
+    original_model_id = model_id  # preserve original (e.g. "distil-whisper/distil-large-v3.5") for CSV label
     if model_id is not None and model_id != "":
         print("Filtering models by id:", model_id)
         model_id = model_id.replace("/", "-")
@@ -202,7 +204,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         model_id = model_id[:author_index] + "/" + model_id[author_index + 1 :]
 
         ds_fp = fp[ds_index:]
-        dataset_id = ds_fp.replace("DATASET_", "").rstrip(".jsonl")
+        dataset_id = ds_fp.replace("DATASET_", "").removesuffix(".jsonl")
         return model_id, dataset_id
 
     # Compute WER results per dataset, and RTFx over all datasets
@@ -238,15 +240,16 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         result_key = f"{model_id_of_file} | {dataset_id}"
         results[result_key] = {"wer": wer, "audio_length": audio_length, "inference_time": inference_time, "rtfx": rtfx}
 
-    print("*" * 80)
-    print("Results per dataset:")
-    print("*" * 80)
+    if not csv_only:
+        print("*" * 80)
+        print("Results per dataset:")
+        print("*" * 80)
 
-    for k, v in results.items():
-        metrics = f"{k}: WER = {v['wer']:0.2f} %"
-        if v["rtfx"] is not None:
-            metrics += f", RTFx = {v['rtfx']:0.2f}"
-        print(metrics)
+        for k, v in results.items():
+            metrics = f"{k}: WER = {v['wer']:0.2f} %"
+            if v["rtfx"] is not None:
+                metrics += f", RTFx = {v['rtfx']:0.2f}"
+            print(metrics)
 
     # composite WER should be computed over all datasets and with the same key
     composite_wer = defaultdict(float)
@@ -264,16 +267,127 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         count_entries[key] += 1
 
     # normalize scores & print
-    print()
-    print("*" * 80)
-    print("Composite Results:")
-    print("*" * 80)
-    for k, v in composite_wer.items():
-        wer = v / count_entries[k]
-        print(f"{k}: WER = {wer:0.2f} %")
-    for k in composite_audio_length:
-        if composite_audio_length[k] is not None:
-            rtfx = composite_audio_length[k] / composite_inference_time[k]
-            print(f"{k}: RTFx = {rtfx:0.2f}")
-    print("*" * 80)
+    if not csv_only:
+        print()
+        print("*" * 80)
+        print("Composite Results:")
+        print("*" * 80)
+        for k, v in composite_wer.items():
+            wer = v / count_entries[k]
+            print(f"{k}: WER = {wer:0.2f} %")
+        for k in composite_audio_length:
+            if composite_audio_length[k] is not None:
+                rtfx = composite_audio_length[k] / composite_inference_time[k]
+                print(f"{k}: RTFx = {rtfx:0.2f}")
+        print("*" * 80)
+
+    # ── Family definitions ────────────────────────────────────────────────────
+    # Each entry: (family_key, presence_substring, header, col_map)
+    # col_map: ds_substr → (column_label, group_or_None)
+    FAMILY_CONFIGS = [
+        (
+            "appen",
+            "appen",
+            "model,Avg Appen WER,Avg Scripted,Avg Conversational,"
+            "Scripted-US,Scripted-AU,Scripted-CA,Scripted-IN,"
+            "Conversational-US003,Conversational-US004,Conversational-IN",
+            {
+                "appen_scripted_filtered__american":                     ("Scripted-US",          "scripted"),
+                "appen_scripted_filtered__australian":                   ("Scripted-AU",          "scripted"),
+                "appen_scripted_filtered__canadian":                     ("Scripted-CA",          "scripted"),
+                "appen_scripted_filtered__indian":                       ("Scripted-IN",          "scripted"),
+                "appen_conversational_segmented_filtered__american_003": ("Conversational-US003", "conversational"),
+                "appen_conversational_segmented_filtered__american_004": ("Conversational-US004", "conversational"),
+                "appen_conversational_segmented_filtered__indian":       ("Conversational-IN",    "conversational"),
+            },
+        ),
+        (
+            "dataocean",
+            "dataocean",
+            "model,Avg DataOcean WER,Avg Scripted,Avg Conversational,"
+            "Scripted-US,Scripted-GB,Conversational-US,Conversational-GB",
+            {
+                "dataocean_scripted_filtered__en_US":                  ("Scripted-US",       "scripted"),
+                "dataocean_scripted_filtered__en_GB":                  ("Scripted-GB",       "scripted"),
+                "dataocean_conversational_segmented_filtered__en_US":  ("Conversational-US", "conversational"),
+                "dataocean_conversational_segmented_filtered__en_GB":  ("Conversational-GB", "conversational"),
+            },
+        ),
+        (
+            "public",
+            None,   # always printed when public datasets are present
+            "model,RTFx,License,Size (B),# Languages,Encoder,Decoder,"
+            "AMI WER,Earnings22 WER,Gigaspeech WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli WER",
+            {
+                "ami_test":               ("AMI WER",        None),
+                "earnings22_test":        ("Earnings22 WER", None),
+                "gigaspeech_test":        ("Gigaspeech WER", None),
+                "librispeech_test.clean": ("LS Clean WER",   None),
+                "librispeech_test.other": ("LS Other WER",   None),
+                "spgispeech_test":        ("SPGISpeech WER", None),
+                "voxpopuli_test":         ("Voxpopuli WER",  None),
+            },
+        ),
+    ]
+
+    all_dataset_ids = " ".join(results.keys())
+
+    def find_wer_in(model_key, col_label, col_map):
+        for ds_substr, (label, _group) in col_map.items():
+            if label == col_label:
+                for result_key, result_val in results.items():
+                    if model_key.rstrip() in result_key and ds_substr in result_key:
+                        return result_val["wer"]
+        return None
+
+    def print_csv_block(header, col_map, family_name=None):
+        csv_columns = [lbl for lbl, _grp in col_map.values()]
+        # deduplicate while preserving order
+        seen = set()
+        csv_columns = [c for c in csv_columns if not (c in seen or seen.add(c))]
+
+        title = f"CSV Summary ({family_name}):" if family_name else "CSV Summary:"
+        print()
+        print("*" * 80)
+        print(title)
+        print("*" * 80)
+        print(header)
+
+        for model_key in composite_wer:
+            csv_model_label = original_model_id if original_model_id is not None else model_key
+            wer_vals = {col: find_wer_in(model_key, col, col_map) for col in csv_columns}
+            wer_cols = [str(wer_vals[col]) if wer_vals[col] is not None else "" for col in csv_columns]
+
+            is_private = any(grp is not None for _lbl, grp in col_map.values())
+            if is_private:
+                scripted_wers       = [v for _ds, (lbl, grp) in col_map.items()
+                                        if grp == "scripted"       and (v := wer_vals.get(lbl)) is not None]
+                conversational_wers = [v for _ds, (lbl, grp) in col_map.items()
+                                        if grp == "conversational" and (v := wer_vals.get(lbl)) is not None]
+                all_wers            = [v for v in wer_vals.values() if v is not None]
+                avg_overall        = round(sum(all_wers) / len(all_wers), 2)            if all_wers else ""
+                avg_scripted       = round(sum(scripted_wers) / len(scripted_wers), 2)  if scripted_wers else ""
+                avg_conv           = round(sum(conversational_wers) / len(conversational_wers), 2) if conversational_wers else ""
+                print(f"{csv_model_label},{avg_overall},{avg_scripted},{avg_conv}," + ",".join(wer_cols))
+            else:
+                if composite_audio_length[model_key] is not None:
+                    rtfx_val = round(composite_audio_length[model_key] / composite_inference_time[model_key], 2)
+                else:
+                    rtfx_val = ""
+                print(f"{csv_model_label},{rtfx_val},,,,,," + ",".join(wer_cols))
+
+        print("*" * 80)
+
+    # ── Print one CSV block per detected family ───────────────────────────────
+    for family_key, presence_substr, header, col_map in FAMILY_CONFIGS:
+        family_name = family_key.capitalize()  # "Appen", "Dataocean", "Public"
+        # Public block: print only if at least one public dataset key is found
+        if presence_substr is None:
+            has_public = any(ds_substr in all_dataset_ids for ds_substr in col_map)
+            if has_public:
+                print_csv_block(header, col_map, family_name)
+        else:
+            if presence_substr in all_dataset_ids:
+                print_csv_block(header, col_map, family_name)
+
     return composite_wer, results

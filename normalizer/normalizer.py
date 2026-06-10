@@ -630,7 +630,7 @@ class EnglishTextNormalizer:
             # general contractions
             r"n't\b": " not",
             r"'re\b": " are",
-            r"'s\b": " is",
+            r"\b(it|he|she|what|that|who|here|there|how|when|where|why|this)'s\b": r"\1 is",
             r"'d\b": " would",
             r"'ll\b": " will",
             r"'t\b": " not",

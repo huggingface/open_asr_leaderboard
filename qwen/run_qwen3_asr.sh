@@ -19,7 +19,6 @@ DATASET_CONFIGS=(
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "tedlium test"
 )
 
 for MODEL_ID in "${MODEL_IDs[@]}"; do

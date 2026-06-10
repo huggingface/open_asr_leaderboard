@@ -73,6 +73,8 @@ def main(args):
     processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
     is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
+    # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
+    is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
 
     # Optional prompt for audio language models, newer models should use `apply_transcription_request`
     text = None
@@ -166,6 +168,9 @@ def main(args):
                 language="en",
                 punctuation=False,
             )
+        elif is_voxtral_realtime:
+            # Realtime model uses a plain processor call — no prompt, no apply_transcription_request
+            inputs = processor(audios, return_tensors="pt")
         elif has_transcription_processor:
             if "voxtral" in args.model_id.lower():
                 inputs = processor.apply_transcription_request(
@@ -220,7 +225,25 @@ def main(args):
         with sdpa_kernel(sdpa_backends):
             if model.can_generate():
                 # 2.1 Auto-regressive generation for LM-based models
-                if args.longform:
+                is_moonshine = "moonshine" in args.model_id.lower()
+                if is_moonshine:
+                    # Moonshine needs a per-sample token limit based on audio duration to
+                    # prevent hallucinations on long/variable-length clips (e.g. AMI).
+                    # Compute per-sample limits (6.5 tokens/sec + 2 for <sot>/<eot>),
+                    # generate up to the batch maximum, then mask out tokens beyond each
+                    # sample's individual limit by replacing them with the EOT token.
+                    token_limits = [int(len(clip) * 6.5 // 16000 + 2) for clip in audios]
+                    per_sample_limits = torch.tensor(token_limits).reshape(-1, 1).to(args.device)
+                    moonshine_gen_kwargs = {**gen_kwargs, "max_new_tokens": per_sample_limits.max().item()}
+                    pred_ids = model.generate(**inputs, **moonshine_gen_kwargs)
+                    output_mask = (
+                        torch.arange(pred_ids.shape[-1], device=args.device)
+                        .unsqueeze(0)
+                        .expand(pred_ids.shape[0], -1)
+                        > per_sample_limits
+                    )
+                    pred_ids = pred_ids.masked_fill(output_mask, model.config.eos_token_id)
+                elif args.longform:
                     pred_ids = model.generate(**inputs, **gen_kwargs, return_timestamps=True)
                 else:   
                     pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
@@ -258,6 +281,9 @@ def main(args):
                     except Exception as sample_error:
                         print(f"Sample {i} decoding failed with error: {sample_error}. Setting to empty transcript.")
                         pred_text.append("")
+        elif is_voxtral_realtime:
+            # No prompt tokens to strip — decode directly
+            pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
         elif has_transcription_processor or texts is not None:
             # Strip input prompt tokens
             pred_text = processor.decode(pred_ids[:, prompt_len:], skip_special_tokens=True)

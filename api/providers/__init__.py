@@ -16,6 +16,7 @@ class APIProvider(ABC):
         sample: dict,
         use_url: bool = False,
         language: str = "en",
+        prompt: Optional[str] = None,
     ) -> str:
         """Transcribe audio and return the text."""
         ...
@@ -52,3 +53,4 @@ from . import elevenlabs_provider
 from . import revai_provider
 from . import aquavoice_provider
 from . import zoom_provider
+from . import microsoft_azure_provider

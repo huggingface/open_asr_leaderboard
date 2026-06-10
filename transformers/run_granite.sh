@@ -23,7 +23,6 @@ DATASET_CONFIGS=(
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "tedlium test"
 )
 
 num_models=${#MODEL_IDs[@]}

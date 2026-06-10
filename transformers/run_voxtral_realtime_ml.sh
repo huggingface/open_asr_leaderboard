@@ -48,8 +48,7 @@ run_evaluation() {
         --split="test" \
         --device="$DEVICE_ID" \
         --batch_size="$BATCH_SIZE" \
-        --max_eval_samples=-1 \
-        --max_new_tokens=300
+        --max_eval_samples=-1
 
     local exit_code=$?
 

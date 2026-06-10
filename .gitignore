@@ -132,6 +132,7 @@ dmypy.json
 */pretrained_models/*
 */model_checkpoints/*
 */results/*
+results_bucket/*
 
 # cached audio
 *.wav

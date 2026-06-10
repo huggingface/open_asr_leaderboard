@@ -1,22 +1,26 @@
 #!/bin/bash
-# Local script to submit HF Jobs for ABR ASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# Local script to submit HF Jobs for Moonshine ASR evaluation.
+# Usage: HF_TOKEN=hf_... bash submit_jobs_moonshine.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="hf-audio/open-asr-leaderboard-abr"
+SPACE="hf-audio/open-asr-leaderboard-transformers"
 RESULTS_BUCKET="hf-audio/asr_leaderboard"
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 FLAVOR="a100-large"
-BATCH_SIZE=512
-WARMUP_STEPS=5
-SUBBATCH_SAMPLES=30000000
+DTYPE=float16
 
-# ── Models: "model_id revision" ──────────────────────────────────────────────
+# ── Models: "model_id batch_size voxpopuli_batch_size" ──────────────────────
+# batch_size           → used for all datasets except voxpopuli
+# voxpopuli_batch_size → voxpopuli has longer audio, so use a smaller value
 MODEL_CONFIGS=(
-    "abr-ai/niagara-19m-batch.en dab6545337495482f2fc05455432a7a05c88d3cc"
+    "usefulsensors/moonshine-streaming-tiny   1024 512"
+    "usefulsensors/moonshine-streaming-small  512 256"
+    "usefulsensors/moonshine-streaming-medium 512 256"
+    "usefulsensors/moonshine-base             1024 512"
+    "usefulsensors/moonshine-tiny              1024 512"
 )
 
-# ── Datasets: "name split" ────────────────────────────────────────────────────
+# ── Datasets: "name split" ───────────────────────────────────────────────────
 DATASET_CONFIGS=(
     "voxpopuli test"
     "ami test"
@@ -29,7 +33,7 @@ DATASET_CONFIGS=(
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID REVISION <<< "$model_cfg"
+    read -r MODEL_ID BATCH_SIZE VOXPOPULI_BATCH_SIZE <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -38,27 +42,30 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET SPLIT <<< "$cfg"
+        if [[ "$DATASET" == "voxpopuli" ]]; then
+            EFFECTIVE_BATCH_SIZE="${VOXPOPULI_BATCH_SIZE}"
+        else
+            EFFECTIVE_BATCH_SIZE="${BATCH_SIZE}"
+        fi
 
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"
 
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND=soundfile \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
                 PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
-                    --revision=${REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
-                    --batch_size=${BATCH_SIZE} \
-                    --warmup_steps=${WARMUP_STEPS} \
-                    --subbatch_samples=${SUBBATCH_SAMPLES} \
-                    --max_eval_samples=-1 &&
+                    --device=0 \
+                    --batch_size=${EFFECTIVE_BATCH_SIZE} \
+                    --max_eval_samples=-1 \
+                    --dtype=${DTYPE} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &

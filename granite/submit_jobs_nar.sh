@@ -1,35 +1,32 @@
 #!/bin/bash
-# Local script to submit HF Jobs for ABR ASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# Local script to submit HF Jobs for Granite NAR ASR evaluation.
+# Usage: HF_TOKEN=hf_... bash submit_jobs_nar.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="hf-audio/open-asr-leaderboard-abr"
+SPACE="hf-audio/open-asr-leaderboard-granite-nar"
 RESULTS_BUCKET="hf-audio/asr_leaderboard"
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 FLAVOR="a100-large"
-BATCH_SIZE=512
-WARMUP_STEPS=5
-SUBBATCH_SAMPLES=30000000
+REVISION="99a4df9007ac5682f9daa093fb7008ff606e9a5d"
 
-# ── Models: "model_id revision" ──────────────────────────────────────────────
+# ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "abr-ai/niagara-19m-batch.en dab6545337495482f2fc05455432a7a05c88d3cc"
+    "ibm-granite/granite-speech-4.1-2b-nar"
 )
 
-# ── Datasets: "name split" ────────────────────────────────────────────────────
+# ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test"
-    "ami test"
-    "earnings22 test"
-    "gigaspeech test"
-    "librispeech test.clean"
-    "librispeech test.other"
-    "spgispeech test"
+    # "voxpopuli test 256"
+    "ami test 512"
+    "earnings22 test 256"
+    "gigaspeech test 512"
+    # "librispeech test.clean 512"
+    "librispeech test.other 512"
+    "spgispeech test 512"
 )
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
-for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID REVISION <<< "$model_cfg"
+for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -37,27 +34,28 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT <<< "$cfg"
+        read -r DATASET SPLIT BATCH_SIZE <<< "$cfg"
 
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND=soundfile \
+            --env HF_AUDIO_DECODER_BACKEND="soundfile" \
+            --env PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
+            --env PYTORCH_ALLOC_CONF="expandable_segments:True" \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
-                PYTHONPATH=/app python run_eval.py \
+                PYTHONPATH=/app python run_eval_nar.py \
                     --model_id=${MODEL_ID} \
                     --revision=${REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
+                    --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --warmup_steps=${WARMUP_STEPS} \
-                    --subbatch_samples=${SUBBATCH_SAMPLES} \
                     --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/

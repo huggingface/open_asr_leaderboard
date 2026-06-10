@@ -6,59 +6,86 @@ This repository contains the code for the Open ASR Leaderboard. The leaderboard 
 
 The Open ASR Leaderboard evaluates models on a diverse set of publicly available ASR benchmarks hosted on the Hugging Face Hub. These datasets cover a wide range of domains, languages, and recording conditions to provide a fair and comprehensive comparison across models.
 
-* **Core Test Sets (English, sorted, test-only):**
-  The main benchmark datasets used for evaluation are available here: [**ESB test-only sorted collection**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard).
+* **Main Test Sets (English, short-form):**
+  The main benchmark datasets used for evaluation (short-form English) are available [here](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard).
 
-* **Long-form Benchmark (recent addition):**
-  The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21, earnings22, and tedlium. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
+* **English, long-form:**
+  The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
-* **Multilingual Benchmark (recent addition):**
+* **Multilingual Benchmark:**
   The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/nithinraok/asr-leaderboard-datasets) dataset includes fleurs, mcv and mls multilingual.
 
-# Requirements
 
-Each library has its own set of requirements. We recommend using a clean conda environment, with Python 3.10 or above.
+* **Private datasets:** 
+  After submitting a model to the leaderboard, the maintainers will evaluate on private sets, as described [here](https://huggingface.co/blog/open-asr-leaderboard-private-data).
 
-1) Clone this repository.
-2) Install PyTorch by following the instructions here: https://pytorch.org/get-started/locally/
-3) Install the common requirements for all library by running `pip install -r requirements/requirements.txt`.
-4) Install the requirements for each library you wish to evaluate by running `pip install -r requirements/requirements_<library_name>.txt`.
-5) Connect your Hugging Face account by running `huggingface-cli login`.
 
-**Note:** If you wish to run NeMo, the benchmark currently needs CUDA 12.6 to fix a problem in previous drivers for RNN-T inference with cooperative kernels inside conditional nodes (see here: https://github.com/NVIDIA/NeMo/pull/9869). Running `nvidia-smi` should output "CUDA Version: 12.6" or higher.
+# Evaluate a model (as of 10 June 2026)
 
-# Evaluate a model
+English short-form evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes the same Docker image on the same hardware, eliminating environment and driver differences. Multilingual and long-form evaluations will migrate to HF Jobs in the future. Local evaluation remains possible for contributors who want to test on their own hardware.
 
-Each library has a script `run_eval.py` that acts as the entry point for evaluating a model. The script is run by the corresponding bash script for each model that is being evaluated. The script then outputs a JSONL file containing the predictions of the model on each dataset, and summarizes the Word Error Rate (WER) and Inverse Real-Time Factor (RTFx) of the model on each dataset after completion.
+Jobs are launched on the following hardware ([flavor](https://huggingface.co/docs/hub/jobs-configuration#hardware-flavor) in HF Jobs terminology):
+```
+name             pretty name             cpu       ram      storage   accelerator               cost/min  cost/hour
+a100-large       Nvidia A100 - large     12 vCPU   142 GB   1000 GB   1x A100 (80 GB)           $0.0417   $2.50
+```
+Example costs for a full run over the main public datasets:
+- $1.21 for `nvidia/parakeet-tdt-0.6b-v3`
+- $2.68 for `openai/whisper-large-v3-turbo`
+- $3.15 for `Qwen/Qwen3-ASR-1.7B`
 
-**Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU with CUDA 12.6 (or higher) and PyTorch 2.4.0 (or higher). If you are unable to evaluate on such a setup, please request one of the maintainers to run your scripts for evaluation!
+Each model family has its own Docker image with the exact software stack required. Images are hosted on [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations):
+- 🤗 [Transformers](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/tree/main): Whisper, Cohere, Voxtral, Voxtral Realtime, VibeVoice, Moonshine, Granite-Speech 3, GLM ASR, Crisper Whisper, Wav2Vec2, HuBERT, Data2Vec, MMS
+- [NVIDIA NeMo](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-nemo/tree/main)
+- [ESPnet](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-espnet/tree/main)
+- [SpeechBrain](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-speechbrain/tree/main)
+- [Granite 4](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-granite/tree/main)
+- [Granite 4 NAR](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-granite-nar/tree/main)
+- [Qwen3 ASR](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-qwen/tree/main)
+- [Omnilingual ASR](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-omniasr/tree/main) by Meta
+- [Lite-Whisper](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-lite-whisper/tree/main) by [Efficient Speech](https://huggingface.co/efficient-speech)
+- [Phi4](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-phi4/tree/main) by Microsoft
+- [Higgs Audio](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-boson/tree/main) by Boson AI
+- [Kyutai](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-kyutai/tree/main)
+- [Applied Brain Research](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-abr/tree/main)
+- [API models](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-apis/tree/main)
 
-## Transformers models (Docker, recommended)
+**To launch an evaluation:**
 
-For models supported by the 🤗 Transformers library, we provide a Docker image for reproducible evaluation. From the repository root:
+1. **Hugging Face Hub setup**
+   - Create an account at https://huggingface.co/ and add credits for HF Jobs: https://huggingface.co/settings/billing
+   - Create a [WRITE token](https://huggingface.co/settings/tokens/new?tokenType=write) and copy it.
+   - Create a Storage Bucket to store results: https://huggingface.co/new-bucket
 
+2. **One-time local setup**
 ```bash
-# Build the image
-docker build -t open-asr-transformers -f transformers/Dockerfile .
+# Clone the repository
+git clone git@github.com:huggingface/open_asr_leaderboard.git
+cd open_asr_leaderboard
 
-# Run a specific evaluation script
-docker run --rm --gpus all \
-    -v $(pwd):/app \
-    -v $HF_HOME:/root/.cache/huggingface \
-    open-asr-transformers run_whisper.sh
+# Create a minimal conda environment (no GPU required locally)
+conda create -n leaderboard_jobs python=3.10 -y
+conda activate leaderboard_jobs
+pip install -r requirements/requirements_jobs.txt
+huggingface-cli login   # paste your WRITE token when prompted
 ```
 
-See [`transformers/README.md`](./transformers/README.md) for the full list of supported models and detailed Docker usage.
+3. **Launch an evaluation** 🚀
+```bash
+# Open the relevant submit_jobs script, uncomment the models/datasets you want, then run:
+RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 
-## Other libraries (local setup)
+# Jobs are submitted in parallel (one per dataset). The script waits for all
+# jobs to finish, syncs results from the bucket, and prints a CSV summary.
+```
 
-1) Install the common requirements: `pip install -r requirements/requirements.txt`.
-2) Check if the library has additional requirements: `pip install -r requirements/requirements_<library_name>.txt` (e.g. `requirements_nemo.txt`, `requirements_espnet.txt`). See the [`requirements/`](./requirements/) folder for the full list.
-3) Change directory into the library you wish to evaluate. For example, `cd nemo_asr`.
-4) Run the bash script for the model you wish to evaluate. For example, `bash run_parakeet.sh`.
+## Local evaluation
 
+For contributors who want to test locally or evaluate multilingual/long-form models before HF Jobs support is added, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
 
-## Trade-off plots
+Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
+
+# Trade-off plots
 
 For open-source models, you can plot tradeoff plots like below with `scripts/plot_all.sh`.
 
@@ -81,18 +108,9 @@ You can also specify your own model and its performance as such:
 
 ![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
 
-# Contributing
+# Contributing a model or dataset
 
-## Add a new model or library
-
-1) Fork this repository and create a new branch.
-2) Follow the checklist in the [pull request template](./.github/PULL_REQUEST_TEMPLATE.md) — it covers both **Transformers models** and **non-Transformers libraries**.
-3) Key guidelines:
-   - Each `run_eval.py` script must use `normalizer/data_utils.py` for data loading, normalization, and manifest writing.
-   - Create one bash script per model type (e.g. `run_whisper.sh`). Different sizes of the same model share a script.
-   - Use the **same decoding hyper-parameters** across all datasets for a given model.
-   - Evaluations must be run on an **A100-SXM4-80GB GPU** with the maximum possible batch size. If you don't have access, ask a maintainer to run your scripts.
-4) Submit a PR with your results.
+Please follow the [pull request template](./.github/PULL_REQUEST_TEMPLATE.md) — it contains the full submission checklist and guidelines for both Transformers models and other libraries.
 
 ## Template `run_eval.py` script
 

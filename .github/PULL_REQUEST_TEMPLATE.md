@@ -12,36 +12,33 @@ Please include a summary of your pull request and how to run/use it.
 
 Please report your results (WER on each split, average WER, and RTFx) on the HF Hub by adding a `.eval_results/open_asr_leaderboard.yaml` file like [this](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026/blob/main/.eval_results/open_asr_leaderboard.yaml) in the model repo. Closed models can report their results in the PR text.
 
+### HF Jobs setup (recommended)
+
+Using HF Jobs makes it straightforward for maintainers to reproduce and verify your results. There are configurations for multiple model libraries available [here](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
+
+- [ ] (If a custom configuration is needed) duplicate one of the Space above (click the ⋮ menu → **Duplicate this Space**) to create your own copy, e.g. `your-username/open-asr-leaderboard-mymodel`.
+- [ ] Modify the `Dockerfile` to install your model's dependencies.
+- [ ] Adapt `run_eval.py` for your model — use the [Transformers one](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/blob/main/run_eval.py) as a starting point.
+- [ ] In this repo, create a folder for your model library and a `submit_jobs_<your_model>.sh` script (use any existing one in this repo as a template) pointing to your Space and a results bucket. Include it in your PR.
+
+### Key guidelines (all submissions)
+- [ ] Use the **same decoding hyper-parameters** across all datasets for a given model.
+- [ ] Run with the **maximum possible batch size** (can differ per dataset) on an A100-SXM4-80GB GPU.
+- [ ] If you're not using HF Jobs, provide a `Dockerfile` in your PR for reproducible evaluation.
+- [ ] `run_eval.py` must support batch processing and use `normalizer/data_utils.py` for data loading, normalization, and manifest writing.
+
 ### My model is in Transformers 🤗
-- [ ] (If necessary) adapt [`transformers/run_eval.py`](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/run_eval.py) to use your checkpoint (using the `AutoModelForXXX` API).
-- [ ] Create a bash script like [this](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/run_whisper.sh).
-    - [ ] Loops over all the [Open ASR Leaderboard](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard) subsets with all models.
-    - [ ] Run on A100-SXM4-80GB GPU with maximum possible batch size and report on the HF Hub. (*If you don't have access to such a GPU, let us know so we can run it*).
-- [ ] Verify your evaluation runs inside the Docker container (see [`transformers/README.md`](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/README.md)):
-    ```bash
-    docker build -t open-asr-transformers -f transformers/Dockerfile .
-    docker run --rm --gpus all \
-        -v $(pwd):/app \
-        -v $HF_HOME:/root/.cache/huggingface \
-        open-asr-transformers run_<your_model>.sh
-    ```
-- [ ] If your model requires extra pip dependencies, add them to the [`transformers/Dockerfile`](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/Dockerfile).
+- [ ] (If necessary) adapt [`run_eval.py`](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/blob/main/run_eval.py) to use your checkpoint (using the `AutoModelForXXX` API).
+- [ ] If your model requires dependencies, add them to the [`Dockerfile`](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/blob/main/Dockerfile).
 
 ### My model is not in Transformers (yet 🙃)
-- [ ] Besides the main requirements [here](https://github.com/huggingface/open_asr_leaderboard/blob/main/requirements/requirements.txt), create a `requirements_MODEL.txt` file for the necessary dependencies as seen [here](https://github.com/huggingface/open_asr_leaderboard/tree/main/requirements).
-
-In a new folder for your model: 
-- [ ] Create a `run_eval.py` script like [this](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/run_eval.py). 
-    - [ ] Supports batch processing.
-    - [ ] Uses torch.compile and/or relevant optimization for inference (including warmup).
-- [ ] Create a bash script like [this](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/run_whisper.sh).
-    - [ ] Loops over all the [Open ASR Leaderboard](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard) subsets.
-    - [ ] Tested on A100-SXM4-80GB GPU with maximum possible batch size (*if you don't have access to such a GPU, let us know so we can run it*).
-- [ ] Provide a Dockerfile for reproducible evaluation.
+- [ ] Duplicate an [existing Space](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations) that is closest to your model's framework, then modify the `Dockerfile` to install the required dependencies.
+- [ ] Adapt `run_eval.py` for your model's inference API (supports batch processing, uses `torch.compile` and/or relevant optimizations including warmup).
+- [ ] Create a `submit_jobs_<your_model>.sh` script pointing to your new Space, and include it in your PR.
 
 
 ## New Dataset Checklist
-- [ ] The dataset is hosted on the HF Hub.
+- [ ] The dataset is hosted on the HF Hub with just the test set.
 - [ ] Create a new Bash script with one of the model suites. For example, adapting the [Whisper](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/run_whisper.sh) or [Voxtral](https://github.com/huggingface/open_asr_leaderboard/blob/main/voxtral/run_voxtral.sh) script to run the eval on that new dataset (adding a call like [this](https://github.com/huggingface/open_asr_leaderboard/blob/main/transformers/run_whisper.sh#L14-L21)).
 
 ## Related issues
