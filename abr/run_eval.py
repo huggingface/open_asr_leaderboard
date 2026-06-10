@@ -4,7 +4,6 @@ import time
 
 import evaluate
 import numpy as np
-from huggingface_hub import snapshot_download
 from normalizer import data_utils
 from tqdm import tqdm
 from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
@@ -13,19 +12,17 @@ wer_metric = evaluate.load("wer")
 
 
 def main(args):
-    model_source = args.model_id
-    if args.revision is not None:
-        model_source = snapshot_download(repo_id=args.model_id, revision=args.revision)
+    revision = args.revision
 
     feature_extractor = AutoFeatureExtractor.from_pretrained(
-        model_source, trust_remote_code=True
+        args.model_id, trust_remote_code=True, revision=revision
     ).cuda()
     model = AutoModel.from_pretrained(
-        model_source, trust_remote_code=True
+        args.model_id, trust_remote_code=True, revision=revision
     ).cuda()
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
     tokenizer = AutoTokenizer.from_pretrained(
-        model_source, trust_remote_code=True
+        args.model_id, trust_remote_code=True, revision=revision
     )
 
     def get_sub_batch_output(sub_batch):

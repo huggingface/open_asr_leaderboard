@@ -1,0 +1,87 @@
+#!/bin/bash
+# Local script to submit HF Jobs for ABR ASR evaluation.
+# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+
+# ── Configuration ────────────────────────────────────────────────────────────
+SPACE="bezzam/open-asr-leaderboard-abr"
+RESULTS_BUCKET="bezzam/asr_leaderboard"
+DATASET_PATH="hf-audio/open-asr-leaderboard"
+FLAVOR="a100-large"
+BATCH_SIZE=256
+WARMUP_STEPS=5
+SUBBATCH_SAMPLES=30000000
+
+# ── Models: "model_id revision" ──────────────────────────────────────────────
+MODEL_CONFIGS=(
+    "abr-ai/niagara-19m-batch.en dab6545337495482f2fc05455432a7a05c88d3cc"
+)
+
+# ── Datasets: "name split" ────────────────────────────────────────────────────
+DATASET_CONFIGS=(
+    "voxpopuli test"
+    "ami test"
+    "earnings22 test"
+    "gigaspeech test"
+    "librispeech test.clean"
+    "librispeech test.other"
+    "spgispeech test"
+)
+
+# ── Submit one job per model/dataset combination ─────────────────────────────
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID REVISION <<< "$model_cfg"
+    MODEL_FOLDER="${MODEL_ID//\//-}"
+
+    echo "████████████████████████████████████████████████████████████████████████████████"
+    echo "  Evaluating: ${MODEL_ID}"
+    echo "████████████████████████████████████████████████████████████████████████████████"
+
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET SPLIT <<< "$cfg"
+
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT}"
+
+        hf jobs run \
+            --flavor "$FLAVOR" \
+            --timeout 8h \
+            --env HF_TOKEN="$HF_TOKEN" \
+            --env HF_AUDIO_DECODER_BACKEND=soundfile \
+            --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
+            "hf.co/spaces/${SPACE}" \
+            bash -c "
+                PYTHONPATH=/app python run_eval.py \
+                    --model_id=${MODEL_ID} \
+                    --revision=${REVISION} \
+                    --dataset_path=${DATASET_PATH} \
+                    --dataset=${DATASET} \
+                    --split=${SPLIT} \
+                    --batch_size=${BATCH_SIZE} \
+                    --warmup_steps=${WARMUP_STEPS} \
+                    --subbatch_samples=${SUBBATCH_SAMPLES} \
+                    --max_eval_samples=-1 &&
+                mkdir -p /results/${MODEL_FOLDER} &&
+                cp results/*.jsonl /results/${MODEL_FOLDER}/
+            " > /dev/null 2>&1 &
+    done
+    echo "For live status see: https://huggingface.co/settings/jobs"
+
+    wait
+    echo "All jobs finished for ${MODEL_ID}."
+    sleep 10  # allow time for the last results to be flushed to the bucket
+
+    mkdir -p "./results/${MODEL_FOLDER}"
+    hf buckets sync \
+        "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
+        "./results/${MODEL_FOLDER}" > /dev/null 2>&1
+
+    RUNDIR=$(pwd)
+    cd ..
+    python -c "
+import sys
+sys.path.insert(0, 'normalizer')
+from eval_utils import score_results
+score_results('${RUNDIR}/results/${MODEL_FOLDER}', '${MODEL_ID}')
+"
+    cd "${RUNDIR}"
+
+done
