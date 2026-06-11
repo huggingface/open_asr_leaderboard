@@ -52,4 +52,5 @@ from . import elevenlabs_provider
 from . import revai_provider
 from . import aquavoice_provider
 from . import zoom_provider
+from . import reson8_provider
 from . import microsoft_azure_provider

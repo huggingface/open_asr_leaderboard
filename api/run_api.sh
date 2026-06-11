@@ -8,6 +8,7 @@ export ELEVENLABS_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
 export ZOOM_API_KEY="your_api_key"
+export RESON8_API_KEY="your_api_key"
 export AZURE_API_KEY="your_api_key"
 
 export HF_TOKEN="hf_your_key"
@@ -23,6 +24,8 @@ MODEL_IDs=(
     # "speechmatics/enhanced"
     # "aquavoice/avalon-v1-en"
     # "zoom/scribe_v1" # please use --use_url
+    "reson8/resonant-1" # please use --use_url
+    "reson8/resonant-1-flash" # please use --use_url
     "microsoft/azure-speech-05-2026"
 )
 
