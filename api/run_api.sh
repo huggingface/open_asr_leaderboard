@@ -29,7 +29,7 @@ MODEL_CONFIGS=(
     "microsoft/azure-speech-05-2026  false"
 )
 
-MAX_WORKERS=2
+MAX_WORKERS=32
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
 declare -a EVAL_DATASETS=(

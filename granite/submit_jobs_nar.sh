@@ -3,10 +3,11 @@
 # Usage: HF_TOKEN=hf_... bash submit_jobs_nar.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="hf-audio/open-asr-leaderboard-granite-nar"
-RESULTS_BUCKET="hf-audio/asr_leaderboard"
-DATASET_PATH="hf-audio/open-asr-leaderboard"
-FLAVOR="a100-large"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-granite-nar}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
+DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+FLAVOR="${FLAVOR:-h200}"
+ORG_NAME="${ORG_NAME:-}"
 REVISION="99a4df9007ac5682f9daa093fb7008ff606e9a5d"
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -38,6 +39,9 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
 
         echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
+        NAMESPACE_ARG=""
+        [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
+
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
@@ -45,6 +49,7 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
             --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             --env PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
             --env PYTORCH_ALLOC_CONF="expandable_segments:True" \
+            ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
@@ -71,6 +76,14 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
     hf buckets sync \
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
+
+    EXPECTED=${#DATASET_CONFIGS[@]}
+    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
+    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
+        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
+    else
+        echo "All ${ACTUAL} result files present."
+    fi
 
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
     PYTHONPATH="${REPO_ROOT}" python -c "

@@ -13,11 +13,12 @@
 #   bash submit_jobs.sh
 
 # Global defaults (can be left as-is; per-model `max_workers` will override)
-SPACE="hf-audio/open-asr-leaderboard-apis"
-RESULTS_BUCKET="hf-audio/asr_leaderboard"
-DATASET_PATH="hf-audio/open-asr-leaderboard"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-apis}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
+DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 # API jobs are CPU-only (no model weights loaded locally)
-FLAVOR="cpu-basic"
+FLAVOR="${FLAVOR:-cpu-basic}"
+ORG_NAME="${ORG_NAME:-}"
 
 
 # ── Models: "model_id use_url max_workers" ─────────────────────────────────
@@ -74,6 +75,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
         echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT}"
 
+        NAMESPACE_ARG=""
+        [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
+
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
@@ -87,6 +91,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --env ZOOM_API_KEY="$ZOOM_API_KEY" \
             --env AZURE_API_KEY="$AZURE_API_KEY" \
             --env HF_AUDIO_DECODER_BACKEND="soundfile" \
+            ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
@@ -112,6 +117,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     hf buckets sync \
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
+
+    EXPECTED=${#DATASET_CONFIGS[@]}
+    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
+    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
+        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
+    else
+        echo "All ${ACTUAL} result files present."
+    fi
 
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
     PYTHONPATH="${REPO_ROOT}" python -c "

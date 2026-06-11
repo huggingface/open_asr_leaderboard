@@ -351,6 +351,15 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         print("*" * 80)
         print(title)
         print("*" * 80)
+
+        for model_key in composite_wer:
+            wer_vals = [find_wer_in(model_key, col, col_map) for col in csv_columns]
+            wer_vals = [v for v in wer_vals if v is not None]
+            if wer_vals:
+                avg = round(sum(wer_vals) / len(wer_vals), 2)
+                label = original_model_id if original_model_id is not None else model_key.strip()
+                print(f"avg WER ({label}) = {avg}")
+
         print(header)
 
         for model_key in composite_wer:

@@ -3,10 +3,11 @@
 # Usage: HF_TOKEN=hf_... bash submit_jobs_vibevoice.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="hf-audio/open-asr-leaderboard-transformers"
-RESULTS_BUCKET="hf-audio/asr_leaderboard"
-DATASET_PATH="hf-audio/open-asr-leaderboard"
-FLAVOR="a100-large"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
+DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+FLAVOR="${FLAVOR:-h200}"
+ORG_NAME="${ORG_NAME:-}"
 MAX_NEW_TOKENS=225  # 30s audio at 24000 Hz with 3200 compression
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
@@ -42,10 +43,14 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
 
         echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"
 
+        NAMESPACE_ARG=""
+        [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
+
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
+            ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
@@ -72,6 +77,14 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
     hf buckets sync \
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
+
+    EXPECTED=${#DATASET_CONFIGS[@]}
+    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
+    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
+        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
+    else
+        echo "All ${ACTUAL} result files present."
+    fi
 
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
     PYTHONPATH="${REPO_ROOT}" python -c "

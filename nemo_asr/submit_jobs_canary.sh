@@ -3,10 +3,11 @@
 # Usage: HF_TOKEN=hf_... bash submit_jobs_canary.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="hf-audio/open-asr-leaderboard-nemo"
-RESULTS_BUCKET="hf-audio/asr_leaderboard"
-DATASET_PATH="hf-audio/open-asr-leaderboard"
-FLAVOR="a100-large"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-nemo}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
+DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+FLAVOR="${FLAVOR:-h200}"
+ORG_NAME="${ORG_NAME:-}"
 
 # ── Models: "model_id batch_size" ────────────────────────────────────────────
 MODEL_CONFIGS=(
@@ -41,10 +42,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
         echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
+        NAMESPACE_ARG=""
+        [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
+
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
+            ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
@@ -71,14 +76,18 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
 
-    RUNDIR=$(pwd)
-    cd ..
-    python -c "
-import sys
-sys.path.insert(0, 'normalizer')
-from eval_utils import score_results
-score_results('${RUNDIR}/results/${MODEL_FOLDER}', '${MODEL_ID}')
+    EXPECTED=${#DATASET_CONFIGS[@]}
+    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
+    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
+        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
+    else
+        echo "All ${ACTUAL} result files present."
+    fi
+
+    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
+    PYTHONPATH="${REPO_ROOT}" python -c "
+from normalizer.eval_utils import score_results
+score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
 "
-    cd "${RUNDIR}"
 
 done

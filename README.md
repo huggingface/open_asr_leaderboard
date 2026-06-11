@@ -27,10 +27,10 @@ English short-form evaluations use [Hugging Face Jobs](https://huggingface.co/do
 Jobs are launched on the following hardware ([flavor](https://huggingface.co/docs/hub/jobs-configuration#hardware-flavor) in HF Jobs terminology):
 ```
 name             pretty name             cpu       ram      storage   accelerator               cost/min  cost/hour
-a100-large       Nvidia A100 - large     12 vCPU   142 GB   1000 GB   1x A100 (80 GB)           $0.0417   $2.50
+h200             Nvidia H200             23 vCPU   256 GB   3000 GB   1x H200 (141 GB)          $0.0833   $5.00
 ```
 Example costs for a full run over the main public datasets:
-- $1.21 for `nvidia/parakeet-tdt-0.6b-v3`
+- $2.92 for `nvidia/parakeet-tdt-0.6b-v3`
 - $2.68 for `openai/whisper-large-v3-turbo`
 - $3.15 for `Qwen/Qwen3-ASR-1.7B`
 
@@ -77,6 +77,9 @@ RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 
 # Jobs are submitted in parallel (one per dataset). The script waits for all
 # jobs to finish, syncs results from the bucket, and prints a CSV summary.
+
+# Billing to org
+ORG_NAME="<org-name>" RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 ```
 
 ## Local evaluation
