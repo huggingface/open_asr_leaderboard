@@ -12,27 +12,32 @@ export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
 export SPEECHMATICS_API_KEY="your_api_key"
 export RESON8_API_KEY="your_api_key"
+export AZURE_API_KEY="your_api_key"
 
 # Configuration
 MODEL_IDs=(
-    "openai/gpt-4o-transcribe"
-    "openai/gpt-4o-mini-transcribe"
-    "openai/whisper-1"
-    "assembly/universal-3-pro"
-    "elevenlabs/scribe_v2"
-    "speechmatics/enhanced"
+    # "openai/gpt-4o-transcribe"
+    # "openai/gpt-4o-mini-transcribe"
+    # "openai/whisper-1"
+    # "assembly/universal-3-pro"
+    # "elevenlabs/scribe_v2"
+    # "speechmatics/enhanced"
     "reson8/resonant-1"
     "reson8/resonant-1-flash"
+    "microsoft/azure-speech-05-2026"
 )
 
-MAX_WORKERS=200
+MAX_WORKERS=20
 DATASET_PATH="nithinraok/asr-leaderboard-datasets"
 
 # German, French, Italian, Spanish, Portuguese
-DATASET_NAMES=("fleurs" "mcv" "mls")
+DATASET_NAMES=("fleurs" "mls" "mcv")
 DATASET_LANGS_fleurs="de fr it es pt"
 DATASET_LANGS_mcv="de es fr it"
 DATASET_LANGS_mls="es fr it pt"
+
+# Datasets that require lexical format prompt (azure only)
+LEXICAL_DATASETS="mls-it"
 
 # Function to run evaluation
 run_evaluation() {
@@ -40,6 +45,12 @@ run_evaluation() {
     local dataset=$2
     local language=$3
     local config_name="${dataset}_${language}"
+
+    # Build prompt args for azure + lexical datasets
+    local prompt_args=()
+    if [[ "$model_id" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" ${dataset}-${language} "* ]]; then
+        prompt_args=(--prompt "Output must be in lexical format.")
+    fi
 
     echo ""
     echo "Running evaluation: $config_name"
@@ -55,7 +66,8 @@ run_evaluation() {
         --language="$language" \
         --split="test" \
         --model_name="$model_id" \
-        --max_workers="$MAX_WORKERS"
+        --max_workers="$MAX_WORKERS" \
+        "${prompt_args[@]}"
 
     local exit_code=$?
 
