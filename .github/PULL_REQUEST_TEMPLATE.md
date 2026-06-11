@@ -23,7 +23,7 @@ Using HF Jobs makes it straightforward for maintainers to reproduce and verify y
 
 ### Key guidelines (all submissions)
 - [ ] Use the **same decoding hyper-parameters** across all datasets for a given model.
-- [ ] Run with the **maximum possible batch size** (can differ per dataset) on an A100-SXM4-80GB GPU.
+- [ ] Run with the **maximum possible batch size** (can differ per dataset) on an H200 GPU.
 - [ ] If you're not using HF Jobs, provide a `Dockerfile` in your PR for reproducible evaluation.
 - [ ] `run_eval.py` must support batch processing and use `normalizer/data_utils.py` for data loading, normalization, and manifest writing.
 

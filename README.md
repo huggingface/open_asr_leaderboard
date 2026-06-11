@@ -32,23 +32,9 @@ h200             Nvidia H200             23 vCPU   256 GB   3000 GB   1x H200 (1
 Example costs for a full run over the main public datasets:
 - $2.92 for `nvidia/parakeet-tdt-0.6b-v3`
 - $4.75 for `openai/whisper-large-v3-turbo`
-- $X.XX for `Qwen/Qwen3-ASR-1.7B`
+- $5.58 for `Qwen/Qwen3-ASR-1.7B`
 
-Each model family has its own Docker image with the exact software stack required. Images are hosted on [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations):
-- 🤗 [Transformers](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/tree/main): Whisper, Cohere, Voxtral, Voxtral Realtime, VibeVoice, Moonshine, Granite-Speech 3, GLM ASR, Crisper Whisper, Wav2Vec2, HuBERT, Data2Vec, MMS
-- [NVIDIA NeMo](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-nemo/tree/main)
-- [ESPnet](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-espnet/tree/main)
-- [SpeechBrain](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-speechbrain/tree/main)
-- [Granite 4](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-granite/tree/main)
-- [Granite 4 NAR](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-granite-nar/tree/main)
-- [Qwen3 ASR](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-qwen/tree/main)
-- [Omnilingual ASR](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-omniasr/tree/main) by Meta
-- [Lite-Whisper](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-lite-whisper/tree/main) by [Efficient Speech](https://huggingface.co/efficient-speech)
-- [Phi4](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-phi4/tree/main) by Microsoft
-- [Higgs Audio](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-boson/tree/main) by Boson AI
-- [Kyutai](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-kyutai/tree/main)
-- [Applied Brain Research](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-abr/tree/main)
-- [API models](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-apis/tree/main)
+Each model family has its own Docker image with the exact software stack required. The evalulation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
 
 **To launch an evaluation:**
 
