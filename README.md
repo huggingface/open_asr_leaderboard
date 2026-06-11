@@ -31,8 +31,8 @@ h200             Nvidia H200             23 vCPU   256 GB   3000 GB   1x H200 (1
 ```
 Example costs for a full run over the main public datasets:
 - $2.92 for `nvidia/parakeet-tdt-0.6b-v3`
-- $2.68 for `openai/whisper-large-v3-turbo`
-- $3.15 for `Qwen/Qwen3-ASR-1.7B`
+- $4.75 for `openai/whisper-large-v3-turbo`
+- $X.XX for `Qwen/Qwen3-ASR-1.7B`
 
 Each model family has its own Docker image with the exact software stack required. Images are hosted on [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations):
 - 🤗 [Transformers](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/tree/main): Whisper, Cohere, Voxtral, Voxtral Realtime, VibeVoice, Moonshine, Granite-Speech 3, GLM ASR, Crisper Whisper, Wav2Vec2, HuBERT, Data2Vec, MMS
