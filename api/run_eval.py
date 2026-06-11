@@ -136,7 +136,7 @@ def transcribe_dataset(
                 return None
 
         else:
-            reference = sample.get("norm_text", "").strip() or " "
+            reference = sample.get("original_text", "").strip() or " "
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
                 sf.write(
                     tmpfile.name,
@@ -184,14 +184,6 @@ def transcribe_dataset(
                 results["audio_length_s"].append(audio_duration)
                 results["transcription_time_s"].append(transcription_time)
 
-    results["predictions"] = [
-        data_utils.normalizer(transcription) or " "
-        for transcription in results["predictions"]
-    ]
-    results["references"] = [
-        data_utils.normalizer(reference) or " " for reference in results["references"]
-    ]
-
     manifest_path = data_utils.write_manifest(
         results["references"],
         results["predictions"],
@@ -205,9 +197,11 @@ def transcribe_dataset(
 
     print("Results saved at path:", manifest_path)
 
+    norm_refs = [data_utils.normalizer(r) or " " for r in results["references"]]
+    norm_preds = [data_utils.normalizer(p) or " " for p in results["predictions"]]
     wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(
-        references=results["references"], predictions=results["predictions"]
+        references=norm_refs, predictions=norm_preds
     )
     wer_percent = round(100 * wer, 2)
     rtfx = round(

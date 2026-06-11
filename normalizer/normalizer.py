@@ -17,7 +17,7 @@ import re
 import unicodedata
 from fractions import Fraction
 from typing import Iterator, List, Match, Optional, Union
-from .english_abbreviations import english_name_normalizer, english_spelling_normalizer
+from .english_abbreviations import english_name_normalizer, english_spelling_normalizer, english_compound_normalizer
 
 import regex
 
@@ -641,21 +641,8 @@ class EnglishTextNormalizer:
         self.standardize_spellings = EnglishSpellingNormalizer(english_spelling_mapping)
         self.standardize_names = EnglishNameNormalizer()
         self.standardize_acronyms = EnglishAcronymNormalizer()
-        # Hardcoded compound words that become two tokens after hyphen/symbol removal
-        self.compound_words = {
-            r"\bwi\s+fi\b": "wifi",
-            r"\bhi\s+fi\b": "hifi",
-            r"\blo\s+fi\b": "lofi",
-            r"\bsci\s+fi\b": "scifi",
-            r"\be\s+mail\b": "email",
-            r"\be\s+book\b": "ebook",
-            r"\be\s+commerce\b": "ecommerce",
-            r"\bx\s+ray\b": "xray",
-            r"\bt\s+shirt\b": "tshirt",
-            r"\ba\s+m\b": "am",
-            r"\bp\s+m\b": "pm",
-            r"\bo\s+k\b": "okay",
-        }
+        # Multi-word compound mappings — defined in english_abbreviations.py
+        self.compound_words = english_compound_normalizer
 
     def __call__(self, s: str):
         s = s.lower()

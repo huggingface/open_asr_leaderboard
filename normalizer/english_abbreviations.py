@@ -1,5 +1,7 @@
 english_spelling_normalizer = {
   "ok": "okay",
+  "kay": "okay",
+  "etcetera": "etc",
   "accessorise": "accessorize",
   "accessorised": "accessorized",
   "accessorises": "accessorizes",
@@ -1903,5 +1905,28 @@ english_name_normalizer = {
     "henri": "henry",
     "josef": "joseph",
     "pieter": "peter",
+}
+
+
+# Regex-based multi-word → single-token mappings.
+# Applied after symbol removal, so hyphens/punctuation are already stripped.
+# Keys are used with re.sub; values are the replacement strings.
+english_compound_normalizer = {
+    r"\bet\s+cetera\b": "etc",
+    r"\bal\s+right\b": "alright",
+    r"\ball\s+right\b": "alright",
+    r"\bhow\s+ever\b": "however",
+    r"\bwi\s+fi\b": "wifi",
+    r"\bhi\s+fi\b": "hifi",
+    r"\blo\s+fi\b": "lofi",
+    r"\bsci\s+fi\b": "scifi",
+    r"\be\s+mail\b": "email",
+    r"\be\s+book\b": "ebook",
+    r"\be\s+commerce\b": "ecommerce",
+    r"\bx\s+ray\b": "xray",
+    r"\bt\s+shirt\b": "tshirt",
+    r"\ba\s+m\b": "am",
+    r"\bp\s+m\b": "pm",
+    r"\bo\s+k\b": "okay",
 }
 

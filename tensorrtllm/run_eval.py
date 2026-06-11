@@ -219,9 +219,8 @@ def main(args):
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-        # normalize transcriptions with English normalizer
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in texts]
-        batch["references"] = batch["norm_text"]
+        batch["predictions"] = texts  # raw; normalization applied at scoring time
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
     if args.warmup_steps is not None:
@@ -275,8 +274,10 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
+    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
     wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
+        references=norm_refs, predictions=norm_preds
     )
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)

@@ -67,7 +67,11 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &
     done
-    echo "For live status see: https://huggingface.co/settings/jobs"
+    if [ -n "$ORG_NAME" ]; then
+        echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"
+    else
+        echo "For live status see: https://huggingface.co/settings/jobs"
+    fi
 
     wait
     echo "All jobs finished for ${MODEL_ID}."

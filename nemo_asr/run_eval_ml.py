@@ -172,13 +172,8 @@ def main(args):
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
     
-    references = all_data["references"] 
-    if LANGUAGE == "en": # English is handled by the English normalizer
-        references = [data_utils.normalizer(ref) for ref in references]
-        predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
-    else:
-        references = [data_utils.ml_normalizer(ref, lang=LANGUAGE) for ref in references]
-        predictions = [data_utils.ml_normalizer(pred.text, lang=LANGUAGE) for pred in transcriptions]
+    references = all_data["references"]  # raw
+    predictions = [pred.text for pred in transcriptions]  # raw; normalization applied at scoring time
 
     # Filter empty references (consistent with English pipeline)
     filtered = [
@@ -208,7 +203,13 @@ def main(args):
     print("Results saved at path:", os.path.abspath(manifest_path))
 
     # Calculate metrics
-    wer_refs, wer_preds = normalize_compound_pairs(references, predictions)
+    if LANGUAGE == "en":
+        norm_refs = [data_utils.normalizer(r) for r in references]
+        norm_preds = [data_utils.normalizer(p) for p in predictions]
+    else:
+        norm_refs = [data_utils.ml_normalizer(r, lang=LANGUAGE) for r in references]
+        norm_preds = [data_utils.ml_normalizer(p, lang=LANGUAGE) for p in predictions]
+    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
     wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
 

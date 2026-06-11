@@ -78,7 +78,7 @@ def main(args):
             durations.append(len(audio_array) / sample_rate)
 
         
-        batch["references"] = batch["norm_text"]
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         batch["audio_filepaths"] = audio_paths
         batch["durations"] = durations
 
@@ -139,10 +139,9 @@ def main(args):
             total_time += end_time - start_time
     total_time = total_time
 
-    # normalize transcriptions with English normalizer
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
-    predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
+    predictions = [pred.text for pred in transcriptions]  # raw; normalization applied at scoring time
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
@@ -160,7 +159,9 @@ def main(args):
 
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(references=all_data['references'], predictions=predictions)
+    norm_refs = [data_utils.normalizer(r) for r in all_data['references']]
+    norm_preds = [data_utils.normalizer(p) for p in predictions]
+    wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
     wer = round(100 * wer, 2)
 
     # transcription_time = sum(all_results["transcription_time"])

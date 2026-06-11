@@ -82,7 +82,11 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &    # suppress output and run in background
     done
-    echo "For live status see: https://huggingface.co/settings/jobs"
+    if [ -n "$ORG_NAME" ]; then
+        echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"
+    else
+        echo "For live status see: https://huggingface.co/settings/jobs"
+    fi
 
     # Wait for all background job submissions to complete
     wait

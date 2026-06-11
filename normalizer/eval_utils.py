@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 
 import evaluate
 from collections import defaultdict
+from kaldialign import edit_distance as kaldi_edit_distance
 
 
 def normalize_compound_pairs(refs, preds):
@@ -106,25 +107,6 @@ def write_manifest(
             f"must match `references` ({len(references)})."
         )
 
-    # Filter out samples where the normalized reference is empty,
-    # e.g. all-filler words removed by normalization. Mutates the caller's
-    # lists in-place (via slice assignment) so downstream WER computation
-    # in caller scripts also sees the filtered data.
-    valid_indices = [
-        i for i, ref in enumerate(references) if isinstance(ref, str) and ref.strip()
-    ]
-    n_filtered = len(references) - len(valid_indices)
-    if n_filtered > 0:
-        print(f"Filtered {n_filtered} empty references")
-        references[:] = [references[i] for i in valid_indices]
-        transcriptions[:] = [transcriptions[i] for i in valid_indices]
-        if audio_length is not None:
-            audio_length[:] = [audio_length[i] for i in valid_indices]
-        if transcription_time is not None:
-            transcription_time[:] = [transcription_time[i] for i in valid_indices]
-        if audio_filepaths is not None:
-            audio_filepaths[:] = [audio_filepaths[i] for i in valid_indices]
-
     audio_length = (
         audio_length if audio_length is not None else len(references) * [None]
     )
@@ -160,7 +142,7 @@ def write_manifest(
     return manifest_path
 
 
-def score_results(directory: str, model_id: str = None, multilingual: bool = False, csv_only: bool = False):
+def score_results(directory: str, model_id: str = None, multilingual: bool = False, csv_only: bool = False, language: str = "en"):
     """
     Scores all result files in a directory and returns a composite score over all evaluated datasets.
 
@@ -170,6 +152,8 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         multilingual: If True, apply compound word boundary normalization before
                       WER computation. Should only be enabled for non-English benchmarks.
         csv_only: If True, suppress all output except the CSV summary block.
+        language: Language code used for normalization (e.g. 'en', 'de', 'fr').
+                  When not 'en', ml_normalizer is used instead of the English normalizer.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -208,6 +192,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         return model_id, dataset_id
 
     # Compute WER results per dataset, and RTFx over all datasets
+    from normalizer import data_utils  # deferred to avoid circular import
     results = {}
     wer_metric = evaluate.load("wer")
 
@@ -215,19 +200,40 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         manifest = read_manifest(result_file)
         model_id_of_file, dataset_id = parse_filepath(result_file)
 
-        manifest = [datum for datum in manifest if datum["text"].strip()]
-
-        references = [datum["text"] for datum in manifest]
-        predictions = [datum["pred_text"] for datum in manifest]
+        if language == "en":
+            normalize = data_utils.normalizer
+        else:
+            normalize = lambda t: data_utils.ml_normalizer(t, lang=language)
+        references = [normalize(datum["text"]) for datum in manifest]
+        predictions = [normalize(datum["pred_text"]) for datum in manifest]
 
         time = [datum["time"] for datum in manifest]
         duration = [datum["duration"] for datum in manifest]
         compute_rtfx = all(time) and all(duration)
 
         if multilingual:
+            # TODO update to use kaldialign
             references, predictions = normalize_compound_pairs(references, predictions)
+            wer = wer_metric.compute(references=references, predictions=predictions)
+        else:
+            # Use kaldialign with merge_compounds=True so that split compounds
+            # (e.g. "white paper" vs "whitepaper") count as 0 errors in either direction.
+            total_ins = total_del = total_sub = total_ref_words = 0
+            for ref, pred in zip(references, predictions):
+                ref_words = ref.split()
+                pred_words = pred.split()
+                if not ref_words:
+                    # empty reference: every predicted word is an insertion
+                    total_ins += len(pred_words)
+                else:
+                    r = kaldi_edit_distance(ref_words, pred_words, merge_compounds=True)
+                    total_ins += r["ins"]
+                    total_del += r["del"]
+                    total_sub += r["sub"]
+                    total_ref_words += r["ref_len"]
+            total_errors = total_ins + total_del + total_sub
+            wer = total_errors / total_ref_words if total_ref_words > 0 else 0.0
 
-        wer = wer_metric.compute(references=references, predictions=predictions)
         wer = round(100 * wer, 2)
 
         if compute_rtfx:
@@ -238,7 +244,8 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
             audio_length = inference_time = rtfx = None
 
         result_key = f"{model_id_of_file} | {dataset_id}"
-        results[result_key] = {"wer": wer, "audio_length": audio_length, "inference_time": inference_time, "rtfx": rtfx}
+        extra = {"ins": total_ins, "del": total_del, "sub": total_sub} if not multilingual else {}
+        results[result_key] = {"wer": wer, "audio_length": audio_length, "inference_time": inference_time, "rtfx": rtfx, **extra}
 
     if not csv_only:
         print("*" * 80)

@@ -243,8 +243,8 @@ def main(args):
         runtime = time.time() - start_time
 
         batch["transcription_time_s"] = [runtime / batch_sz] * batch_sz
-        batch["predictions"] = [data_utils.normalizer(p) for p in predictions]
-        batch["references"] = batch["norm_text"]
+        batch["predictions"] = predictions  # raw; normalization applied at scoring time
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
     # Load and process dataset
@@ -270,7 +270,9 @@ def main(args):
     )
     print("Results saved at:", os.path.abspath(manifest_path))
 
-    wer = round(100 * wer_metric.compute(references=all_results["references"], predictions=all_results["predictions"]), 2)
+    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
+    wer = round(100 * wer_metric.compute(references=norm_refs, predictions=norm_preds), 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print(f"WER: {wer}%, RTFx: {rtfx}")
 

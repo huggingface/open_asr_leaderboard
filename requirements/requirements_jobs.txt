@@ -4,3 +4,5 @@ evaluate
 datasets
 jiwer
 regex
+num2words
+kaldialign==0.11.0

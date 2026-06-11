@@ -96,15 +96,13 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # Normalize with appropriate normalizer
-        batch["predictions"] = [text_normalizer(pred) for pred in transcriptions]
+        batch["predictions"] = transcriptions  # raw; normalization applied at scoring time
 
-        # Get references and normalize
-        references = []
-        for i in range(minibatch_size):
-            sample = {k: batch[k][i] for k in batch if k != "audio"}
-            ref = get_text(sample)
-            references.append(text_normalizer(ref))
-        batch["references"] = references
+        # Get raw references
+        batch["references"] = [
+            get_text({k: batch[k][i] for k in batch if k != "audio"})
+            for i in range(minibatch_size)
+        ]  # raw; normalization applied at scoring time
 
         return batch
 
@@ -183,7 +181,9 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer_refs, wer_preds = normalize_compound_pairs(all_results["references"], all_results["predictions"])
+    norm_refs = [text_normalizer(r) for r in all_results["references"]]
+    norm_preds = [text_normalizer(p) for p in all_results["predictions"]]
+    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
     wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
