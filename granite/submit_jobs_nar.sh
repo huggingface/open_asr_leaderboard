@@ -17,11 +17,11 @@ MODEL_CONFIGS=(
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
-    # "voxpopuli test 256"
+    "voxpopuli test 256"
     "ami test 512"
     "earnings22 test 256"
     "gigaspeech test 512"
-    # "librispeech test.clean 512"
+    "librispeech test.clean 512"
     "librispeech test.other 512"
     "spgispeech test 512"
 )

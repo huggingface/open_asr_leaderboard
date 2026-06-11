@@ -12,8 +12,8 @@ ORG_NAME="${ORG_NAME:-}"
 # ── Models: "model_id batch_size" ────────────────────────────────────────────
 MODEL_CONFIGS=(
     "espnet/owsm_ctc_v4_1B 64"
-    # "espnet/owsm_ctc_v3.1_1B 64"
-    # "espnet/owsm_ctc_v3.2_ft_1B 64"
+    "espnet/owsm_ctc_v3.1_1B 64"
+    "espnet/owsm_ctc_v3.2_ft_1B 64"
 )
 
 # ── Datasets: "name split" ────────────────────────────────────────────────────
