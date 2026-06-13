@@ -743,7 +743,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_new_tokens", type=int, default=256, help="Maximum number of tokens to generate.")
     parser.add_argument("--warmup_steps", type=int, default=10, help="Number of warm-up batches.")
     parser.add_argument("--target_sr", type=int, default=16000, help="Evaluation sampling rate.")
-    parser.add_argument("--min_audio_seconds", type=float, default=0.0, help="Right-pad audio shorter than this length.")
+    parser.add_argument("--min_audio_seconds", type=float, default=2.0, help="Right-pad audio shorter than this length.")
     parser.add_argument(
         "--audio_decode",
         choices=["soundfile", "datasets"],
