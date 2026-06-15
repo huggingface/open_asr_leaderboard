@@ -67,10 +67,13 @@ def transcribe_with_retry(
     prompt=None,
 ):
     provider, variant = get_provider(model_name)
+    kwargs = dict(use_url=use_url, language=language)
+    if prompt is not None:
+        kwargs["prompt"] = prompt
     retries = 0
     while retries <= max_retries:
         try:
-            return provider.transcribe(variant, audio_file_path, sample, use_url=use_url, language=language, prompt=prompt)
+            return provider.transcribe(variant, audio_file_path, sample, **kwargs)
         except PermanentError:
             raise
         except Exception as e:

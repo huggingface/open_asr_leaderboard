@@ -8,6 +8,8 @@ export ELEVENLABS_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
 export ZOOM_API_KEY="your_api_key"
+export SMALLESTAI_API_KEY="your_api_key"
+export RESON8_API_KEY="your_api_key"
 export AZURE_API_KEY="your_api_key"
 
 export HF_TOKEN="hf_your_key"
@@ -26,10 +28,12 @@ MODEL_CONFIGS=(
     # "speechmatics/enhanced         false"
     # "aquavoice/avalon-v1-en        false"
     # "zoom/scribe_v1                true"
+    "reson8/resonant-1               true"
+    "reson8/resonant-1-flash         true"
     "microsoft/azure-speech-05-2026  false"
 )
 
-MAX_WORKERS=32
+MAX_WORKERS=20
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
 declare -a EVAL_DATASETS=(
@@ -44,6 +48,7 @@ declare -a EVAL_DATASETS=(
 
 # Datasets that require lexical format prompt
 LEXICAL_DATASETS="librispeech gigaspeech"
+num_models=${#MODEL_IDs[@]}
 
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID USE_URL <<< "$model_cfg"

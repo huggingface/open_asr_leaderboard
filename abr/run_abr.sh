@@ -3,16 +3,12 @@ set -e
 
 export PYTHONPATH="..":$PYTHONPATH
 
+MODEL_IDs=("abr-ai/niagara-19m-batch.en" "abr-ai/niagara-38m-batch.en")
 BATCH_SIZE=256
 MAX_EVAL_SAMPLES=-1
 WARMUP_STEPS=5
 SUBBATCH_SAMPLES=30000000
-REVISION="dab6545337495482f2fc05455432a7a05c88d3cc"
-
-# ── Models (comment / uncomment to select) ──────────────────────────────────
-MODEL_IDs=(
-    "abr-ai/niagara-19m-batch.en"
-)
+REVISION="dab6545337495482f2fc05455432a7a05c88d3cc"   # TODO put revision in model config
 
 # ── Datasets: "name split" (comment / uncomment to select) ──────────────────
 DATASET_CONFIGS=(
