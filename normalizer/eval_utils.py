@@ -1,6 +1,7 @@
 import os
 import glob
 import json
+import sys
 from difflib import SequenceMatcher
 
 import evaluate
@@ -53,6 +54,19 @@ def read_manifest(manifest_path: str):
     return data
 
 
+def get_text_normalizers():
+    try:
+        from normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
+    except ImportError:
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
+        sys.modules.pop("normalizer", None)
+        from normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
+
+    return EnglishTextNormalizer(), BasicMultilingualTextNormalizer(remove_diacritics=False)
+
+
 def write_manifest(
     references: list,
     transcriptions: list,
@@ -62,6 +76,7 @@ def write_manifest(
     split: str,
     audio_length: list = None,
     transcription_time: list = None,
+    audio_filepaths: list = None,
 ):
     """
     Writes a manifest file (jsonl format) and returns the path to the file.
@@ -75,6 +90,7 @@ def write_manifest(
         split: Dataset split name.
         audio_length: Length of each audio sample in seconds.
         transcription_time: Transcription time of each sample in seconds.
+        audio_filepaths: List of file paths for each audio sample.
 
     Returns:
         Path to the manifest file.
@@ -99,6 +115,11 @@ def write_manifest(
             f"The number of samples in `transcription_time` ({len(transcription_time)}) "
             f"must match `references` ({len(references)})."
         )
+    if audio_filepaths is not None and len(audio_filepaths) != len(references):
+        raise ValueError(
+            f"The number of samples in `audio_filepaths` ({len(audio_filepaths)}) "
+            f"must match `references` ({len(references)})."
+        )
 
     audio_length = (
         audio_length if audio_length is not None else len(references) * [None]
@@ -107,6 +128,9 @@ def write_manifest(
         transcription_time
         if transcription_time is not None
         else len(references) * [None]
+    )
+    audio_filepaths = (
+        audio_filepaths if audio_filepaths is not None else len(references) * [None]
     )
 
     basedir = "./results/"
@@ -118,11 +142,11 @@ def write_manifest(
     )
 
     with open(manifest_path, "w", encoding="utf-8") as f:
-        for idx, (text, transcript, audio_length, transcription_time) in enumerate(
-            zip(references, transcriptions, audio_length, transcription_time)
+        for idx, (text, transcript, audio_length, transcription_time, audio_filepath) in enumerate(
+            zip(references, transcriptions, audio_length, transcription_time, audio_filepaths)
         ):
             datum = {
-                "audio_filepath": f"sample_{idx}",  # dummy value for Speech Data Processor
+                "audio_filepath": audio_filepath if audio_filepath else f"sample_{idx}",
                 "duration": audio_length,
                 "time": transcription_time,
                 "text": text,
@@ -180,6 +204,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
     # Compute WER results per dataset, and RTFx over all datasets
     results = {}
     wer_metric = evaluate.load("wer")
+    normalizer, ml_normalizer = get_text_normalizers()
 
     for result_file in result_files:
         manifest = read_manifest(result_file)
@@ -187,8 +212,12 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
 
         manifest = [datum for datum in manifest if datum["text"] != " "]
 
-        references = [datum["text"] for datum in manifest]
-        predictions = [datum["pred_text"] for datum in manifest]
+        if multilingual:
+            references = [ml_normalizer(datum["text"]) for datum in manifest]
+            predictions = [ml_normalizer(datum["pred_text"]) for datum in manifest]
+        else:
+            references = [normalizer(datum["text"]) for datum in manifest]
+            predictions = [normalizer(datum["pred_text"]) for datum in manifest]
 
         time = [datum["time"] for datum in manifest]
         duration = [datum["duration"] for datum in manifest]

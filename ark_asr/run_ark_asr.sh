@@ -13,12 +13,8 @@ DTYPE=${DTYPE:-float16}
 ATTN_IMPL=${ATTN_IMPL:-sdpa}
 AUDIO_INPUT=${AUDIO_INPUT:-array}
 AUDIO_DECODE=${AUDIO_DECODE:-datasets}
-DATASET_PATH=${DATASET_PATH:-hf-audio/esb-datasets-test-only-sorted}
-# Current dataset main metadata still lists tedlium, but the tedlium parquet was removed in
-# a6318480517f735c7627a29adf8725f2a5dd81ef. Pin the last revision with the full
-# historical shortform set used by scripts/data/en_shortform.csv. Set DATASET_REVISION=
-# explicitly to use the dataset's current default revision.
-DATASET_REVISION=${DATASET_REVISION-20a009a3a37d035d965722e5feb890ba7f2d46ac}
+DATASET_PATH=${DATASET_PATH:-hf-audio/open-asr-leaderboard}
+DATASET_REVISION=${DATASET_REVISION:-}
 MAX_EVAL_SAMPLES=${MAX_EVAL_SAMPLES:--1}
 FORCE_CLEAN_EXIT=${FORCE_CLEAN_EXIT:-false}
 
@@ -33,7 +29,6 @@ else
         "librispeech:test.clean"
         "librispeech:test.other"
         "spgispeech:test"
-        "tedlium:test"
     )
 fi
 
@@ -50,7 +45,6 @@ do
         python run_eval.py \
             --model_id="${MODEL_ID}" \
             --dataset_path="${DATASET_PATH}" \
-            --dataset_revision="${DATASET_REVISION}" \
             --dataset="${DATASET}" \
             --split="${SPLIT}" \
             --device="${DEVICE_ID}" \
@@ -62,12 +56,13 @@ do
             --attn_impl="${ATTN_IMPL}" \
             --audio_input="${AUDIO_INPUT}" \
             --audio_decode="${AUDIO_DECODE}" \
+            $(if [ -n "${DATASET_REVISION}" ]; then echo "--dataset_revision=${DATASET_REVISION}"; fi) \
             $(if [ "${FORCE_CLEAN_EXIT}" = "true" ]; then echo "--force_clean_exit"; fi)
     done
 
     RUNDIR=`pwd` && \
-    cd ../normalizer && \
-    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')" && \
+    cd .. && \
+    PYTHONPATH="." python -c "from normalizer.eval_utils import score_results; score_results('${RUNDIR}/results', '${MODEL_ID}')" && \
     cd "$RUNDIR"
 
 done

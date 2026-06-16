@@ -1,4 +1,5 @@
 import argparse
+import inspect
 import io
 import json
 import os
@@ -32,6 +33,7 @@ SPECIAL_TOKEN_PATTERN = re.compile(
 TURN_END_MARKERS = ("<|user|>", "<|assistant|>", "<|im_end|>")
 LEADING_NOISE_PATTERN = re.compile(r"^[\s,.;:!?-]+")
 CONTROL_TOKEN_PATTERN = re.compile(r"^<.*>$")
+AUDIO_FILEPATH_METADATA_KEYS = ("id", "file_name", "path")
 
 
 class BlockTokenIdsFromLogitsProcessor(LogitsProcessor):
@@ -124,13 +126,56 @@ def remove_special_tokens(text: str) -> str:
     return SPECIAL_TOKEN_PATTERN.sub("", text).strip()
 
 
-def normalize_prediction_text(text: str) -> str:
+def clean_prediction_text(text: str) -> str:
     if not text:
         return ""
     text = truncate_generation_text(text)
     text = remove_special_tokens(text)
     text = re.sub(r"\s+", " ", text).strip()
     return LEADING_NOISE_PATTERN.sub("", text).strip()
+
+
+def _basename_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value:
+        return None
+    return os.path.basename(value)
+
+
+def extract_audio_filepath_from_sample(sample: dict[str, Any]) -> str | None:
+    if hasattr(data_utils, "extract_audio_filepath_from_sample"):
+        return data_utils.extract_audio_filepath_from_sample(sample)
+
+    for key in AUDIO_FILEPATH_METADATA_KEYS:
+        if key in sample:
+            basename = _basename_or_none(sample[key])
+            if basename is not None:
+                return basename
+
+    audio = sample.get("audio")
+    if isinstance(audio, dict):
+        return _basename_or_none(audio.get("path"))
+    return None
+
+
+def extract_audio_filepaths_from_batch(batch: dict[str, Any], batch_size: int) -> list[str | None]:
+    if hasattr(data_utils, "extract_audio_filepaths_from_batch"):
+        return data_utils.extract_audio_filepaths_from_batch(batch, batch_size)
+
+    for key in AUDIO_FILEPATH_METADATA_KEYS:
+        values = batch.get(key)
+        if isinstance(values, list) and len(values) == batch_size:
+            return [_basename_or_none(value) for value in values]
+
+    audios = batch.get("audio")
+    if isinstance(audios, list) and len(audios) == batch_size:
+        return [
+            _basename_or_none(audio.get("path")) if isinstance(audio, dict) else None
+            for audio in audios
+        ]
+    return [None] * batch_size
 
 
 def resolve_device(device_index: int) -> str:
@@ -241,13 +286,14 @@ def iter_local_parquet_batches(
 
     yielded = 0
     seen = 0
-    batch = {"audio": [], "norm_text": []}
+    batch = {"audio": [], "norm_text": [], "original_text": [], "audio_filepath": []}
     for parquet_file in parquet_files:
         pf = pq.ParquetFile(parquet_file)
         for row_group_index in range(pf.num_row_groups):
             rows = pf.read_row_group(row_group_index).to_pylist()
             for row in rows:
-                normalized_text = data_utils.normalizer(data_utils.get_text(row))
+                original_text = data_utils.get_text(row)
+                normalized_text = data_utils.normalizer(original_text)
                 if not data_utils.is_target_text_in_range(normalized_text):
                     continue
                 if seen < skip_samples:
@@ -260,11 +306,13 @@ def iter_local_parquet_batches(
 
                 batch["audio"].append(row["audio"])
                 batch["norm_text"].append(normalized_text)
+                batch["original_text"].append(original_text)
+                batch["audio_filepath"].append(extract_audio_filepath_from_sample(row))
                 yielded += 1
                 seen += 1
                 if len(batch["audio"]) >= batch_size:
                     yield batch
-                    batch = {"audio": [], "norm_text": []}
+                    batch = {"audio": [], "norm_text": [], "original_text": [], "audio_filepath": []}
 
     if batch["audio"]:
         yield batch
@@ -291,7 +339,9 @@ def write_manifest_records(
     predictions: list[str],
     audio_length: list[float],
     transcription_time: list[float],
+    audio_filepaths: list[str | None] | None = None,
     append: bool = False,
+    sample_offset: int = 0,
 ) -> None:
     if len(references) != len(predictions):
         raise ValueError(
@@ -308,20 +358,63 @@ def write_manifest_records(
             f"The number of samples in `transcription_time` ({len(transcription_time)}) "
             f"must match `references` ({len(references)})."
         )
+    if audio_filepaths is not None and len(audio_filepaths) != len(references):
+        raise ValueError(
+            f"The number of samples in `audio_filepaths` ({len(audio_filepaths)}) "
+            f"must match `references` ({len(references)})."
+        )
 
     mode = "a" if append else "w"
+    audio_filepaths = audio_filepaths if audio_filepaths is not None else len(references) * [None]
     with open(manifest_path, mode, encoding="utf-8") as f:
-        for idx, (text, transcript, duration, runtime) in enumerate(
-            zip(references, predictions, audio_length, transcription_time)
+        for idx, (text, transcript, duration, runtime, audio_filepath) in enumerate(
+            zip(references, predictions, audio_length, transcription_time, audio_filepaths)
         ):
             datum = {
-                "audio_filepath": f"sample_{idx}",
+                "audio_filepath": audio_filepath or f"sample_{sample_offset + idx}",
                 "duration": duration,
                 "time": runtime,
                 "text": text,
                 "pred_text": transcript,
             }
             f.write(f"{json.dumps(datum, ensure_ascii=False)}\n")
+
+
+def write_results_manifest(
+    references: list[str],
+    predictions: list[str],
+    model_id: str,
+    dataset_path: str,
+    dataset_name: str,
+    split: str,
+    audio_length: list[float],
+    transcription_time: list[float],
+    audio_filepaths: list[str | None],
+    suffix: str | None = None,
+) -> str:
+    if suffix is None and "audio_filepaths" in inspect.signature(data_utils.write_manifest).parameters:
+        return data_utils.write_manifest(
+            references,
+            predictions,
+            model_id,
+            dataset_path,
+            dataset_name,
+            split,
+            audio_length=audio_length,
+            transcription_time=transcription_time,
+            audio_filepaths=audio_filepaths,
+        )
+
+    manifest_path = build_manifest_path(model_id, dataset_path, dataset_name, split, suffix=suffix)
+    write_manifest_records(
+        manifest_path,
+        references,
+        predictions,
+        audio_length,
+        transcription_time,
+        audio_filepaths=audio_filepaths,
+    )
+    return manifest_path
 
 
 def decode_audio(audio: dict[str, Any], target_sr: int) -> tuple[np.ndarray, int]:
@@ -510,7 +603,7 @@ class ArkAsrInferencer:
         for index, output in enumerate(outputs):
             generated_ids = output[len(input_ids[index].tolist()) :]
             prediction_raw = self.tokenizer.decode(generated_ids, skip_special_tokens=False)
-            predictions.append(normalize_prediction_text(prediction_raw))
+            predictions.append(clean_prediction_text(prediction_raw))
         return predictions
 
 
@@ -537,6 +630,7 @@ def main(args):
         sampling_rates = [sampling_rate for _, sampling_rate in decoded]
         batch["audio_length_s"] = [len(audio) / sampling_rate for audio, sampling_rate in zip(audios, sampling_rates)]
         minibatch_size = len(audios)
+        batch["audio_filepath"] = extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         with TemporaryWavBatch(audios, sampling_rates, enabled=args.audio_input == "temp_wav") as audio_inputs:
             start_time = time.time()
@@ -553,8 +647,8 @@ def main(args):
             runtime = time.time() - start_time
 
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
-        batch["references"] = batch["norm_text"]
+        batch["predictions"] = pred_text
+        batch["references"] = batch["original_text"]
         return batch
 
     if args.warmup_steps is not None and args.warmup_steps > 0:
@@ -577,6 +671,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     manifest_path = None
     if args.incremental_manifest:
@@ -602,6 +697,7 @@ def main(args):
         for batch_result in tqdm(result_iter, desc="Batches..."):
             batch_len = len(batch_result["references"])
             for index in range(batch_len):
+                sample_index = len(all_results["references"])
                 for key in all_results:
                     all_results[key].append(batch_result[key][index])
                 if args.incremental_manifest:
@@ -611,7 +707,9 @@ def main(args):
                         [batch_result["predictions"][index]],
                         [batch_result["audio_length_s"][index]],
                         [batch_result["transcription_time_s"][index]],
+                        audio_filepaths=[batch_result["audio_filepath"][index]],
                         append=True,
+                        sample_offset=sample_index,
                     )
     else:
         warmup_dataset = prepare_dataset(args)
@@ -645,6 +743,7 @@ def main(args):
 
         result_iter = iter(dataset)
         for result in tqdm(result_iter, desc="Samples..."):
+            sample_index = len(all_results["references"])
             for key in all_results:
                 all_results[key].append(result[key])
             if args.incremental_manifest:
@@ -654,7 +753,9 @@ def main(args):
                     [result["predictions"]],
                     [result["audio_length_s"]],
                     [result["transcription_time_s"]],
+                    audio_filepaths=[result["audio_filepath"]],
                     append=True,
+                    sample_offset=sample_index,
                 )
 
     if not all_results["references"]:
@@ -670,38 +771,40 @@ def main(args):
             all_results["predictions"],
             all_results["audio_length_s"],
             all_results["transcription_time_s"],
+            audio_filepaths=all_results["audio_filepath"],
         )
     elif args.manifest_suffix:
-        manifest_path = build_manifest_path(
+        manifest_path = write_results_manifest(
+            all_results["references"],
+            all_results["predictions"],
             args.model_id,
             args.dataset_path,
             args.dataset,
             args.split,
-            suffix=args.manifest_suffix,
-        )
-        write_manifest_records(
-            manifest_path,
-            all_results["references"],
-            all_results["predictions"],
             all_results["audio_length_s"],
             all_results["transcription_time_s"],
+            all_results["audio_filepath"],
+            suffix=args.manifest_suffix,
         )
     else:
-        manifest_path = data_utils.write_manifest(
+        manifest_path = write_results_manifest(
             all_results["references"],
             all_results["predictions"],
             args.model_id,
             args.dataset_path,
             args.dataset,
             args.split,
-            audio_length=all_results["audio_length_s"],
-            transcription_time=all_results["transcription_time_s"],
+            all_results["audio_length_s"],
+            all_results["transcription_time_s"],
+            all_results["audio_filepath"],
         )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
+    norm_refs = [data_utils.normalizer(ref) for ref in all_results["references"]]
+    norm_preds = [data_utils.normalizer(pred) for pred in all_results["predictions"]]
     wer = wer_metric.compute(
-        references=all_results["references"],
-        predictions=all_results["predictions"],
+        references=norm_refs,
+        predictions=norm_preds,
     )
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
@@ -716,8 +819,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="hf-audio/esb-datasets-test-only-sorted",
-        help="Dataset path. By default, it is `hf-audio/esb-datasets-test-only-sorted`.",
+        default="hf-audio/open-asr-leaderboard",
+        help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`.",
     )
     parser.add_argument("--dataset_revision", type=str, default=None, help="Optional Hugging Face dataset revision.")
     parser.add_argument("--dataset", type=str, required=True, help="Dataset name.")
