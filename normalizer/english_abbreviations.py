@@ -604,7 +604,7 @@ english_spelling_normalizer = {
   "flavourless": "flavorless",
   "flavours": "flavors",
   "flavoursome": "flavorsome",
-  "flyer / flier": "flier / flyer",
+  "flyer": "flier",
   "foetal": "fetal",
   "foetid": "fetid",
   "foetus": "fetus",
