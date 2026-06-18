@@ -1,0 +1,18 @@
+# HF transformers path (run_eval.py)
+accelerate
+causal-conv1d
+librosa
+mamba-ssm
+open-clip-torch
+soundfile
+timm
+transformers
+
+# vLLM OpenAI-server path (run_server.sh + run_eval_vllm.py).
+# vllm 0.20.0 is the version pinned by the model card; it pulls in torch 2.11,
+# which only works with torchcodec >= 0.11 (older torchcodec fails to load
+# against torch 2.11 ABI and breaks HF datasets `Audio` decode).
+vllm[audio]==0.20.0
+torchcodec==0.11.1
+openai
+num2words
