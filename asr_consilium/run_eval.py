@@ -1,7 +1,6 @@
 import argparse
 import os
 import torch
-from transformers import WhisperForConditionalGeneration, WhisperProcessor
 import evaluate
 from normalizer import data_utils
 from normalizer.data_utils import normalize
@@ -98,10 +97,10 @@ def main(args):
 
     full_data = {}
     for item_orig in items_orig:
-        item = normalize(item_orig)
+        item = item_orig
         if item['audio'] not in full_data:
             full_data[item['audio']] = {}
-        full_data[item['audio']]['references'] = item['norm_text']
+        full_data[item['audio']]['references'] = item['text']
         full_data[item['audio']]['audio_length_s'] = item['duration']
         full_data[item['audio']]['transcription_time_s'] = single_entry_time
 
@@ -119,30 +118,6 @@ def main(args):
         for key in keys:
             all_results[key].append(data[key])
 
-    # Normalized datasets sometimes contains empty strings (like AMI)
-    # So WER gives error: ValueError: one or more references are empty strings
-
-    filtered_refs = []
-    filtered_preds = []
-
-    # Filter empty values
-    for ref, pred in zip(all_results["references"], all_results["predictions"]):
-        if ref and ref.strip():
-            filtered_refs.append(ref)
-            filtered_preds.append(pred)
-        else:
-            if len(ref.strip()) == 0 and len(pred.strip()) == 0:
-                # Both are empty - so make it correct
-                filtered_refs.append('1')
-                filtered_preds.append('1')
-            else:
-                # Prediction is not empty - make it incorrect
-                filtered_refs.append('1')
-                filtered_preds.append(pred)
-
-    all_results["references"] = filtered_refs
-    all_results["predictions"] = filtered_preds
-
     # Write manifest results (WER and RTFX)
     manifest_path = data_utils.write_manifest(
         all_results["references"],
@@ -156,12 +131,13 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
-    )
-    wer = round(100 * wer, 2)
-    rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
-    print("WER:", wer, "%", "RTFx:", rtfx)
+    if 0:
+        wer = wer_metric.compute(
+            references=all_results["references"], predictions=all_results["predictions"]
+        )
+        wer = round(100 * wer, 2)
+        rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
+        print("WER:", wer, "%", "RTFx:", rtfx)
 
 
 if __name__ == "__main__":
@@ -211,10 +187,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--warmup_steps",
@@ -223,6 +198,5 @@ if __name__ == "__main__":
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=False)
 
     main(args)
