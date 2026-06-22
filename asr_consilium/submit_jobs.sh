@@ -11,6 +11,19 @@ ORG_NAME="${ORG_NAME:-}"
 USE_MODEL_CACHE="${USE_MODEL_CACHE:-false}"
 
 # ── Models ────────────────────────────────────────────────────────────────────
+# model_list=[
+#     'nvidia/parakeet-tdt-0.6b-v2',
+#     'nvidia/parakeet-tdt-0.6b-v3',
+#     'Qwen/Qwen3-ASR-1.7B',
+#     'nvidia/canary-qwen-2.5b',
+#     'ibm-granite/granite-speech-3.3-8b',
+#     'ibm-granite/granite-4.0-1b-speech',
+#     'ibm-granite/granite-speech-4.1-2b',
+#     'ZFTurbo/Phi-4-multimodal-instruct',
+# ],
+# weights=[4.5, 4.2, 8.4, 9.8, 8.7, 3.5, 8.9, 9.4],
+# Total number of parameters: 22B
+
 MODEL_CONFIGS=(
     "ZFTurbo/asr-consilium-2026-06"
 )
