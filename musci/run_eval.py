@@ -141,8 +141,9 @@ def main(args):
         preds = [t.strip() for t in processor.batch_decode(new_ids, skip_special_tokens=True)]
         runtime = time.time() - t0
         batch["transcription_time_s"] = mb * [runtime / mb]
-        batch["predictions"] = [data_utils.normalizer(p) for p in preds]
-        batch["references"] = batch["norm_text"]
+        # Save raw (unnormalized) outputs; normalization is applied at scoring time.
+        batch["predictions"] = preds
+        batch["references"] = batch["original_text"]
         return batch
 
     # ---- Warm-up ----
@@ -175,7 +176,10 @@ def main(args):
     )
     print("Manifest:", os.path.abspath(manifest))
 
-    wer = round(100 * jiwer.wer(res["references"], res["predictions"]), 2)
+    # Normalize raw references/predictions at scoring time.
+    norm_refs = [data_utils.normalizer(r) for r in res["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in res["predictions"]]
+    wer = round(100 * jiwer.wer(norm_refs, norm_preds), 2)
     rtfx = round(sum(res["audio_length_s"]) / sum(res["transcription_time_s"]), 2)
     print(f"WER: {wer}%  RTFx: {rtfx}")
 
@@ -190,8 +194,7 @@ if __name__ == "__main__":
     p.add_argument("--batch_size", type=int, default=1)
     p.add_argument("--max_new_tokens", type=int, default=1024)
     p.add_argument("--max_eval_samples", type=int, default=None)
-    p.add_argument("--no-streaming", dest="streaming", action="store_false")
+    p.add_argument("--streaming", action="store_true", help="Stream the dataset instead of downloading it.")
     p.add_argument("--warmup_steps", type=int, default=10)
-    p.set_defaults(streaming=False)
     args = p.parse_args()
     main(args)
