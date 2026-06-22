@@ -132,3 +132,6 @@ dmypy.json
 */pretrained_models/*
 */model_checkpoints/*
 */results/*
+ark_asr/logs/
+ark_asr/results*/
+ark_asr/AutoArk-AI/

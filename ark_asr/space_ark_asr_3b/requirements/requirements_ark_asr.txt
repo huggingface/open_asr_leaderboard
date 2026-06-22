@@ -1,0 +1,7 @@
+numpy
+tqdm
+accelerate
+num2words
+pyarrow
+soundfile
+kaldialign==0.11.0
