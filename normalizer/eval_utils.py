@@ -3,9 +3,8 @@ import glob
 import json
 from difflib import SequenceMatcher
 
-import evaluate
 from collections import defaultdict
-from kaldialign import edit_distance as kaldi_edit_distance
+from kaldialign import batch_error_rate
 
 
 def normalize_compound_pairs(refs, preds):
@@ -172,7 +171,10 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
     if model_id is not None and model_id != "":
         print("Filtering models by id:", model_id)
         model_id = model_id.replace("/", "-")
-        result_files = [fp for fp in result_files if model_id in fp]
+        result_files = [
+            fp for fp in result_files
+            if f"/{model_id}/" in fp or f"MODEL_{model_id}_DATASET_" in fp
+        ]
 
     # Check if any result files were found
     if len(result_files) == 0:
@@ -194,7 +196,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
     # Compute WER results per dataset, and RTFx over all datasets
     from normalizer import data_utils  # deferred to avoid circular import
     results = {}
-    wer_metric = evaluate.load("wer")
+    wer_metric = None  # loaded lazily only when multilingual=True
 
     for result_file in result_files:
         manifest = read_manifest(result_file)
@@ -213,26 +215,20 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
 
         if multilingual:
             # TODO update to use kaldialign
+            if wer_metric is None:
+                import evaluate
+                wer_metric = evaluate.load("wer")
             references, predictions = normalize_compound_pairs(references, predictions)
             wer = wer_metric.compute(references=references, predictions=predictions)
         else:
-            # Use kaldialign with merge_compounds=True so that split compounds
-            # (e.g. "white paper" vs "whitepaper") count as 0 errors in either direction.
-            total_ins = total_del = total_sub = total_ref_words = 0
-            for ref, pred in zip(references, predictions):
-                ref_words = ref.split()
-                pred_words = pred.split()
-                if not ref_words:
-                    # empty reference: every predicted word is an insertion
-                    total_ins += len(pred_words)
-                else:
-                    r = kaldi_edit_distance(ref_words, pred_words, merge_compounds=True)
-                    total_ins += r["ins"]
-                    total_del += r["del"]
-                    total_sub += r["sub"]
-                    total_ref_words += r["ref_len"]
-            total_errors = total_ins + total_del + total_sub
-            wer = total_errors / total_ref_words if total_ref_words > 0 else 0.0
+            # Use kaldialign batch_error_rate with merge_compounds=True so that
+            # split compounds (e.g. "white paper" vs "whitepaper") count as
+            # 0 errors in either direction.
+            refs_split  = [tuple(r.split()) for r in references]
+            preds_split = [tuple(p.split()) for p in predictions]
+            r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
+            total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
+            wer = r["err_rate"]
 
         wer = round(100 * wer, 2)
 
@@ -359,13 +355,14 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         print(title)
         print("*" * 80)
 
-        for model_key in composite_wer:
-            wer_vals = [find_wer_in(model_key, col, col_map) for col in csv_columns]
-            wer_vals = [v for v in wer_vals if v is not None]
-            if wer_vals:
-                avg = round(sum(wer_vals) / len(wer_vals), 2)
-                label = original_model_id if original_model_id is not None else model_key.strip()
-                print(f"avg WER ({label}) = {avg}")
+        if len(composite_wer) == 1:
+            for model_key in composite_wer:
+                wer_vals = [find_wer_in(model_key, col, col_map) for col in csv_columns]
+                wer_vals = [v for v in wer_vals if v is not None]
+                if wer_vals:
+                    avg = round(sum(wer_vals) / len(wer_vals), 2)
+                    label = original_model_id if original_model_id is not None else model_key.strip()
+                    print(f"avg WER ({label}) = {avg}")
 
         print(header)
 
@@ -386,10 +383,20 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                 avg_conv           = round(sum(conversational_wers) / len(conversational_wers), 2) if conversational_wers else ""
                 print(f"{csv_model_label},{avg_overall},{avg_scripted},{avg_conv}," + ",".join(wer_cols))
             else:
-                if composite_audio_length[model_key] is not None:
-                    rtfx_val = round(composite_audio_length[model_key] / composite_inference_time[model_key], 2)
-                else:
-                    rtfx_val = ""
+                # Compute RTFx only over the datasets that belong to this family block.
+                family_audio = sum(
+                    results[rk]["audio_length"]
+                    for ds_substr in col_map
+                    for rk in results
+                    if model_key.rstrip() in rk and ds_substr in rk and results[rk]["audio_length"] is not None
+                )
+                family_time = sum(
+                    results[rk]["inference_time"]
+                    for ds_substr in col_map
+                    for rk in results
+                    if model_key.rstrip() in rk and ds_substr in rk and results[rk]["inference_time"] is not None
+                )
+                rtfx_val = round(family_audio / family_time, 2) if family_time else ""
                 print(f"{csv_model_label},{rtfx_val},,,,,," + ",".join(wer_cols))
 
         print("*" * 80)

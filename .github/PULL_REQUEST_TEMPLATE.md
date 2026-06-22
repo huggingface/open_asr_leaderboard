@@ -24,7 +24,7 @@ Using HF Jobs makes it straightforward for maintainers to reproduce and verify y
 ### Key guidelines (all submissions)
 - [ ] Use the **same decoding hyper-parameters** across all datasets for a given model.
 - [ ] Run with the **maximum possible batch size** (can differ per dataset) on an H200 GPU.
-- [ ] If you're not using HF Jobs, provide a `Dockerfile` in your PR for reproducible evaluation.
+- [ ] Even if you're not using HF Jobs, prepare an HF space like the [existing models](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations), such that the maintainers can reproduce your results on HF Jobs.
 - [ ] `run_eval.py` must support batch processing and use `normalizer/data_utils.py` for data loading, normalization, and manifest writing.
 - [ ] Please provide the following model metadata (see [here](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-results/blob/main/english_short_latest.csv) for existing models).
 

@@ -171,8 +171,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max_new_tokens",
         type=int,
-        default=256,
-        help="Maximum number of tokens to generate.",
+        default=512,
+        help="Maximum number of tokens to generate. 512 matches the official qwen-asr package default.",
     )
     parser.add_argument(
         "--warmup_steps",

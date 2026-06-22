@@ -8,6 +8,7 @@ RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
+MAX_NEW_TOKENS=512  # matches the official qwen-asr package default
 
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
@@ -58,7 +59,8 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
                     --split=${SPLIT} \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --max_eval_samples=-1 &&
+                    --max_eval_samples=-1 \
+                    --max_new_tokens=${MAX_NEW_TOKENS} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &

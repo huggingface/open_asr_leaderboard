@@ -5,4 +5,4 @@ datasets
 jiwer
 regex
 num2words
-kaldialign==0.11.0
+kaldialign==0.12.0
