@@ -9,18 +9,16 @@ DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
-# ── Models ───────────────────────────────────────────────────────────────────
-MODELS=(
-    "bosonai/higgs-audio-v3-8b-stt-v2"
+# ── Models: "model_id batch_size voxpopuli_batch_size" ───────────────────────
+MODEL_CONFIGS=(
+    "bosonai/higgs-audio-v3-8b-stt-v2 64 32"
+    "bosonai/higgs-audio-v3-stt        32 16"
 )
 
-# Default batch size
-BATCH_SIZE=64
-
-# ── Datasets: "name split [batch_size]" ──────────────────────────────────────
-# VoxPopuli has longer audio → smaller batch size to fit in VRAM.
+# ── Datasets: "name split" ───────────────────────────────────────────────────
+# VoxPopuli batch size is set per-model in MODEL_CONFIGS (3rd field).
 DATASET_CONFIGS=(
-    "voxpopuli test 32"
+    "voxpopuli test"
     "ami test"
     "earnings22 test"
     "gigaspeech test"
@@ -30,7 +28,9 @@ DATASET_CONFIGS=(
 )
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
-for MODEL_ID in "${MODELS[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID BATCH_SIZE VOX_BATCH_SIZE <<< "$model_cfg"
+    VOX_BATCH_SIZE=${VOX_BATCH_SIZE:-$BATCH_SIZE}
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -38,8 +38,8 @@ for MODEL_ID in "${MODELS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT BS <<< "$cfg"
-        BS=${BS:-$BATCH_SIZE}
+        read -r DATASET SPLIT <<< "$cfg"
+        [[ "$DATASET" == "voxpopuli" ]] && BS=$VOX_BATCH_SIZE || BS=$BATCH_SIZE
 
         echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BS}"
 

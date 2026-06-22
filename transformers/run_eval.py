@@ -105,7 +105,9 @@ def main(args):
 
     # Set generate arguments
     if model.can_generate():
-        gen_kwargs = {"max_new_tokens": args.max_new_tokens}
+        gen_kwargs = {}
+        if args.max_new_tokens is not None:
+            gen_kwargs["max_new_tokens"] = args.max_new_tokens
         if getattr(model.generation_config, "is_multilingual", False):
             gen_kwargs["language"] = "en"
             gen_kwargs["task"] = "transcribe"

@@ -7,3 +7,4 @@ jiwer
 num2words
 peft
 soundfile
+kaldialign

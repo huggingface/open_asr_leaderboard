@@ -14,7 +14,6 @@ ORG_NAME="${ORG_NAME:-}"
 MODEL_CONFIGS=(
     "ibm-granite/granite-4.0-1b-speech speculative 256"
     "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
-    "ibm-granite/granite-speech-4.1-2b-nar nar 256"
 )
 
 # ── Datasets: "name split" ───────────────────────────────────────────────────

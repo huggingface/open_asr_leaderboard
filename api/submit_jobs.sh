@@ -30,14 +30,16 @@ MODEL_CONFIGS=(
     # "openai/gpt-4o-transcribe      false  16"
     # "openai/gpt-4o-mini-transcribe false  16"
     # "openai/whisper-1              false  16"
-    # "assembly/universal-3-pro      false  16"
+    # "assembly/universal-3-pro      false  4"   # `cpu-xl` needed for spgispeech
     # "elevenlabs/scribe_v1          false  16"
-    # "revai/machine                 true   32"
-    # "revai/fusion                  true   32"
-    # "speechmatics/enhanced         false  16"
+    # "revai/machine                 false  8"
+    # "revai/fusion                  false  8"
+    # "speechmatics/enhanced         false  16"    # # `cpu-xl` needed for spgispeech
     # "aquavoice/avalon-v1-en        false  16"
-    # "zoom/scribe_v1                true   32"
-    "microsoft/azure-speech-05-2026  false  4"
+    # "zoom/scribe_v1                false  32"
+    # "microsoft/azure-speech-05-2026  false  4"
+    # "reson8/resonant-1               false 16"
+    # "reson8/resonant-1-flash         false 16"
 )
 
 # ── Datasets ──────────────────────────────────────────────────────────────────
@@ -90,6 +92,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --env AQUAVOICE_API_KEY="$AQUAVOICE_API_KEY" \
             --env ZOOM_API_KEY="$ZOOM_API_KEY" \
             --env AZURE_API_KEY="$AZURE_API_KEY" \
+            --env AZURE_REGION="$AZURE_REGION" \
             --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \

@@ -37,7 +37,7 @@ def main():
     parser = argparse.ArgumentParser(description="Score all results from an HF bucket.")
     parser.add_argument(
         "--bucket",
-        default="hf-audio/asr_leaderboard",
+        default="hf-audio/asr_leaderboard_h200",
         help="HF bucket name (without the hf://buckets/ prefix). Default: hf-audio/asr_leaderboard",
     )
     parser.add_argument(

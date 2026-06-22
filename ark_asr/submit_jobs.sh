@@ -1,52 +1,43 @@
 #!/bin/bash
-# Local script to submit HF Jobs for SpeechBrain ASR evaluation.
+# Local script to submit HF Jobs for ARK-ASR evaluation.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-speechbrain}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-ark-asr}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
-# ── Models: "source speechbrain_class batch_size" ────────────────────────────
-# EncoderASR: wav2vec2 models
-# EncoderDecoderASR: conformer, crdnn, transformer models
+# ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "speechbrain/asr-wav2vec2-librispeech EncoderASR 32"
-    "speechbrain/asr-conformer-largescaleasr EncoderDecoderASR 32"
+    "AutoArk-AI/ARK-ASR-0.6B"
 )
+MODEL_REVISION="e55e9b8cd6018ee8353007c3136e2fb2e77eef99"
 
-# ── Datasets: "name split" ────────────────────────────────────────────────────
+# ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test"
-    "ami test"
-    "earnings22 test"
-    "gigaspeech test"
-    "librispeech test.clean"
-    "librispeech test.other"
-    "spgispeech test"
+    "voxpopuli test 64"
+    "ami test 64"
+    "earnings22 test 64"
+    "gigaspeech test 64"
+    "librispeech test.clean 64"
+    "librispeech test.other 64"
+    "spgispeech test 64"
 )
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
-for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r SOURCE CLASS_NAME BATCH_SIZE <<< "$model_cfg"
-    MODEL_FOLDER="${SOURCE//\//-}"
+for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
+    MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
-    echo "  Evaluating: ${SOURCE} (${CLASS_NAME})"
+    echo "  Evaluating: ${MODEL_ID}"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT <<< "$cfg"
+        read -r DATASET SPLIT BATCH_SIZE <<< "$cfg"
 
-        # Adjust batch size for specific model/dataset combinations
-        ACTUAL_BATCH_SIZE=$BATCH_SIZE
-        if [[ "$SOURCE" == "speechbrain/asr-conformer-largescaleasr" && "$DATASET" == "voxpopuli" ]]; then
-            ACTUAL_BATCH_SIZE=8
-        fi
-
-        echo "Submitting job: source=${SOURCE} dataset=${DATASET} split=${SPLIT} batch_size=${ACTUAL_BATCH_SIZE}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -55,18 +46,19 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
+            --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
                 PYTHONPATH=/app python run_eval.py \
-                    --source=${SOURCE} \
-                    --speechbrain_pretrained_class_name=${CLASS_NAME} \
+                    --model_id=${MODEL_ID} \
+                    --model_revision=${MODEL_REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${ACTUAL_BATCH_SIZE} \
+                    --batch_size=${BATCH_SIZE} \
                     --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
@@ -79,7 +71,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     fi
 
     wait
-    echo "All jobs finished for ${SOURCE}."
+    echo "All jobs finished for ${MODEL_ID}."
     sleep 10  # allow time for the last results to be flushed to the bucket
 
     mkdir -p "./results/${MODEL_FOLDER}"
@@ -98,7 +90,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
     PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${SOURCE}')
+score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
 "
 
 done

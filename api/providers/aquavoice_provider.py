@@ -31,4 +31,9 @@ class AquaVoiceProvider(APIProvider):
                 data={"model": model_variant},
                 headers=headers,
             )
-        return response.json()["text"]
+        if not response.ok:
+            raise RuntimeError(f"AquaVoice API error {response.status_code}: {response.text}")
+        data = response.json()
+        if "text" not in data:
+            raise RuntimeError(f"Unexpected AquaVoice response: {data}")
+        return data["text"] or ""

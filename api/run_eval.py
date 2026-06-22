@@ -136,7 +136,7 @@ def transcribe_dataset(
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
-                return None
+                transcription = ""
 
         else:
             reference = sample.get("original_text", "").strip() or " "
@@ -159,13 +159,10 @@ def transcribe_dataset(
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
-                os.unlink(tmp_path)
-                return None
+                transcription = ""
             finally:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
-                else:
-                    print(f"File {tmp_path} does not exist")
 
         transcription_time = time.time() - start
         return reference, transcription, audio_duration, transcription_time
@@ -179,13 +176,11 @@ def transcribe_dataset(
             total=len(future_to_sample),
             desc="Transcribing",
         ):
-            result = future.result()
-            if result:
-                reference, transcription, audio_duration, transcription_time = result
-                results["predictions"].append(transcription)
-                results["references"].append(reference)
-                results["audio_length_s"].append(audio_duration)
-                results["transcription_time_s"].append(transcription_time)
+            reference, transcription, audio_duration, transcription_time = future.result()
+            results["predictions"].append(transcription)
+            results["references"].append(reference)
+            results["audio_length_s"].append(audio_duration)
+            results["transcription_time_s"].append(transcription_time)
 
     manifest_path = data_utils.write_manifest(
         results["references"],

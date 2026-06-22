@@ -26,6 +26,17 @@ Using HF Jobs makes it straightforward for maintainers to reproduce and verify y
 - [ ] Run with the **maximum possible batch size** (can differ per dataset) on an H200 GPU.
 - [ ] If you're not using HF Jobs, provide a `Dockerfile` in your PR for reproducible evaluation.
 - [ ] `run_eval.py` must support batch processing and use `normalizer/data_utils.py` for data loading, normalization, and manifest writing.
+- [ ] Please provide the following model metadata (see [here](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-results/blob/main/english_short_latest.csv) for existing models).
+
+License | Size (B) | # Languages | Encoder | Decoder
+-- | -- | -- | -- | -- 
+ x | x | x | x | x 
+
+For LLM-based models, be sure to count the **total number** of parameters. You can get the exact number with a code snippet as such in your `run_eval.py` script:
+```python
+print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
+```
+
 
 ### My model is in Transformers 🤗
 - [ ] (If necessary) adapt [`run_eval.py`](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/blob/main/run_eval.py) to use your checkpoint (using the `AutoModelForXXX` API).
@@ -35,6 +46,7 @@ Using HF Jobs makes it straightforward for maintainers to reproduce and verify y
 - [ ] Duplicate an [existing Space](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations) that is closest to your model's framework, then modify the `Dockerfile` to install the required dependencies.
 - [ ] Adapt `run_eval.py` for your model's inference API (supports batch processing, uses `torch.compile` and/or relevant optimizations including warmup).
 - [ ] Create a `submit_jobs_<your_model>.sh` script pointing to your new Space, and include it in your PR.
+- [ ] For models that use `trust_remote_code=True`, please default to a `revision` tag and specify it in your bash script. 
 
 
 ## New Dataset Checklist

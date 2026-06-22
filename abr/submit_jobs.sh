@@ -15,6 +15,7 @@ SUBBATCH_SAMPLES=30000000
 # ── Models: "model_id revision" ──────────────────────────────────────────────
 MODEL_CONFIGS=(
     "abr-ai/niagara-19m-batch.en dab6545337495482f2fc05455432a7a05c88d3cc"
+    "abr-ai/niagara-38m-batch.en 4f3ec18d377b1fd01e94d15dc9b9db0a8cd74bd2"
 )
 
 # ── Datasets: "name split" ────────────────────────────────────────────────────
