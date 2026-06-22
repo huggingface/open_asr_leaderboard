@@ -52,4 +52,4 @@ class AssemblyAIProvider(APIProvider):
             raise PermanentError(
                 f"AssemblyAI transcription error: {transcript.error}"
             )
-        return transcript.text or "."
+        return transcript.text or ""
