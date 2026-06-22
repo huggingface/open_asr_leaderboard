@@ -9,6 +9,11 @@ DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 USE_MODEL_CACHE="${USE_MODEL_CACHE:-false}"
+MODEL_LIST="${MODEL_LIST:-nvidia/parakeet-tdt-0.6b-v2,nvidia/parakeet-tdt-0.6b-v3,Qwen/Qwen3-ASR-1.7B,nvidia/canary-qwen-2.5b,ibm-granite/granite-speech-3.3-8b,ibm-granite/granite-4.0-1b-speech,ibm-granite/granite-speech-4.1-2b,ZFTurbo/Phi-4-multimodal-instruct}"
+WEIGHTS_LIST="${WEIGHTS_LIST:-4.5,4.2,8.4,9.8,8.7,3.5,8.9,9.4}"
+
+USE_MODEL_CACHE="${USE_MODEL_CACHE:-false}"
+
 
 # ── Models ────────────────────────────────────────────────────────────────────
 # model_list=[
@@ -37,6 +42,10 @@ DATASET_CONFIGS=(
     "librispeech test.clean 128"
     "librispeech test.other 128"
     "spgispeech test 128"
+)
+
+DATASET_CONFIGS=(
+    "earnings22 test 128"
 )
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
@@ -79,6 +88,8 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
+                    --ensemble_models=${MODEL_LIST} \
+                    --ensemble_weights=${WEIGHTS_LIST} \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
                     --max_eval_samples=-1 &&

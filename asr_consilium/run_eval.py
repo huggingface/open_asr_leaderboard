@@ -72,21 +72,16 @@ def main(args):
     # Start timing
     start_time = time.time()
 
+    model_list = args.ensemble_models.split(',')
+    weights = args.ensemble_weights.split(',')
+    weights = [float(w) for w in weights]
+
     inference(
         jsonl_file=jsonl_dataset,
         out_file=out_file,
         batch_size=batch_size,
-        model_list=[
-            'nvidia/parakeet-tdt-0.6b-v2',
-            'nvidia/parakeet-tdt-0.6b-v3',
-            'Qwen/Qwen3-ASR-1.7B',
-            'nvidia/canary-qwen-2.5b',
-            'ibm-granite/granite-speech-3.3-8b',
-            'ibm-granite/granite-4.0-1b-speech',
-            'ibm-granite/granite-speech-4.1-2b',
-            'ZFTurbo/Phi-4-multimodal-instruct',
-        ],
-        weights=[4.5, 4.2, 8.4, 9.8, 8.7, 3.5, 8.9, 9.4],
+        model_list=model_list,
+        weights=weights,
         language='en',
         normalize=True,
         char_level=False,
@@ -163,6 +158,18 @@ if __name__ == "__main__":
         type=str,
         default="esb/datasets",
         help="Dataset path. By default, it is `esb/datasets`",
+    )
+    parser.add_argument(
+        "--ensemble_models",
+        type=str,
+        default="nvidia/parakeet-tdt-0.6b-v2,nvidia/parakeet-tdt-0.6b-v3,Qwen/Qwen3-ASR-1.7B,nvidia/canary-qwen-2.5b,ibm-granite/granite-speech-3.3-8b,ibm-granite/granite-4.0-1b-speech,ibm-granite/granite-speech-4.1-2b,ZFTurbo/Phi-4-multimodal-instruct",
+        help="Models for ensemble",
+    )
+    parser.add_argument(
+        "--ensemble_weights",
+        type=str,
+        default="4.5,4.2,8.4,9.8,8.7,3.5,8.9,9.4",
+        help="Weights for ensemble. Must be equal to number of ensemble models",
     )
     parser.add_argument(
         "--dataset",
