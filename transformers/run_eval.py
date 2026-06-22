@@ -1,17 +1,30 @@
 import argparse
 import os
-import re
-import torch
-from torch.nn.attention import sdpa_kernel, SDPBackend
-from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, CompileConfig
-import evaluate
-from normalizer import data_utils
-from tqdm import tqdm
 import random
+import re
+
+import evaluate
 import numpy as np
+import torch
+from normalizer import data_utils
+from torch.nn.attention import SDPBackend, sdpa_kernel
+from tqdm import tqdm
+
+from transformers import (
+    MODEL_FOR_CTC_MAPPING,
+    MODEL_FOR_MULTIMODAL_LM_MAPPING,
+    MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
+    AutoConfig,
+    AutoModelForCTC,
+    AutoModelForMultimodalLM,
+    AutoModelForSpeechSeq2Seq,
+    AutoProcessor,
+    CompileConfig,
+)
+
 
 wer_metric = evaluate.load("wer")
-torch.set_float32_matmul_precision('high')
+torch.set_float32_matmul_precision("high")
 
 
 def remove_brackets(text):
@@ -23,12 +36,11 @@ def remove_brackets(text):
     deletion errors in the predictions.
     """
     text = text.replace("(", " ").replace(")", " ")
-    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r"\s+", " ", text)
     return text
 
 
 def main(args):
-
     # Set seed due to randomness in some models (e.g. VibeVoice's acoustic tokenizer sampling)
     seed = 42
     random.seed(seed)
@@ -52,18 +64,18 @@ def main(args):
 
     if "vibevoice" in args.model_id.lower():
         model = cls_model.from_pretrained(
-            args.model_id, 
-            dtype=torch_dtype, 
+            args.model_id,
+            dtype=torch_dtype,
             attn_implementation={
                 "acoustic_tokenizer_encoder_config": "eager",
                 "semantic_tokenizer_encoder_config": "eager",
                 "text_config": "sdpa",
-            }
+            },
         )
     else:
         model = cls_model.from_pretrained(
-            args.model_id, 
-            dtype=torch_dtype, 
+            args.model_id,
+            dtype=torch_dtype,
             revision=args.revision,
             attn_implementation=args.attn_implementation,
         )
@@ -75,6 +87,7 @@ def main(args):
     is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
+    is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
 
     # Optional prompt for audio language models, newer models should use `apply_transcription_request`
     text = None
@@ -88,12 +101,10 @@ def main(args):
             {
                 "role": "user",
                 "content": "<|audio|>can you transcribe the speech into a written format?",
-            }
+            },
         ]
 
-        text = processor.apply_chat_template(
-            chat, tokenize=False, add_generation_prompt=True
-        )
+        text = processor.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
 
     # Extract sampling rate
     if hasattr(processor, "feature_extractor") and processor.feature_extractor is not None:
@@ -129,13 +140,15 @@ def main(args):
             # enable static k/v cache for autoregressive models
             model.generation_config.cache_implementation = "static"
         else:
-            model = torch.compile(model, mode=args.torch_compile, fullgraph=args.compile_fullgraph)     
+            model = torch.compile(model, mode=args.torch_compile, fullgraph=args.compile_fullgraph)
 
         # Ensure warm-up runs when using torch.compile
         if args.warmup_steps is None or args.warmup_steps < 1:
-            print("`--torch_compile` is enabled; forcing `--warmup_steps=10` to trigger compilation before timed runs.")
+            print(
+                "`--torch_compile` is enabled; forcing `--warmup_steps=10` to trigger compilation before timed runs."
+            )
             args.warmup_steps = 10
-    
+
     def benchmark(batch, min_new_tokens=None):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
@@ -144,7 +157,7 @@ def main(args):
         batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
         batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
         if text is not None:
-            texts=[text] * minibatch_size
+            texts = [text] * minibatch_size
         else:
             texts = None
 
@@ -182,6 +195,10 @@ def main(args):
                     sampling_rate=sampling_rate,
                     format=["wav"] * len(audios),
                 )
+            elif is_qwen3_asr:
+                inputs = processor.apply_transcription_request(
+                    audios, language="en"
+                )  # English for benchmark consistency
             else:
                 inputs = processor.apply_transcription_request(audios)
             prompt_len = inputs["input_ids"].shape[1]
@@ -189,11 +206,11 @@ def main(args):
             inputs = processor(
                 texts,
                 audios,
-                device=args.device, # Computation device; returned tensors are put on CPU
+                device=args.device,  # Computation device; returned tensors are put on CPU
                 return_tensors="pt",
             ).to(args.device)
             prompt_len = inputs["input_ids"].shape[1]
-        elif not model.can_generate(): #or len(audios[0]) > processor.feature_extractor.n_samples:
+        elif not model.can_generate():  # or len(audios[0]) > processor.feature_extractor.n_samples:
             # 1.2 Either CTC pre-processing (normalize to mean 0, std 1), or long-form Whisper processing
             inputs = processor(
                 audios,
@@ -215,7 +232,14 @@ def main(args):
                     return_attention_mask=True,
                 )
             else:
-                inputs = processor(audios, sampling_rate=sampling_rate, return_tensors="pt", padding="longest", return_attention_mask=True, device=args.device)
+                inputs = processor(
+                    audios,
+                    sampling_rate=sampling_rate,
+                    return_tensors="pt",
+                    padding="longest",
+                    return_attention_mask=True,
+                    device=args.device,
+                )
 
         inputs = inputs.to(args.device, dtype=torch_dtype)
 
@@ -239,15 +263,13 @@ def main(args):
                     moonshine_gen_kwargs = {**gen_kwargs, "max_new_tokens": per_sample_limits.max().item()}
                     pred_ids = model.generate(**inputs, **moonshine_gen_kwargs)
                     output_mask = (
-                        torch.arange(pred_ids.shape[-1], device=args.device)
-                        .unsqueeze(0)
-                        .expand(pred_ids.shape[0], -1)
+                        torch.arange(pred_ids.shape[-1], device=args.device).unsqueeze(0).expand(pred_ids.shape[0], -1)
                         > per_sample_limits
                     )
                     pred_ids = pred_ids.masked_fill(output_mask, model.config.eos_token_id)
                 elif args.longform:
                     pred_ids = model.generate(**inputs, **gen_kwargs, return_timestamps=True)
-                else:   
+                else:
                     pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
             else:
                 # 2.2. Single forward pass for CTC
@@ -264,8 +286,10 @@ def main(args):
         if is_cohere:
             audio_chunk_index = inputs.get("audio_chunk_index")
             pred_text = processor.decode(
-                pred_ids, skip_special_tokens=True,
-                audio_chunk_index=audio_chunk_index, language="en",
+                pred_ids,
+                skip_special_tokens=True,
+                audio_chunk_index=audio_chunk_index,
+                language="en",
             )
             pred_text = [remove_brackets(t) for t in pred_text]
         elif "vibevoice" in args.model_id.lower():
@@ -286,6 +310,9 @@ def main(args):
         elif is_voxtral_realtime:
             # No prompt tokens to strip — decode directly
             pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        elif is_qwen3_asr:
+            # Use Qwen3 ASR's structured decode to extract transcription text
+            pred_text = processor.decode(pred_ids[:, prompt_len:], return_format="transcription_only")
         elif has_transcription_processor or texts is not None:
             # Strip input prompt tokens
             pred_text = processor.decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
@@ -316,7 +343,11 @@ def main(args):
             warmup_dataset = dataset.take(num_warmup_samples)
         else:
             warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}))
+        warmup_dataset = iter(
+            warmup_dataset.map(
+                benchmark, batch_size=args.batch_size, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}
+            )
+        )
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
@@ -331,7 +362,10 @@ def main(args):
     dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
 
     dataset = dataset.map(
-        benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"],
+        benchmark,
+        batch_size=args.batch_size,
+        batched=True,
+        remove_columns=["audio"],
     )
 
     all_results = {
@@ -363,9 +397,7 @@ def main(args):
 
     norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
     norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
-    wer = wer_metric.compute(
-      references=norm_refs, predictions=norm_preds
-    )
+    wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print("WER:", wer, "%", "RTFx:", rtfx)
