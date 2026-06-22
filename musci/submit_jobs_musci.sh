@@ -14,6 +14,9 @@ MODEL_CONFIGS=(
     "Musci-research/Musci-ASR-2.4B"
 )
 
+# Pin the model repo revision for trust_remote_code stability (in case remote code changes).
+MODEL_REVISION="${MODEL_REVISION:-18dd8264a5e7b79057b6a04ecfc7a03251d232e4}"
+
 # ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
     "voxpopuli test 64"
@@ -52,6 +55,7 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
             bash -c "
                 PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
+                    --model_revision=${MODEL_REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
