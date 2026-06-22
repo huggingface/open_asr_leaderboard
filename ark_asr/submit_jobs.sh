@@ -9,11 +9,11 @@ DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
-# ── Models ────────────────────────────────────────────────────────────────────
+# ── Models: "model_id revision" ─────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "AutoArk-AI/ARK-ASR-0.6B"
+    "AutoArk-AI/ARK-ASR-0.6B  e55e9b8cd6018ee8353007c3136e2fb2e77eef99"
+    "AutoArk-AI/ARK-ASR-3B    379a8f464c04ff11b4627a93721ca9982970bee4"
 )
-MODEL_REVISION="e55e9b8cd6018ee8353007c3136e2fb2e77eef99"
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
@@ -27,7 +27,8 @@ DATASET_CONFIGS=(
 )
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
-for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID MODEL_REVISION <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
