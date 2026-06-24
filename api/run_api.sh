@@ -88,6 +88,25 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     PYTHONPATH="${RUNDIR}/..:${PYTHONPATH}" python -c "from normalizer.eval_utils import score_results; score_results('${MODEL_RESULTS_DIR}', '${MODEL_ID}')"
 
     if [[ -n "${RESULTS_BUCKET}" ]]; then
-        hf buckets sync "${MODEL_RESULTS_DIR}" "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}"
+        # Only upload the specific files for the datasets in EVAL_DATASETS to
+        # avoid accidentally pushing private dataset results to the public bucket.
+        # hf buckets sync is directory-based, so we use --include to whitelist
+        # only the exact filenames we want to upload.
+        DATASET_PATH_SLUG="${DATASET_PATH//\//-}"
+        INCLUDE_ARGS=()
+        for entry in "${EVAL_DATASETS[@]}"; do
+            _DS="${entry%%:*}"
+            _SP="${entry##*:}"
+            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${DATASET_PATH_SLUG}_${_DS}_${_SP}.jsonl"
+            if [[ -f "${MODEL_RESULTS_DIR}/${FNAME}" ]]; then
+                INCLUDE_ARGS+=(--include "${FNAME}")
+            else
+                echo "WARNING: result file not found, skipping upload: ${MODEL_RESULTS_DIR}/${FNAME}"
+            fi
+        done
+        if [[ ${#INCLUDE_ARGS[@]} -gt 0 ]]; then
+            hf buckets sync "${MODEL_RESULTS_DIR}" "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
+                "${INCLUDE_ARGS[@]}" > /dev/null 2>&1
+        fi
     fi
 done

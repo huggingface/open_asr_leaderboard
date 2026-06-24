@@ -20,9 +20,9 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
   After submitting a model to the leaderboard, the maintainers will evaluate on private sets, as described [here](https://huggingface.co/blog/open-asr-leaderboard-private-data).
 
 
-# Evaluate a model (as of 10 June 2026)
+# Evaluate a model (as of 24 June 2026)
 
-English short-form evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes the same Docker image on the same hardware, eliminating environment and driver differences. Multilingual and long-form evaluations will migrate to HF Jobs in the future. Local evaluation remains possible for contributors who want to test on their own hardware.
+English short-form evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes a Docker image on the same hardware, to minimize environment and driver differences. Multilingual and long-form evaluations will migrate to HF Jobs in the future.
 
 Jobs are launched on the following hardware ([flavor](https://huggingface.co/docs/hub/jobs-configuration#hardware-flavor) in HF Jobs terminology):
 ```
@@ -34,7 +34,7 @@ Example costs for a full run over the main public datasets:
 - $4.75 for `openai/whisper-large-v3-turbo`
 - $5.58 for `Qwen/Qwen3-ASR-1.7B`
 
-Each model family has its own Docker image with the exact software stack required. The evalulation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
+Each model family has its own Docker image with the necessaru software requirements. The evalulation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
 
 **To launch an evaluation:**
 
@@ -44,6 +44,8 @@ Each model family has its own Docker image with the exact software stack require
    - Create a Storage Bucket to store results: https://huggingface.co/new-bucket
 
 2. **One-time local setup**
+
+A local setup is needed to launch the evaluation and score with the repo's normalizer.
 ```bash
 # Clone the repository
 git clone git@github.com:huggingface/open_asr_leaderboard.git
