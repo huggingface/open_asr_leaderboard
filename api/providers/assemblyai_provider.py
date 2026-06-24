@@ -3,7 +3,7 @@ from typing import Optional
 
 import assemblyai as aai
 
-from . import APIProvider, register
+from . import APIProvider, PermanentError, register
 
 
 @register("assembly")
@@ -24,7 +24,7 @@ class AssemblyAIProvider(APIProvider):
         if model_variant in MULTI_MODEL_VARIANTS:
             config = aai.TranscriptionConfig(
                 speech_models=[model_variant],
-                language_detection=True,
+                language_code=language,
             )
         else:
             config = aai.TranscriptionConfig(
@@ -49,7 +49,7 @@ class AssemblyAIProvider(APIProvider):
             transcript = transcriber.transcribe(audio_file_path, config=config)
 
         if transcript.status == aai.TranscriptStatus.error:
-            raise Exception(
+            raise PermanentError(
                 f"AssemblyAI transcription error: {transcript.error}"
             )
-        return transcript.text
+        return transcript.text or ""

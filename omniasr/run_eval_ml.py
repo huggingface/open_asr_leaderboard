@@ -79,6 +79,7 @@ def main(args):
         batch["audio_length_s"] = [
             len(audio["array"]) / audio["sampling_rate"] for audio in batch["audio"]
         ]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
         start_time = time.time()
@@ -95,15 +96,13 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # Normalize with appropriate normalizer
-        batch["predictions"] = [text_normalizer(pred) for pred in transcriptions]
+        batch["predictions"] = transcriptions  # raw; normalization applied at scoring time
 
-        # Get references and normalize
-        references = []
-        for i in range(minibatch_size):
-            sample = {k: batch[k][i] for k in batch if k != "audio"}
-            ref = get_text(sample)
-            references.append(text_normalizer(ref))
-        batch["references"] = references
+        # Get raw references
+        batch["references"] = [
+            get_text({k: batch[k][i] for k in batch if k != "audio"})
+            for i in range(minibatch_size)
+        ]  # raw; normalization applied at scoring time
 
         return batch
 
@@ -161,6 +160,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -177,10 +177,13 @@ def main(args):
         SPLIT_NAME,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer_refs, wer_preds = normalize_compound_pairs(all_results["references"], all_results["predictions"])
+    norm_refs = [text_normalizer(r) for r in all_results["references"]]
+    norm_preds = [text_normalizer(p) for p in all_results["predictions"]]
+    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
     wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
@@ -244,10 +247,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--warmup_steps",
@@ -256,6 +258,5 @@ if __name__ == "__main__":
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=False)
 
     main(args)

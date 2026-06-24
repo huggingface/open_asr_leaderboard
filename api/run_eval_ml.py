@@ -128,7 +128,7 @@ def transcribe_dataset(
 
     def process_sample(sample):
         if use_url:
-            reference = sample["row"]["text"].strip() or " "
+            reference = sample["row"]["text"].strip()
             audio_duration = sample["row"]["audio_length_s"]
             start = time.time()
             try:
@@ -140,7 +140,7 @@ def transcribe_dataset(
                 return None
 
         else:
-            reference = sample.get("text", "").strip() or " "
+            reference = sample.get("text", "").strip()
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
                 sf.write(
                     tmpfile.name,
@@ -188,15 +188,6 @@ def transcribe_dataset(
                 results["audio_length_s"].append(audio_duration)
                 results["transcription_time_s"].append(transcription_time)
 
-    results["predictions"] = [
-        data_utils.ml_normalizer(transcription, lang=language)
-        for transcription in results["predictions"]
-    ]
-    results["references"] = [
-        data_utils.ml_normalizer(reference, lang=language)
-        for reference in results["references"]
-    ]
-
     # Filter empty references (consistent with English pipeline's prepare_data)
     filtered = [
         (ref, pred, dur, time_s)
@@ -223,8 +214,10 @@ def transcribe_dataset(
 
     print("Results saved at path:", manifest_path)
 
+    norm_refs = [data_utils.ml_normalizer(r, lang=language) for r in results["references"]]
+    norm_preds = [data_utils.ml_normalizer(t, lang=language) for t in results["predictions"]]
     wer_metric = evaluate.load("wer")
-    wer_refs, wer_preds = normalize_compound_pairs(results["references"], results["predictions"])
+    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
     wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer_percent = round(100 * wer, 2)
     rtfx = round(

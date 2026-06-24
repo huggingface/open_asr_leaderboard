@@ -5,7 +5,7 @@ from typing import Optional
 from rev_ai import apiclient
 from rev_ai.models import CustomerUrlData
 
-from . import APIProvider, register
+from . import APIProvider, PermanentError, register
 
 
 @register("revai")
@@ -41,7 +41,8 @@ class RevAIProvider(APIProvider):
                 time.sleep(0.1)
                 continue
             elif job_details.status.name == "FAILED":
-                raise Exception("RevAI transcription failed.")
+                detail = getattr(job_details, "failure_detail", None) or "unknown reason"
+                raise PermanentError(f"RevAI transcription failed: {detail}")
             elif job_details.status.name == "TRANSCRIBED":
                 break
 

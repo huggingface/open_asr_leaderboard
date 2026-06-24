@@ -6,39 +6,77 @@ This repository contains the code for the Open ASR Leaderboard. The leaderboard 
 
 The Open ASR Leaderboard evaluates models on a diverse set of publicly available ASR benchmarks hosted on the Hugging Face Hub. These datasets cover a wide range of domains, languages, and recording conditions to provide a fair and comprehensive comparison across models.
 
-* **Core Test Sets (English, sorted, test-only):**
-  The main benchmark datasets used for evaluation are available here: [**ESB test-only sorted collection**](https://huggingface.co/datasets/hf-audio/esb-datasets-test-only-sorted).
+* **Main Test Sets (English, short-form):**
+  The main benchmark datasets used for evaluation (short-form English) are available [here](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard).
 
-* **Long-form Benchmark (recent addition):**
-  The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21, earnings22, and tedlium. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
+* **English, long-form:**
+  The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
-* **Multilingual Benchmark (recent addition):**
+* **Multilingual Benchmark:**
   The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/nithinraok/asr-leaderboard-datasets) dataset includes fleurs, mcv and mls multilingual.
 
-# Requirements
 
-Each library has its own set of requirements. We recommend using a clean conda environment, with Python 3.10 or above.
+* **Private datasets:** 
+  After submitting a model to the leaderboard, the maintainers will evaluate on private sets, as described [here](https://huggingface.co/blog/open-asr-leaderboard-private-data).
 
-1) Clone this repository.
-2) Install PyTorch by following the instructions here: https://pytorch.org/get-started/locally/
-3) Install the common requirements for all library by running `pip install -r requirements/requirements.txt`.
-4) Install the requirements for each library you wish to evaluate by running `pip install -r requirements/requirements_<library_name>.txt`.
-5) Connect your Hugging Face account by running `huggingface-cli login`.
 
-**Note:** If you wish to run NeMo, the benchmark currently needs CUDA 12.6 to fix a problem in previous drivers for RNN-T inference with cooperative kernels inside conditional nodes (see here: https://github.com/NVIDIA/NeMo/pull/9869). Running `nvidia-smi` should output "CUDA Version: 12.6" or higher.
+# Evaluate a model (as of 24 June 2026)
 
-# Evaluate a model
+English short-form evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes a Docker image on the same hardware, to minimize environment and driver differences. Multilingual and long-form evaluations will migrate to HF Jobs in the future.
 
-Each library has a script `run_eval.py` that acts as the entry point for evaluating a model. The script is run by the corresponding bash script for each model that is being evaluated. The script then outputs a JSONL file containing the predictions of the model on each dataset, and summarizes the Word Error Rate (WER) and Inverse Real-Time Factor (RTFx) of the model on each dataset after completion.
+Jobs are launched on the following hardware ([flavor](https://huggingface.co/docs/hub/jobs-configuration#hardware-flavor) in HF Jobs terminology):
+```
+name             pretty name             cpu       ram      storage   accelerator               cost/min  cost/hour
+h200             Nvidia H200             23 vCPU   256 GB   3000 GB   1x H200 (141 GB)          $0.0833   $5.00
+```
+Example costs for a full run over the main public datasets:
+- $2.92 for `nvidia/parakeet-tdt-0.6b-v3`
+- $4.75 for `openai/whisper-large-v3-turbo`
+- $5.58 for `Qwen/Qwen3-ASR-1.7B`
 
-To reproduce existing results:
+Each model family has its own Docker image with the necessaru software requirements. The evalulation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
 
-1) Change directory into the library you wish to evaluate. For example, `cd transformers`.
-2) Run the bash script for the model you wish to evaluate. For example, `bash run_wav2vec2.sh`.
+**To launch an evaluation:**
 
-**Note**: All evaluations were run using an NVIDIA A100-SXM4-80GB GPU, with NVIDIA driver 560.28.03, CUDA 12.6, and PyTorch 2.4.0. You should ensure you use the same configuration when submitting results. If you are unable to create an equivalent machine, please request one of the maintainers to run your scripts for evaluation! 
+1. **Hugging Face Hub setup**
+   - Create an account at https://huggingface.co/ and add credits for HF Jobs: https://huggingface.co/settings/billing
+   - Create a [WRITE token](https://huggingface.co/settings/tokens/new?tokenType=write) and copy it.
+   - Create a Storage Bucket to store results: https://huggingface.co/new-bucket
 
-## Trade-off plots
+2. **One-time local setup**
+
+A local setup is needed to launch the evaluation and score with the repo's normalizer.
+```bash
+# Clone the repository
+git clone git@github.com:huggingface/open_asr_leaderboard.git
+cd open_asr_leaderboard
+
+# Create a minimal conda environment (no GPU required locally)
+conda create -n leaderboard_jobs python=3.10 -y
+conda activate leaderboard_jobs
+pip install -r requirements/requirements_jobs.txt
+huggingface-cli login   # paste your WRITE token when prompted
+```
+
+3. **Launch an evaluation** 🚀
+```bash
+# Open the relevant submit_jobs script, uncomment the models/datasets you want, then run:
+RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
+
+# Jobs are submitted in parallel (one per dataset). The script waits for all
+# jobs to finish, syncs results from the bucket, and prints a CSV summary.
+
+# Billing to org
+ORG_NAME="<org-name>" RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
+```
+
+## Local evaluation
+
+For contributors who want to test locally or evaluate multilingual/long-form models before HF Jobs support is added, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
+
+Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
+
+# Trade-off plots
 
 For open-source models, you can plot tradeoff plots like below with `scripts/plot_all.sh`.
 
@@ -61,209 +99,9 @@ You can also specify your own model and its performance as such:
 
 ![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
 
-# Add a new library
+# Contributing a model or dataset
 
-To add a new library for evaluation in this benchmark, please follow the steps below:
-
-1) Fork this repository and create a new branch
-2) Create a new directory for your library. For example, `mkdir transformers`.
-3) Copy the template `run_eval.py` script below into your new directory. The script should be updated for the new library by making two modifications. Otherwise, please try to keep the structure of the script the same as in the template. In particular, the data loading, evaluation and manifest writing must be done in the same way as other libraries for consistency.
-   1) Update the model loading logic in the `main` function
-   2) Update the inference logic in the `benchmark` function
-
-<details>
-
-<summary> Template script for Transformers: </summary>
-
-```python
-import argparse
-import os
-import torch
-from transformers import WhisperForConditionalGeneration, WhisperProcessor
-import evaluate
-from normalizer import data_utils
-import time
-from tqdm import tqdm
-
-wer_metric = evaluate.load("wer")
-
-def main(args):
-    # Load model (FILL ME!)
-    model = WhisperForConditionalGeneration.from_pretrained(args.model_id, torch_dtype=torch.bfloat16).to(args.device)
-    processor = WhisperProcessor.from_pretrained(args.model_id)
-
-    def benchmark(batch):
-        # Load audio inputs
-        audios = [audio["array"] for audio in batch["audio"]]
-        batch["audio_length_s"] = [len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios]
-        minibatch_size = len(audios)
-
-        # Start timing
-        start_time = time.time()
-
-        # INFERENCE (FILL ME! Replacing 1-3 with steps from your library)
-        # 1. Pre-processing
-        inputs = processor(audios, sampling_rate=16_000, return_tensors="pt").to(args.device)
-        inputs["input_features"] = inputs["input_features"].to(torch.bfloat16)
-        # 2. Generation
-        pred_ids = model.generate(**inputs)
-        # 3. Post-processing
-        pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
-
-        # End timing
-        runtime = time.time() - start_time
-
-        # normalize by minibatch size since we want the per-sample time
-        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
-
-        # normalize transcriptions with English normalizer
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
-        batch["references"] = batch["norm_text"]
-        return batch
-
-    if args.warmup_steps is not None:
-        warmup_dataset = data_utils.load_data(args)
-        warmup_dataset = data_utils.prepare_data(warmup_dataset)
-
-        num_warmup_samples = args.warmup_steps * args.batch_size
-        if args.streaming:
-            warmup_dataset = warmup_dataset.take(num_warmup_samples)
-        else:
-            warmup_dataset = warmup_dataset.select(range(min(num_warmup_samples, len(warmup_dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
-
-        for _ in tqdm(warmup_dataset, desc="Warming up..."):
-            continue
-
-    dataset = data_utils.load_data(args)
-    dataset = data_utils.prepare_data(dataset)
-
-    if args.max_eval_samples is not None and args.max_eval_samples > 0:
-        print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
-        if args.streaming:
-            dataset = dataset.take(args.max_eval_samples)
-        else:
-            dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-
-    dataset = dataset.map(
-        benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"],
-    )
-
-    all_results = {
-        "audio_length_s": [],
-        "transcription_time_s": [],
-        "predictions": [],
-        "references": [],
-    }
-    result_iter = iter(dataset)
-    for result in tqdm(result_iter, desc="Samples..."):
-        for key in all_results:
-            all_results[key].append(result[key])
-
-    # Write manifest results (WER and RTFX)
-    manifest_path = data_utils.write_manifest(
-        all_results["references"],
-        all_results["predictions"],
-        args.model_id,
-        args.dataset_path,
-        args.dataset,
-        args.split,
-        audio_length=all_results["audio_length_s"],
-        transcription_time=all_results["transcription_time_s"],
-    )
-    print("Results saved at path:", os.path.abspath(manifest_path))
-
-    wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
-    )
-    wer = round(100 * wer, 2)
-    rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
-    print("WER:", wer, "%", "RTFx:", rtfx)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--model_id",
-        type=str,
-        required=True,
-        help="Model identifier. Should be loadable with 🤗 Transformers",
-    )
-    parser.add_argument(
-        "--dataset_path",
-        type=str,
-        default="esb/datasets",
-        help="Dataset path. By default, it is `esb/datasets`",
-    )
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        required=True,
-        help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
-    )
-    parser.add_argument(
-        "--split",
-        type=str,
-        default="test",
-        help="Split of the dataset. *E.g.* `'validation`' for the dev split, or `'test'` for the test split.",
-    )
-    parser.add_argument(
-        "--device",
-        type=int,
-        default=-1,
-        help="The device to run the pipeline on. -1 for CPU (default), 0 for the first GPU and so on.",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=1,
-        help="Number of samples to go through each streamed batch.",
-    )
-    parser.add_argument(
-        "--max_eval_samples",
-        type=int,
-        default=None,
-        help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
-    )
-    parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
-    )
-    parser.add_argument(
-        "--warmup_steps",
-        type=int,
-        default=10,
-        help="Number of warm-up steps to run before launching the timed runs.",
-    )
-    args = parser.parse_args()
-    parser.set_defaults(streaming=False)
-
-    main(args)
-
-```
-
-</details>
-
-4) Create one bash file per model type following the conversion `run_<model_type>.sh`.
-    - The bash script should follow the same steps as other libraries. You can copy the example for [run_whisper.sh](./transformers/run_whisper.sh) and update it to your library
-    - Different model sizes of the same type should share the script. For example `Wav2Vec` and `Wav2Vec2` would be two separate scripts, but different size of `Wav2Vec2` would be part of the same script.
-    - **Important:** for a given model, you can tune decoding hyper-parameters to maximize benchmark performance (e.g. batch size, beam size, etc.). However, you must use the **same decoding hyper-parameters** for each dataset in the benchmark. For more details, refer to the [ESB paper](https://arxiv.org/abs/2210.13352).
-5) Submit a PR for your changes.
-
-# Add a new model
-
-To add a model from a new library for evaluation in this benchmark, you can follow the steps noted above.
-
-To add a model from an existing library, we can simplify the steps to:
-
-1) If the model is already supported, but of a different size, simply add the new model size to the list of models run by the corresponding bash script.
-2) If the model is entirely new, create a new bash script based on others of that library and add the new model and its sizes to that script.
-3) Run the evaluation script to obtain a list of predictions for the new model on each of the datasets.
-4) Submit a PR for your changes.
+Please follow the [pull request template](./.github/PULL_REQUEST_TEMPLATE.md); it contains a submission checklist and guidelines.
 
 # Citation 
 

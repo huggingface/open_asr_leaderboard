@@ -17,7 +17,7 @@ import re
 import unicodedata
 from fractions import Fraction
 from typing import Iterator, List, Match, Optional, Union
-from .english_abbreviations import english_spelling_normalizer
+from .english_abbreviations import english_name_normalizer, english_spelling_normalizer, english_compound_normalizer
 
 import regex
 
@@ -525,9 +525,63 @@ class EnglishSpellingNormalizer:
         return " ".join(self.mapping.get(word, word) for word in s.split())
 
 
+class EnglishAcronymNormalizer:
+    """
+    Collapse sequences of single-character tokens (letters or digits) into single words.
+
+    This normalizes acronym spacing so that both spaced-out and joined forms match:
+        - "b b c" -> "bbc"
+        - "5 g" -> "5g"
+
+    Lone single-character words surrounded by multi-character words are left untouched
+    (e.g. "a big cat" stays "a big cat").
+    """
+
+    def __call__(self, s: str) -> str:
+        words = s.split()
+        result = []
+        i = 0
+        while i < len(words):
+            if len(words[i]) == 1 and words[i].isalnum():
+                # Start of a potential acronym run
+                run = [words[i]]
+                j = i + 1
+                while j < len(words) and len(words[j]) == 1 and words[j].isalnum():
+                    run.append(words[j])
+                    j += 1
+                # Require 3+ tokens if the run contains common words "a" or "i",
+                # otherwise 2+ is enough (e.g. "5 g" -> "5g")
+                has_common_word = any(c in ("a", "i") for c in run)
+                min_run = 3 if has_common_word else 2
+                if len(run) >= min_run:
+                    result.append("".join(run))
+                else:
+                    result.extend(run)
+                i = j
+            else:
+                result.append(words[i])
+                i += 1
+        return " ".join(result)
+
+
+class EnglishNameNormalizer:
+    """
+    Collapse common name spelling variants to a single canonical form.
+
+    This is intentionally conservative and token-based so it can be extended
+    with project-specific aliases when needed.
+    """
+
+    def __init__(self, english_name_mapping=english_name_normalizer):
+        self.mapping = english_name_mapping
+
+    def __call__(self, s: str):
+        return " ".join(self.mapping.get(word, word) for word in s.split())
+
+
 class EnglishTextNormalizer:
     def __init__(self, english_spelling_mapping=english_spelling_normalizer):
-        self.ignore_patterns = r"\b(hmm|mm|mhm|mmm|uh|um)\b"
+        self.ignore_patterns = r"\b(hmm|mm|mhm|mmm|uh|um|ah|aha|ahh|ahm|eh|ehehe|em|hm|huh|hum|mhum|uhm|umm|uhuh)\b"
         self.replacers = {
             # common contractions
             r"\bwon't\b": "will not",
@@ -576,7 +630,7 @@ class EnglishTextNormalizer:
             # general contractions
             r"n't\b": " not",
             r"'re\b": " are",
-            r"'s\b": " is",
+            r"\b(it|he|she|what|that|who|here|there|how|when|where|why|this)'s\b": r"\1 is",
             r"'d\b": " would",
             r"'ll\b": " will",
             r"'t\b": " not",
@@ -585,6 +639,10 @@ class EnglishTextNormalizer:
         }
         self.standardize_numbers = EnglishNumberNormalizer()
         self.standardize_spellings = EnglishSpellingNormalizer(english_spelling_mapping)
+        self.standardize_names = EnglishNameNormalizer()
+        self.standardize_acronyms = EnglishAcronymNormalizer()
+        # Multi-word compound mappings — defined in english_abbreviations.py
+        self.compound_words = english_compound_normalizer
 
     def __call__(self, s: str):
         s = s.lower()
@@ -601,8 +659,14 @@ class EnglishTextNormalizer:
         s = re.sub(r"\.([^0-9]|$)", r" \1", s)  # remove periods not followed by numbers
         s = remove_symbols_and_diacritics(s, keep=".%$¢€£")  # keep some symbols for numerics
 
+        # Normalize hardcoded compound words (e.g. "wi fi" -> "wifi" after hyphen removal)
+        for pattern, replacement in self.compound_words.items():
+            s = re.sub(pattern, replacement, s)
+
         s = self.standardize_numbers(s)
         s = self.standardize_spellings(s)
+        s = self.standardize_names(s)
+        s = self.standardize_acronyms(s)
 
         # now remove prefix/suffix symbols that are not preceded/followed by numbers
         s = re.sub(r"[.$¢€£]([^0-9])", r" \1", s)

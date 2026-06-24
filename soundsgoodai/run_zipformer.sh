@@ -23,10 +23,7 @@ python run_eval.py "${ARGS[@]}" --dataset="gigaspeech" --split="test"
 python run_eval.py "${ARGS[@]}" --dataset="librispeech" --split="test.clean"
 python run_eval.py "${ARGS[@]}" --dataset="librispeech" --split="test.other"
 python run_eval.py "${ARGS[@]}" --dataset="spgispeech" --split="test"
-python run_eval.py "${ARGS[@]}" --dataset="tedlium" --split="test"
 python run_eval.py "${ARGS[@]}" --dataset="voxpopuli" --split="test"
 
 RUNDIR=$(pwd)
-cd ../normalizer
-python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}')"
-cd "${RUNDIR}"
+PYTHONPATH="${RUNDIR}/..:${PYTHONPATH}" python -c "from normalizer.eval_utils import score_results; score_results('${RUNDIR}/results', '${MODEL_ID}')"

@@ -56,6 +56,7 @@ def main(args):
     
     asr_model.to(compute_dtype)
     asr_model.eval()
+    print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     # Load dataset using the HuggingFace dataset repository
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
@@ -171,13 +172,8 @@ def main(args):
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
     
-    references = all_data["references"] 
-    if LANGUAGE == "en": # English is handled by the English normalizer
-        references = [data_utils.normalizer(ref) for ref in references]
-        predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
-    else:
-        references = [data_utils.ml_normalizer(ref, lang=LANGUAGE) for ref in references]
-        predictions = [data_utils.ml_normalizer(pred.text, lang=LANGUAGE) for pred in transcriptions]
+    references = all_data["references"]  # raw
+    predictions = [pred.text for pred in transcriptions]  # raw; normalization applied at scoring time
 
     # Filter empty references (consistent with English pipeline)
     filtered = [
@@ -207,7 +203,13 @@ def main(args):
     print("Results saved at path:", os.path.abspath(manifest_path))
 
     # Calculate metrics
-    wer_refs, wer_preds = normalize_compound_pairs(references, predictions)
+    if LANGUAGE == "en":
+        norm_refs = [data_utils.normalizer(r) for r in references]
+        norm_preds = [data_utils.normalizer(p) for p in predictions]
+    else:
+        norm_refs = [data_utils.ml_normalizer(r, lang=LANGUAGE) for r in references]
+        norm_preds = [data_utils.ml_normalizer(p, lang=LANGUAGE) for p in predictions]
+    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
     wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
 
@@ -270,12 +272,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no-streaming",
-        dest='streaming',
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
 
     main(args) 

@@ -26,6 +26,7 @@ def main(args):
     tokenizer = processor.tokenizer
     model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16).to(device)
     model.eval()
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
 
     logits_scaling = getattr(model.language_model.config, 'logits_scaling', 1.0)
 
@@ -198,6 +199,9 @@ def main(args):
     def benchmark(batch):
         audios = [audio["array"] for audio in batch["audio"]]
         batch_sz = len(audios)
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, batch_sz)
 
         start_time = time.time()
 
@@ -239,8 +243,8 @@ def main(args):
         runtime = time.time() - start_time
 
         batch["transcription_time_s"] = [runtime / batch_sz] * batch_sz
-        batch["predictions"] = [data_utils.normalizer(p) for p in predictions]
-        batch["references"] = batch["norm_text"]
+        batch["predictions"] = predictions  # raw; normalization applied at scoring time
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
     # Load and process dataset
@@ -252,7 +256,7 @@ def main(args):
 
     dataset = dataset.map(benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"], desc="Processing")
 
-    all_results = {"audio_length_s": [], "transcription_time_s": [], "predictions": [], "references": []}
+    all_results = {"audio_length_s": [], "transcription_time_s": [], "predictions": [], "references": [], "audio_filepath": []}
     for result in tqdm(dataset, desc="Samples"):
         for key in all_results:
             all_results[key].append(result[key])
@@ -261,11 +265,14 @@ def main(args):
     manifest_path = data_utils.write_manifest(
         all_results["references"], all_results["predictions"], args.model_id,
         args.dataset_path, args.dataset, args.split,
-        audio_length=all_results["audio_length_s"], transcription_time=all_results["transcription_time_s"]
+        audio_length=all_results["audio_length_s"], transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at:", os.path.abspath(manifest_path))
 
-    wer = round(100 * wer_metric.compute(references=all_results["references"], predictions=all_results["predictions"]), 2)
+    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
+    wer = round(100 * wer_metric.compute(references=norm_refs, predictions=norm_preds), 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print(f"WER: {wer}%, RTFx: {rtfx}")
 
@@ -273,7 +280,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, required=True)
-    parser.add_argument("--dataset_path", type=str, default="esb/datasets")
+    parser.add_argument("--dataset_path", type=str, default="hf-audio/open-asr-leaderboard")
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--split", type=str, default="test")
     parser.add_argument("--device", type=int, default=-1)
@@ -283,7 +290,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--confidence_threshold", type=float, default=0.01)
     parser.add_argument("--ctc_threshold", type=float, default=0.5)
-    parser.add_argument("--no-streaming", dest="streaming", action="store_false")
+    parser.add_argument("--streaming", action="store_true", help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation.")
     args = parser.parse_args()
-    args.streaming = False
     main(args)

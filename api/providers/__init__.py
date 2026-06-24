@@ -16,6 +16,7 @@ class APIProvider(ABC):
         sample: dict,
         use_url: bool = False,
         language: str = "en",
+        prompt: Optional[str] = None,
     ) -> str:
         """Transcribe audio and return the text."""
         ...

@@ -20,8 +20,14 @@ load_dotenv()
 def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=20):
     API_URL = "https://datasets-server.huggingface.co/rows"
 
+    headers = {}
+    if os.environ.get("HF_TOKEN") is not None:
+        headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
+    else:
+        print("HF_TOKEN not set, might experience rate-limiting.")
+
     size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={dataset}&split={split}"
-    size_response = requests.get(size_url).json()
+    size_response = requests.get(size_url, headers=headers).json()
     total_rows = size_response["size"]["config"]["num_rows"]
     audio_urls = []
     for offset in tqdm(range(0, total_rows, batch_size), desc="Fetching audio URLs"):
@@ -36,12 +42,7 @@ def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=2
         retries = 0
         while retries <= max_retries:
             try:
-                headers = {}
-                if os.environ.get("HF_TOKEN") is not None:
-                    headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
-                else:
-                    print("HF_TOKEN not set, might experience rate-limiting.")
-                response = requests.get(API_URL, params=params)
+                response = requests.get(API_URL, params=params, headers=headers)
                 response.raise_for_status()
                 data = response.json()
                 yield from data["rows"]
@@ -135,10 +136,10 @@ def transcribe_dataset(
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
-                return None
+                transcription = ""
 
         else:
-            reference = sample.get("norm_text", "").strip() or " "
+            reference = sample.get("original_text", "").strip() or " "
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
                 sf.write(
                     tmpfile.name,
@@ -158,13 +159,10 @@ def transcribe_dataset(
                 )
             except Exception as e:
                 print(f"Failed to transcribe after retries: {e}")
-                os.unlink(tmp_path)
-                return None
+                transcription = ""
             finally:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
-                else:
-                    print(f"File {tmp_path} does not exist")
 
         transcription_time = time.time() - start
         return reference, transcription, audio_duration, transcription_time
@@ -178,21 +176,11 @@ def transcribe_dataset(
             total=len(future_to_sample),
             desc="Transcribing",
         ):
-            result = future.result()
-            if result:
-                reference, transcription, audio_duration, transcription_time = result
-                results["predictions"].append(transcription)
-                results["references"].append(reference)
-                results["audio_length_s"].append(audio_duration)
-                results["transcription_time_s"].append(transcription_time)
-
-    results["predictions"] = [
-        data_utils.normalizer(transcription) or " "
-        for transcription in results["predictions"]
-    ]
-    results["references"] = [
-        data_utils.normalizer(reference) or " " for reference in results["references"]
-    ]
+            reference, transcription, audio_duration, transcription_time = future.result()
+            results["predictions"].append(transcription)
+            results["references"].append(reference)
+            results["audio_length_s"].append(audio_duration)
+            results["transcription_time_s"].append(transcription_time)
 
     manifest_path = data_utils.write_manifest(
         results["references"],
@@ -207,9 +195,11 @@ def transcribe_dataset(
 
     print("Results saved at path:", manifest_path)
 
+    norm_refs = [data_utils.normalizer(r) or " " for r in results["references"]]
+    norm_preds = [data_utils.normalizer(p) or " " for p in results["predictions"]]
     wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(
-        references=results["references"], predictions=results["predictions"]
+        references=norm_refs, predictions=norm_preds
     )
     wer_percent = round(100 * wer, 2)
     rtfx = round(
