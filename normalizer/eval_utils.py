@@ -331,6 +331,14 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                 "voxpopuli_test":         ("Voxpopuli WER",  None),
             },
         ),
+        (
+            "extra",
+            "voxpopuli_cleaned",
+            "model,Voxpopuli Cleaned WER",
+            {
+                "voxpopuli_cleaned_aa_test": ("Voxpopuli Cleaned WER", None),
+            },
+        ),
     ]
 
     all_dataset_ids = " ".join(results.keys())
@@ -343,7 +351,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                         return result_val["wer"]
         return None
 
-    def print_csv_block(header, col_map, family_name=None):
+    def print_csv_block(header, col_map, family_key=None, family_name=None):
         csv_columns = [lbl for lbl, _grp in col_map.values()]
         # deduplicate while preserving order
         seen = set()
@@ -383,34 +391,38 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                 avg_conv           = round(sum(conversational_wers) / len(conversational_wers), 2) if conversational_wers else ""
                 print(f"{csv_model_label},{avg_overall},{avg_scripted},{avg_conv}," + ",".join(wer_cols))
             else:
-                # Compute RTFx only over the datasets that belong to this family block.
-                family_audio = sum(
-                    results[rk]["audio_length"]
-                    for ds_substr in col_map
-                    for rk in results
-                    if model_key.rstrip() in rk and ds_substr in rk and results[rk]["audio_length"] is not None
-                )
-                family_time = sum(
-                    results[rk]["inference_time"]
-                    for ds_substr in col_map
-                    for rk in results
-                    if model_key.rstrip() in rk and ds_substr in rk and results[rk]["inference_time"] is not None
-                )
-                rtfx_val = round(family_audio / family_time, 2) if family_time else ""
-                print(f"{csv_model_label},{rtfx_val},,,,,," + ",".join(wer_cols))
+                n_prefix = len(header.split(',')) - 1 - len(csv_columns)
+                if family_key == "public":
+                    family_audio = sum(
+                        results[rk]["audio_length"]
+                        for ds_substr in col_map
+                        for rk in results
+                        if model_key.rstrip() in rk and ds_substr in rk and results[rk]["audio_length"] is not None
+                    )
+                    family_time = sum(
+                        results[rk]["inference_time"]
+                        for ds_substr in col_map
+                        for rk in results
+                        if model_key.rstrip() in rk and ds_substr in rk and results[rk]["inference_time"] is not None
+                    )
+                    rtfx_val = round(family_audio / family_time, 2) if family_time else ""
+                    prefix_cols = [str(rtfx_val)] + [""] * (n_prefix - 1)
+                else:
+                    prefix_cols = [""] * n_prefix
+                print(",".join([csv_model_label] + prefix_cols + wer_cols))
 
         print("*" * 80)
 
     # ── Print one CSV block per detected family ───────────────────────────────
     for family_key, presence_substr, header, col_map in FAMILY_CONFIGS:
-        family_name = family_key.capitalize()  # "Appen", "Dataocean", "Public"
+        family_name = family_key.capitalize()  # "Appen", "Dataocean", "Public", "Extra"
         # Public block: print only if at least one public dataset key is found
         if presence_substr is None:
             has_public = any(ds_substr in all_dataset_ids for ds_substr in col_map)
             if has_public:
-                print_csv_block(header, col_map, family_name)
+                print_csv_block(header, col_map, family_key, family_name)
         else:
             if presence_substr in all_dataset_ids:
-                print_csv_block(header, col_map, family_name)
+                print_csv_block(header, col_map, family_key, family_name)
 
     return composite_wer, results
