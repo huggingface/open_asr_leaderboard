@@ -1,20 +1,81 @@
 import argparse
 import concurrent.futures
+import io
 import os
+import sys
 import tempfile
 import time
+from pathlib import Path
+
+import librosa
+import numpy as np
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import evaluate
 import soundfile as sf
+from datasets import Audio
 from dotenv import load_dotenv
 from gladiaio_sdk import GladiaClient
 from tqdm import tqdm
 
+from normalizer.data_utils import is_target_text_in_range, normalize
 from normalizer import data_utils
 
 load_dotenv()
 
 wer_metric = evaluate.load("wer")
+TARGET_SAMPLING_RATE = 16000
+
+
+def load_audio(audio_field, target_sr=TARGET_SAMPLING_RATE):
+    """Decode audio with soundfile to avoid torchcodec (broken on many macOS setups)."""
+    if not isinstance(audio_field, dict):
+        raise TypeError(f"Expected audio dict, got {type(audio_field)}")
+
+    if audio_field.get("array") is not None:
+        array = np.asarray(audio_field["array"], dtype=np.float32)
+        sr = audio_field["sampling_rate"]
+    elif audio_field.get("bytes") is not None:
+        array, sr = sf.read(io.BytesIO(audio_field["bytes"]), always_2d=False)
+    elif audio_field.get("path") is not None:
+        array, sr = sf.read(audio_field["path"], always_2d=False)
+    else:
+        raise ValueError(f"No decodable audio data in field: {audio_field.keys()}")
+
+    if array.ndim > 1:
+        array = array.mean(axis=1)
+
+    if sr != target_sr:
+        array = librosa.resample(array, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    return array, sr
+
+
+def load_data(args):
+    from datasets import load_dataset
+
+    return load_dataset(
+        args.dataset_path,
+        args.dataset,
+        split=args.split,
+        streaming=args.streaming,
+        token=True,
+    )
+
+
+def prepare_data(dataset, streaming):
+    if streaming:
+        dataset = dataset.decode(False)
+    dataset = dataset.cast_column(
+        "audio", Audio(sampling_rate=TARGET_SAMPLING_RATE, decode=False)
+    )
+    dataset = dataset.map(normalize)
+    dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
+    return dataset
 
 
 class GladiaTranscriber:
@@ -81,15 +142,16 @@ def transcribe_with_retry(
 
 def process_sample(transcriber: GladiaTranscriber, sample: dict):
     reference = sample.get("norm_text", "").strip() or " "
+    array, sr = load_audio(sample["audio"])
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
         sf.write(
             tmpfile.name,
-            sample["audio"]["array"],
-            sample["audio"]["sampling_rate"],
+            array,
+            sr,
             format="WAV",
         )
         tmp_path = tmpfile.name
-        audio_duration = len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
+        audio_duration = len(array) / sr
 
     start = time.time()
     try:
@@ -108,7 +170,7 @@ def process_sample(transcriber: GladiaTranscriber, sample: dict):
 def transcribe_dataset(args: argparse.Namespace) -> None:
     transcriber = GladiaTranscriber(language=args.language, region=args.region)
 
-    dataset = data_utils.load_data(args)
+    dataset = load_data(args)
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
         if args.streaming:
@@ -117,7 +179,7 @@ def transcribe_dataset(args: argparse.Namespace) -> None:
             dataset = dataset.select(
                 range(min(args.max_eval_samples, len(dataset)))
             )
-    dataset = data_utils.prepare_data(dataset)
+    dataset = prepare_data(dataset, streaming=args.streaming)
 
     if args.warmup_steps > 0:
         warmup_samples = list(
@@ -126,12 +188,12 @@ def transcribe_dataset(args: argparse.Namespace) -> None:
             else dataset.select(range(min(args.warmup_steps, len(dataset))))
         )
         if warmup_samples:
+            array, sr = load_audio(warmup_samples[0]["audio"])
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-                sample = warmup_samples[0]
                 sf.write(
                     tmpfile.name,
-                    sample["audio"]["array"],
-                    sample["audio"]["sampling_rate"],
+                    array,
+                    sr,
                     format="WAV",
                 )
                 warmup_path = tmpfile.name
@@ -260,6 +322,6 @@ if __name__ == "__main__":
         default=1,
         help="Number of warmup API calls before timed evaluation.",
     )
-    parser.set_defaults(streaming=True)
+    parser.set_defaults(streaming=False)
 
     transcribe_dataset(parser.parse_args())
