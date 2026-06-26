@@ -1,9 +1,9 @@
 #!/bin/bash
-# Local script to submit HF Jobs for Musci-ASR-2.4B evaluation.
+# Local script to submit HF Jobs for MOSS-Transcribe-preview-2B evaluation.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-musci}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-moss-transcribe}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
@@ -11,11 +11,11 @@ ORG_NAME="${ORG_NAME:-}"
 
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "Musci-research/Musci-ASR-2.4B"
+    "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
 )
 
 # Pin the model repo revision for trust_remote_code stability (in case remote code changes).
-MODEL_REVISION="${MODEL_REVISION:-18dd8264a5e7b79057b6a04ecfc7a03251d232e4}"
+MODEL_REVISION="${MODEL_REVISION:-c4b3988677df13c14e79d9db59f356ed761db366}"
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
