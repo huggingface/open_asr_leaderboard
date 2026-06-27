@@ -20,7 +20,7 @@ class AssemblyAIProvider(APIProvider):
         transcriber = aai.Transcriber()
 
         # Models like "universal-3-pro" use the newer speech_models (list) API
-        MULTI_MODEL_VARIANTS = {"universal-3-pro"}
+        MULTI_MODEL_VARIANTS = {"universal-3-pro", "universal-3-5-pro"}
         if model_variant in MULTI_MODEL_VARIANTS:
             config = aai.TranscriptionConfig(
                 speech_models=[model_variant],
