@@ -46,13 +46,13 @@ def get_provider(model_name: str) -> tuple[APIProvider, str]:
 
 
 # Auto-import all provider modules so they register themselves
-from . import speechmatics_provider
+# from . import speechmatics_provider
 from . import assemblyai_provider
-from . import openai_provider
-from . import elevenlabs_provider
-from . import revai_provider
-from . import aquavoice_provider
-from . import zoom_provider
+# from . import openai_provider
+# from . import elevenlabs_provider
+# from . import revai_provider
+# from . import aquavoice_provider
+# from . import zoom_provider
 from . import smallest_provider
-from . import reson8_provider
-from . import microsoft_azure_provider
+# from . import reson8_provider
+# from . import microsoft_azure_provider
