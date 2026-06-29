@@ -31,6 +31,7 @@ MODEL_CONFIGS=(
     # "openai/gpt-4o-mini-transcribe false  16"
     # "openai/whisper-1              false  16"
     # "assembly/universal-3-pro      false  4"   # `cpu-xl` needed for spgispeech
+    # "assembly/universal-3-5-pro    false  4"   # `cpu-xl` needed for spgispeech
     # "elevenlabs/scribe_v1          false  16"
     # "revai/machine                 false  8"
     # "revai/fusion                  false  8"

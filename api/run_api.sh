@@ -24,6 +24,7 @@ MODEL_CONFIGS=(
     # "openai/gpt-4o-mini-transcribe false  16"
     # "openai/whisper-1              false  16"
     # "assembly/universal-3-pro      false  4"
+    # "assembly/universal-3-5-pro    false  4"
     # "elevenlabs/scribe_v1          false  16"
     # "revai/machine                 false  4"
     # "revai/fusion                  false  4"
