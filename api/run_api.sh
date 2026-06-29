@@ -34,6 +34,7 @@ MODEL_CONFIGS=(
     # "reson8/resonant-1             false  16"
     # "reson8/resonant-1-flash       false  16"
     # "microsoft/azure-speech-05-2026  false  4"
+    "modulate/vfast   false  16"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
