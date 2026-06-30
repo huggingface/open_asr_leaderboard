@@ -1,1 +1,2 @@
 gladiaio-sdk
+python-dotenv
