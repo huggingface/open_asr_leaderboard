@@ -28,6 +28,8 @@ load_dotenv()
 
 wer_metric = evaluate.load("wer")
 TARGET_SAMPLING_RATE = 16000
+GLADIA_MODEL = "solaria-3"
+MODEL_ID = "gladia/solaria-3"
 
 
 def load_audio(audio_field, target_sr=TARGET_SAMPLING_RATE):
@@ -95,7 +97,10 @@ class GladiaTranscriber:
         self._warmed_up = False
 
     def _transcription_options(self) -> dict:
-        return {"language_config": {"languages": [self.language]}}
+        return {
+            "model": GLADIA_MODEL,
+            "language_config": {"languages": [self.language]},
+        }
 
     def transcribe_file(self, audio_path: str) -> str:
         response = self.client.prerecorded().transcribe(
@@ -168,6 +173,7 @@ def process_sample(transcriber: GladiaTranscriber, sample: dict):
 
 
 def transcribe_dataset(args: argparse.Namespace) -> None:
+    print(f"Using Gladia model: {GLADIA_MODEL} (manifest id: {MODEL_ID})")
     transcriber = GladiaTranscriber(language=args.language, region=args.region)
 
     dataset = load_data(args)
@@ -246,7 +252,7 @@ def transcribe_dataset(args: argparse.Namespace) -> None:
     manifest_path = data_utils.write_manifest(
         results["references"],
         results["predictions"],
-        args.model_id,
+        MODEL_ID,
         args.dataset_path,
         args.dataset,
         args.split,
@@ -270,13 +276,7 @@ def transcribe_dataset(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Evaluate Gladia Solaria on the Open ASR Leaderboard"
-    )
-    parser.add_argument(
-        "--model_id",
-        type=str,
-        default="gladia/solaria-3",
-        help="Model identifier used for result manifests.",
+        description="Evaluate Gladia Solaria-3 on the Open ASR Leaderboard"
     )
     parser.add_argument(
         "--dataset_path",

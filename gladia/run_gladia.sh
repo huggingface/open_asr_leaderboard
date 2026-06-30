@@ -24,7 +24,6 @@ for entry in "${EVAL_DATASETS[@]}"; do
     SPLIT="${entry##*:}"
 
     python run_eval.py \
-        --model_id="${MODEL_ID}" \
         --dataset_path="hf-audio/open-asr-leaderboard" \
         --dataset="${DATASET}" \
         --split="${SPLIT}" \
