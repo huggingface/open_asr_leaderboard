@@ -21,6 +21,7 @@ This is the normalization repo of Gladia: [github.com/gladiaio/normalization](ht
 ## Setup
 
 ```bash
+cd  gladia
 pip install -r ../requirements/requirements.txt
 pip install -r ../requirements/requirements_gladia.txt
 export GLADIA_API_KEY="your_api_key"
