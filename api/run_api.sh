@@ -12,6 +12,7 @@ export AZURE_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
 export ZOOM_API_KEY="your_api_key"
 export OPENAI_API_KEY="your_api_key"
+export MODULATE_API_KEY="your_api_key"
 
 export HF_TOKEN="your_api_key"
 RESULTS_BUCKET="${RESULTS_BUCKET:-}"
@@ -34,7 +35,7 @@ MODEL_CONFIGS=(
     # "reson8/resonant-1             false  16"
     # "reson8/resonant-1-flash       false  16"
     # "microsoft/azure-speech-05-2026  false  4"
-    "modulate/vfast   false  16"
+    "modulate/vfast   false  100"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
