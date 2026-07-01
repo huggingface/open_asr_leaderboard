@@ -5,3 +5,4 @@ openai
 elevenlabs
 rev-ai
 requests-toolbelt
+gladiaio-sdk
