@@ -55,3 +55,4 @@ from . import zoom_provider
 from . import smallest_provider
 from . import reson8_provider
 from . import microsoft_azure_provider
+from . import gladia_provider

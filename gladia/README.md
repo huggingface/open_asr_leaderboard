@@ -1,10 +1,10 @@
 # Gladia Solaria
 
-[Gladia Solaria](https://www.gladia.io/) is a cloud speech-to-text API. We evaluate here the **Solaria-3** model on the [Open ASR Leaderboard](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard) using the official [gladiaio-sdk](https://pypi.org/project/gladiaio-sdk/).
+[Gladia Solaria](https://www.gladia.io/) is a cloud speech-to-text API. 
 
-Results below come from Gladia's [open benchmark methodology](https://www.gladia.io/competitors/benchmarks)
+Results below are for **Solaria-3**, from Gladia's [open benchmark methodology](https://www.gladia.io/competitors/benchmarks).
 
-## Benchmark results (WER %, lower is better)
+## Solaria-3 benchmark results (WER %, lower is better)
 
 | Dataset | WER |
 | --- | --- |
@@ -21,29 +21,37 @@ This is the normalization repo of Gladia: [github.com/gladiaio/normalization](ht
 ## Setup
 
 ```bash
-cd  gladia
+cd gladia
 pip install -r ../requirements/requirements.txt
-pip install -r ../requirements/requirements_gladia.txt
+pip install -r ../requirements/requirements-api.txt
 export GLADIA_API_KEY="your_api_key"
-export HF_TOKEN="hf_your_key" 
+export HF_TOKEN="hf_your_key"
 ```
 
 ## Run evaluation
 
-Single dataset:
+Single dataset (from the `gladia/` directory):
 
 ```bash
-python run_eval.py \
+python ../api/run_eval.py \
+    --dataset_path="hf-audio/open-asr-leaderboard" \
     --dataset="librispeech" \
     --split="test.clean" \
-    --max_eval_samples=64 \
+    --model_name="gladia/solaria-3" \
+    --max_samples=64 \
     --max_workers=5
 ```
-
-By default the script downloads the dataset locally (`--no-streaming`) and decodes audio with `soundfile`.
 
 All Open ASR Leaderboard subsets:
 
 ```bash
 bash run_gladia.sh
 ```
+
+The Gladia provider lives in [`api/providers/gladia_provider.py`](../api/providers/gladia_provider.py).
+
+### Adding a new model variant
+
+1. Register the variant in `api/providers/gladia_provider.py` (`MODEL_ALIASES`) if the leaderboard id differs from the Gladia API model name.
+2. Add `gladia/<variant>` to the `MODEL_IDs` array in `run_gladia.sh`.
+3. Run `bash run_gladia.sh` (or pass `--model_name="gladia/<variant>"` to `../api/run_eval.py` for a single dataset).

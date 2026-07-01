@@ -1,2 +1,0 @@
-gladiaio-sdk
-python-dotenv

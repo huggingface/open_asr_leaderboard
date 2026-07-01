@@ -230,7 +230,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_name",
         required=True,
-        help="Prefix model name with provider prefix (e.g., 'assembly/', 'openai/', 'elevenlabs/', 'revai/', 'speechmatics/' or 'aquavoice/')",
+        help="Prefix model name with provider prefix (e.g., 'assembly/', 'openai/', 'elevenlabs/', 'gladia/', 'revai/', 'speechmatics/' or 'aquavoice/')",
     )
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument(
