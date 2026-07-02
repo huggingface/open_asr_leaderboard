@@ -5,6 +5,7 @@ export PYTHONPATH="..":$PYTHONPATH
 export OPENAI_API_KEY="your_api_key"
 export ASSEMBLYAI_API_KEY="your_api_key"
 export ELEVENLABS_API_KEY="your_api_key"
+export GLADIA_API_KEY="your_api_key"
 export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
 export ZOOM_API_KEY="your_api_key"
@@ -20,6 +21,7 @@ MODEL_IDs=(
     # "openai/whisper-1"
     # "assembly/universal-3-pro"
     # "elevenlabs/scribe_v1"
+    # "gladia/solaria-3"
     # "revai/machine" # please use --use_url=True
     # "revai/fusion" # please use --use_url=True
     # "speechmatics/enhanced"

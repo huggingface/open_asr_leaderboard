@@ -1,7 +1,7 @@
 torch
 transformers
 evaluate
-datasets<=4.0.0
+datasets
 torchcodec
 librosa
 jiwer
