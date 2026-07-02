@@ -7,7 +7,7 @@ SOURCE="speechbrain/asr-crdnn-transformerlm-librispeech"
 python run_eval.py \
   --source=$SOURCE \
   --speechbrain_pretrained_class_name="EncoderDecoderASR" \
-  --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+  --dataset_path="hf-audio/open-asr-leaderboard" \
   --dataset="librispeech" \
   --split="test.clean" \
   --device=0 \
@@ -17,7 +17,7 @@ python run_eval.py \
 python run_eval.py \
   --source=$SOURCE \
   --speechbrain_pretrained_class_name="EncoderDecoderASR" \
-  --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
+  --dataset_path="hf-audio/open-asr-leaderboard" \
   --dataset="librispeech" \
   --split="test.other" \
   --device=0 \

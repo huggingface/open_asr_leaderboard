@@ -32,6 +32,7 @@ def main(args):
         max_inference_batch_size=args.batch_size,
         max_new_tokens=args.max_new_tokens,
     )
+    print(f"Model size: {sum(p.numel() for p in model.model.parameters()) / 1e9:.2f}B parameters")
 
     # Load dataset using the HuggingFace dataset repository
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
@@ -82,12 +83,8 @@ def main(args):
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-        # Get references from the dataset
-        batch["references"] = batch["text"]
-
-        # Normalize transcriptions with multilingual normalizer
-        batch["predictions"] = [data_utils.ml_normalizer(pred, lang=LANGUAGE) for pred in pred_text]
-        batch["references"] = [data_utils.ml_normalizer(ref, lang=LANGUAGE) for ref in batch["references"]]
+        batch["predictions"] = pred_text  # raw; normalization applied at scoring time
+        batch["references"] = batch["text"]  # raw; normalization applied at scoring time
 
         return batch
 
@@ -157,7 +154,9 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer_refs, wer_preds = normalize_compound_pairs(all_results["references"], all_results["predictions"])
+    norm_refs = [data_utils.ml_normalizer(r, lang=LANGUAGE) for r in all_results["references"]]
+    norm_preds = [data_utils.ml_normalizer(p, lang=LANGUAGE) for p in all_results["predictions"]]
+    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
     wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
@@ -216,10 +215,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--max_new_tokens",
@@ -234,6 +232,5 @@ if __name__ == "__main__":
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=False)
 
     main(args)

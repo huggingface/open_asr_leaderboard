@@ -44,6 +44,7 @@ def main(args):
         asr_model.change_attention_model("rel_pos_local_attn", [128, 128])  # local attn
     asr_model.to(compute_dtype)
     asr_model.eval()
+    print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     dataset = data_utils.load_data(args)
 
@@ -77,7 +78,7 @@ def main(args):
             durations.append(len(audio_array) / sample_rate)
 
         
-        batch["references"] = batch["norm_text"]
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         batch["audio_filepaths"] = audio_paths
         batch["durations"] = durations
 
@@ -138,10 +139,9 @@ def main(args):
             total_time += end_time - start_time
     total_time = total_time
 
-    # normalize transcriptions with English normalizer
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
-    predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
+    predictions = [pred.text for pred in transcriptions]  # raw; normalization applied at scoring time
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
@@ -159,7 +159,9 @@ def main(args):
 
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(references=all_data['references'], predictions=predictions)
+    norm_refs = [data_utils.normalizer(r) for r in all_data['references']]
+    norm_preds = [data_utils.normalizer(p) for p in predictions]
+    wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
     wer = round(100 * wer, 2)
 
     # transcription_time = sum(all_results["transcription_time"])
@@ -178,14 +180,14 @@ if __name__ == "__main__":
         "--model_id", type=str, required=True, help="Model identifier. Should be loadable with NVIDIA NeMo.",
     )
     parser.add_argument(
-        '--dataset_path', type=str, default='esb/datasets', help='Dataset path. By default, it is `esb/datasets`'
+        '--dataset_path', type=str, default='hf-audio/open-asr-leaderboard', help='Dataset path. By default, it is `hf-audio/open-asr-leaderboard`'
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--split",
@@ -209,10 +211,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest='streaming',
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--longform",
@@ -220,6 +221,5 @@ if __name__ == "__main__":
         help="Whether to use longform mode.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
 
     main(args)

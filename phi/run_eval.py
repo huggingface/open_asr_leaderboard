@@ -42,13 +42,23 @@ class MultipleTokenBatchStoppingCriteria(StoppingCriteria):
 
 
 def main(args):
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-        _attn_implementation="flash_attention_2",
-    ).to(args.device)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            _attn_implementation="flash_attention_2",
+        ).to(args.device)
+    except Exception as e:
+        print(f"Flash Attention 2 not available, falling back to eager attention: {e}")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            _attn_implementation="eager",
+        ).to(args.device)
     model.eval()
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
 
     user = "<|user|>"
@@ -67,6 +77,8 @@ def main(args):
         # Load audio inputs
         audios = [(audio["array"], audio["sampling_rate"]) for audio in batch["audio"]]
         minibatch_size = len(audios)
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
+        batch["audio_length_s"] = [len(audio["array"]) / audio["sampling_rate"] for audio in batch["audio"]]
         gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
             [MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=args.num_beams * minibatch_size)]
         )
@@ -109,9 +121,8 @@ def main(args):
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-        # normalize transcriptions with English normalizer
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
-        batch["references"] = batch["norm_text"]
+        batch["predictions"] = pred_text  # raw; normalization applied at scoring time
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
     if args.warmup_steps is not None:
@@ -146,6 +157,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -162,11 +174,14 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
+    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
     wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
+        references=norm_refs, predictions=norm_preds
     )
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
@@ -185,15 +200,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="esb/datasets",
-        help="Dataset path. By default, it is `esb/datasets`",
+        default="hf-audio/open-asr-leaderboard",
+        help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--split",
@@ -226,10 +241,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--max_new_tokens",
@@ -250,6 +264,5 @@ if __name__ == "__main__":
         help="User prompt string.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=False)
 
     main(args)

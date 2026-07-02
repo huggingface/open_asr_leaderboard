@@ -1,0 +1,8 @@
+huggingface_hub[cli]
+transformers>=4.40.0
+evaluate
+datasets
+jiwer
+regex
+num2words
+kaldialign==0.12.0

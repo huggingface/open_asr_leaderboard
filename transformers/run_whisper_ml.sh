@@ -40,11 +40,12 @@ run_evaluation() {
     echo "   Time: $(date)"
     echo "----------------------------------------"
 
+    # Note: --language is not passed so the model auto-detects the language.
+    # To force a language, add: --language="$language"
     python run_eval_ml.py \
         --model_id="$model_id" \
         --dataset="$DATASETS" \
         --config_name="$config_name" \
-        --language="$language" \
         --split="test" \
         --device="$DEVICE_ID" \
         --batch_size="$BATCH_SIZE" \

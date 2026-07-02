@@ -40,6 +40,7 @@ def main(args):
         _attn_implementation="sdpa",
     ).to(args.device)
     model.eval()
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
 
     user = "<|user|>"
@@ -88,6 +89,7 @@ def main(args):
         audios = [(audio["array"], audio["sampling_rate"]) for audio in batch["audio"]]
         batch["audio_length_s"] = [len(audio[0]) / audio[1] for audio in audios]
         minibatch_size = len(audios)
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
         gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
             [MultipleTokenBatchStoppingCriteria(stop_tokens_ids, batch_size=args.num_beams * minibatch_size)]
         )
@@ -125,9 +127,8 @@ def main(args):
 
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-        # Normalize with multilingual normalizer
-        batch["predictions"] = [data_utils.ml_normalizer(pred, lang=LANGUAGE) for pred in pred_text]
-        batch["references"] = [data_utils.ml_normalizer(ref, lang=LANGUAGE) for ref in batch["text"]]
+        batch["predictions"] = pred_text  # raw; normalization applied at scoring time
+        batch["references"] = batch["text"]  # raw; normalization applied at scoring time
 
         return batch
 
@@ -170,6 +171,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
 
     result_iter = iter(dataset)
@@ -179,15 +181,16 @@ def main(args):
 
     # Filter empty references (consistent with English pipeline)
     filtered = [
-        (ref, pred, dur, time_s)
-        for ref, pred, dur, time_s in zip(
+        (ref, pred, dur, time_s, afp)
+        for ref, pred, dur, time_s, afp in zip(
             all_results["references"], all_results["predictions"],
-            all_results["audio_length_s"], all_results["transcription_time_s"]
+            all_results["audio_length_s"], all_results["transcription_time_s"],
+            all_results["audio_filepath"],
         )
         if data_utils.is_target_text_in_range(ref)
     ]
     if filtered:
-        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"] = zip(*filtered)
+        all_results["references"], all_results["predictions"], all_results["audio_length_s"], all_results["transcription_time_s"], all_results["audio_filepath"] = zip(*filtered)
         all_results = {k: list(v) for k, v in all_results.items()}
 
     # Write manifest results (WER and RTFX)
@@ -200,10 +203,13 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer_refs, wer_preds = normalize_compound_pairs(all_results["references"], all_results["predictions"])
+    norm_refs = [data_utils.ml_normalizer(r, lang=LANGUAGE) for r in all_results["references"]]
+    norm_preds = [data_utils.ml_normalizer(p, lang=LANGUAGE) for p in all_results["predictions"]]
+    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
     wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
@@ -268,10 +274,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--max_new_tokens",
@@ -292,6 +297,5 @@ if __name__ == "__main__":
         help="User prompt string.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=False)
 
     main(args)

@@ -61,20 +61,28 @@ def get_model(
 
     run_opts = {**run_opt_defaults}
 
-    overrides = {}
+    overrides_dict = {}
     if beam_size:
-        overrides["test_beam_size"] = beam_size
-    
-    if ctc_weight_decode == 0.0:
-        overrides["scorer"] = None
-    overrides["ctc_weight_decode"] = ctc_weight_decode
+        overrides_dict["test_beam_size"] = beam_size
+    if ctc_weight_decode is not None:
+        overrides_dict["ctc_weight_decode"] = ctc_weight_decode
+
+    # Build overrides as a YAML string so hyperpyyaml applies them during
+    # parsing (before class imports), preventing ImportError for missing classes.
+    override_lines = []
+    if ctc_weight_decode is not None and ctc_weight_decode == 0.0:
+        override_lines.append("scorer: null")
+    for k, v in overrides_dict.items():
+        override_lines.append(f"{k}: {v}")
+    overrides_str = "\n".join(override_lines) if override_lines else None
 
     kwargs = {
         "source": f"{speechbrain_repository}",
         "savedir": f"pretrained_models/{speechbrain_repository}",
         "run_opts": run_opts,
-        "overrides": overrides,
     }
+    if overrides_str:
+        kwargs["overrides"] = overrides_str
 
     try:
         model_class = getattr(ASR, speechbrain_pretrained_class_name)
@@ -100,11 +108,15 @@ def main(args):
         args.ctc_weight_decode, 
         device=device
     )
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
 
     def benchmark(batch):
         # Load audio inputs
         audios = [torch.from_numpy(sample["array"]) for sample in batch["audio"]]
         minibatch_size = len(audios)
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(sample["array"]) / sampling_rate for sample in batch["audio"]]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         audios, audio_lens = batch_pad_right(audios)
         audios = audios.to(device)
@@ -117,9 +129,8 @@ def main(args):
 
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-        # normalize transcriptions with English normalizer
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in predictions]
-        batch["references"] = batch["norm_text"]
+        batch["predictions"] = predictions  # raw; normalization applied at scoring time
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
 
@@ -155,6 +166,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -171,12 +183,15 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
     wer_metric = evaluate.load("wer")
+    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
     wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
+        references=norm_refs, predictions=norm_preds
     )
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
@@ -203,15 +218,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="hf-audio/esb-datasets-test-only-sorted",
-        help="Dataset path. By default, it is `esb/datasets`",
+        default="hf-audio/open-asr-leaderboard",
+        help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--split",
@@ -238,10 +253,9 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest="streaming",
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     parser.add_argument(
         "--warmup_steps",
@@ -258,10 +272,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ctc_weight_decode",
         type=float,
-        default=0.3,
-        help="Weight of CTC for joint CTC/Att. decoding"
+        default=None,
+        help="Weight of CTC for joint CTC/Att. decoding. Only pass for models that support it (e.g. EncoderDecoderASR)."
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
 
     main(args)

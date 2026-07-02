@@ -7,16 +7,26 @@ import numpy as np
 from normalizer import data_utils
 from tqdm import tqdm
 from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
+from huggingface_hub import snapshot_download
 
 wer_metric = evaluate.load("wer")
 
 
 def main(args):
+    model_source = args.model_id
+    if args.revision is not None:
+        model_source = snapshot_download(repo_id=args.model_id, revision=args.revision)
+
     feature_extractor = AutoFeatureExtractor.from_pretrained(
-        args.model_id, trust_remote_code=True
+        model_source, trust_remote_code=True
     ).cuda()
-    model = AutoModel.from_pretrained(args.model_id, trust_remote_code=True).cuda()
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        model_source, trust_remote_code=True
+    ).cuda()
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_source, trust_remote_code=True
+    )
 
     def get_sub_batch_output(sub_batch):
         """Get output from model on sub batch."""
@@ -39,6 +49,10 @@ def main(args):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
         start_time = time.time()
@@ -89,9 +103,8 @@ def main(args):
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-        # normalize transcriptions with English normalizer
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
-        batch["references"] = batch["norm_text"]
+        batch["predictions"] = pred_text  # raw; normalization applied at scoring time
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
     if args.warmup_steps is not None:
@@ -133,6 +146,7 @@ def main(args):
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
@@ -149,11 +163,14 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
+    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
     wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
+        references=norm_refs, predictions=norm_preds
     )
     wer = round(100 * wer, 2)
     rtfx = round(
@@ -174,15 +191,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="esb/datasets",
-        help="Dataset path. By default, it is `esb/datasets`",
+        default="hf-audio/open-asr-leaderboard",
+        help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--split",
@@ -219,6 +236,12 @@ if __name__ == "__main__":
         type=int,
         default=int(1e6),
         help="Maximum number of audio samples per sub batch (set based on available GPU memory).",
+    )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Model revision to use (branch, tag, or commit hash). Defaults to the model's default revision.",
     )
     args = parser.parse_args()
 
