@@ -21,22 +21,25 @@ export OPENAI_API_KEY="your_api_key"
 export HF_TOKEN="your_api_key"
 RESULTS_BUCKET="${RESULTS_BUCKET:-}"
 
-MODEL_IDs=(
-    # "openai/gpt-4o-transcribe"
-    # "openai/gpt-4o-mini-transcribe"
-    # "openai/whisper-1"
-    # "assembly/universal-3-pro"
-    # "elevenlabs/scribe_v1"
-    # "gladia/solaria-3"
-    # "revai/machine" # please use --use_url=True
-    # "revai/fusion" # please use --use_url=True
-    # "speechmatics/enhanced"
-    # "aquavoice/avalon-v1-en"
-    # "zoom/scribe_v1" # please use --use_url
-    # "smallestai/pulse" # please use --use_url
-    "reson8/resonant-1" # please use --use_url
-    "reson8/resonant-1-flash" # please use --use_url
-    "microsoft/azure-speech-05-2026"
+# ── Models: "model_id use_url max_workers" ───────────────────────────────────
+# use_url=true  → provider receives a remote audio URL (revai, zoom)
+# use_url=false → provider receives a local audio file (all others)
+MODEL_CONFIGS=(
+    # "openai/gpt-4o-transcribe      false  16"
+    # "openai/gpt-4o-mini-transcribe false  16"
+    # "openai/whisper-1              false  16"
+    # "assembly/universal-3-pro      false  4"
+    # "elevenlabs/scribe_v1          false  16"
+    # "revai/machine                 false  4"
+    # "revai/fusion                  false  4"
+    # "speechmatics/enhanced         false  4"
+    # "aquavoice/avalon-v1-en        false  5"
+    # "zoom/scribe_v1                false  32"
+    # "smallestai/pulse              false  16"
+    # "gladia/solaria-3             false  25"
+    # "reson8/resonant-1             false  16"
+    # "reson8/resonant-1-flash       false  16"
+    # "microsoft/azure-speech-05-2026  false  4"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
