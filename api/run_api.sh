@@ -2,11 +2,7 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-export OPENAI_API_KEY="your_api_key"
-export ASSEMBLYAI_API_KEY="your_api_key"
-export ELEVENLABS_API_KEY="your_api_key"
 export GLADIA_API_KEY="your_api_key"
-export REVAI_API_KEY="your_api_key"
 export AQUAVOICE_API_KEY="your_api_key"
 export ELEVENLABS_API_KEY="your_api_key"
 export ASSEMBLYAI_API_KEY="your_api_key"
