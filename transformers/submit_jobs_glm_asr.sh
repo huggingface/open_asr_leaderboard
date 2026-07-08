@@ -17,10 +17,10 @@ MODEL_IDs=(
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test 64"
-    "ami test 64"
+    "ami_cleaned test 64"
+    "gigaspeech_cleaned test 64"
+    "voxpopuli_cleaned_aa test 64"
     "earnings22 test 64"
-    "gigaspeech test 64"
     "librispeech test.clean 64"
     "librispeech test.other 64"
     "spgispeech test 64"

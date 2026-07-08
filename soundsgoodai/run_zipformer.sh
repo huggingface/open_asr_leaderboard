@@ -17,13 +17,13 @@ ARGS=(
     --max_eval_samples=-1
 )
 
-python run_eval.py "${ARGS[@]}" --dataset="ami" --split="test"
+python run_eval.py "${ARGS[@]}" --dataset="ami_cleaned" --split="test"
 python run_eval.py "${ARGS[@]}" --dataset="earnings22" --split="test"
-python run_eval.py "${ARGS[@]}" --dataset="gigaspeech" --split="test"
+python run_eval.py "${ARGS[@]}" --dataset="gigaspeech_cleaned" --split="test"
 python run_eval.py "${ARGS[@]}" --dataset="librispeech" --split="test.clean"
 python run_eval.py "${ARGS[@]}" --dataset="librispeech" --split="test.other"
 python run_eval.py "${ARGS[@]}" --dataset="spgispeech" --split="test"
-python run_eval.py "${ARGS[@]}" --dataset="voxpopuli" --split="test"
+python run_eval.py "${ARGS[@]}" --dataset="voxpopuli_cleaned_aa" --split="test"
 
 RUNDIR=$(pwd)
 PYTHONPATH="${RUNDIR}/..:${PYTHONPATH}" python -c "from normalizer.eval_utils import score_results; score_results('${RUNDIR}/results', '${MODEL_ID}')"

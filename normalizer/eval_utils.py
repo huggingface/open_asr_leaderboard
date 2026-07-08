@@ -141,7 +141,7 @@ def write_manifest(
     return manifest_path
 
 
-def score_results(directory: str, model_id: str = None, multilingual: bool = False, csv_only: bool = False, language: str = "en"):
+def score_results(directory: str, model_id: str = None, multilingual: bool = False, csv_only: bool = False, language: str = "en", families: list = None):
     """
     Scores all result files in a directory and returns a composite score over all evaluated datasets.
 
@@ -153,6 +153,9 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         csv_only: If True, suppress all output except the CSV summary block.
         language: Language code used for normalization (e.g. 'en', 'de', 'fr').
                   When not 'en', ml_normalizer is used instead of the English normalizer.
+        families: Optional list of family keys ("appen", "dataocean", "public", "extra")
+                  restricting which CSV summary blocks are printed. None prints all
+                  detected families.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -320,23 +323,26 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
             "public",
             None,   # always printed when public datasets are present
             "model,RTFx,License,Size (B),# Languages,Encoder,Decoder,"
-            "AMI WER,Earnings22 WER,Gigaspeech WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli WER",
+            "AMI-Cleaned WER,Earnings22 WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli-Cleaned-AA WER",
             {
-                "ami_test":               ("AMI WER",        None),
-                "earnings22_test":        ("Earnings22 WER", None),
-                "gigaspeech_test":        ("Gigaspeech WER", None),
-                "librispeech_test.clean": ("LS Clean WER",   None),
-                "librispeech_test.other": ("LS Other WER",   None),
-                "spgispeech_test":        ("SPGISpeech WER", None),
-                "voxpopuli_test":         ("Voxpopuli WER",  None),
+                
+                "ami_cleaned_test":          ("AMI-Cleaned WER",        None),
+                "earnings22_test":           ("Earnings22 WER", None),
+                "gigaspeech_cleaned_test":   ("Gigaspeech-Cleaned WER", None),
+                "librispeech_test.clean":    ("LS Clean WER",   None),
+                "librispeech_test.other":    ("LS Other WER",   None),
+                "spgispeech_test":           ("SPGISpeech WER", None),
+                "voxpopuli_cleaned_aa_test": ("Voxpopuli-Cleaned-AA WER",  None),
             },
         ),
         (
             "extra",
-            "voxpopuli_cleaned",
-            "model,Voxpopuli Cleaned WER",
+            "_cleaned",
+            "model,AMI WER,Gigaspeech WER,Voxpopuli WER",
             {
-                "voxpopuli_cleaned_aa_test": ("Voxpopuli Cleaned WER", None),
+                "ami_test":               ("AMI WER",        None),
+                "gigaspeech_test":        ("Gigaspeech WER", None),
+                "voxpopuli_test":         ("Voxpopuli WER",  None),
             },
         ),
     ]
@@ -415,6 +421,8 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
 
     # ── Print one CSV block per detected family ───────────────────────────────
     for family_key, presence_substr, header, col_map in FAMILY_CONFIGS:
+        if families is not None and family_key not in families:
+            continue
         family_name = family_key.capitalize()  # "Appen", "Dataocean", "Public", "Extra"
         # Public block: print only if at least one public dataset key is found
         if presence_substr is None:

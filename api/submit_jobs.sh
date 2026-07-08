@@ -31,10 +31,11 @@ MODEL_CONFIGS=(
     # "openai/gpt-4o-mini-transcribe false  16"
     # "openai/whisper-1              false  16"
     # "assembly/universal-3-pro      false  4"   # `cpu-xl` needed for spgispeech
+    # "assembly/universal-3-5-pro    false  4"   # `cpu-xl` needed for spgispeech
     # "elevenlabs/scribe_v1          false  16"
     # "revai/machine                 false  8"
     # "revai/fusion                  false  8"
-    # "speechmatics/enhanced         false  16"    # # `cpu-xl` needed for spgispeech
+    # "speechmatics/enhanced         false  8"    # # `cpu-xl` needed for spgispeech
     # "aquavoice/avalon-v1-en        false  16"
     # "zoom/scribe_v1                false  32"
     # "microsoft/azure-speech-05-2026  false  4"
@@ -44,13 +45,13 @@ MODEL_CONFIGS=(
 
 # ── Datasets ──────────────────────────────────────────────────────────────────
 DATASET_CONFIGS=(
-    "ami test"
+    "ami_cleaned test"
     "earnings22 test"
-    "gigaspeech test"
+    "gigaspeech_cleaned test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "voxpopuli test"
+    "voxpopuli_cleaned_aa test"
 )
 
 # Datasets that require a lexical-format prompt for microsoft models

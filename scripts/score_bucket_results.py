@@ -6,6 +6,8 @@ Usage:
     python scripts/score_bucket_results.py --bucket bezzam/asr_leaderboard
     python scripts/score_bucket_results.py --bucket bezzam/asr_leaderboard --local_dir results
     python scripts/score_bucket_results.py --skip_sync   # re-score already-downloaded results
+    python scripts/score_bucket_results.py --family appen --family dataocean   # non-default families
+    python scripts/score_bucket_results.py --family all  # every detected family
 """
 
 import argparse
@@ -42,7 +44,7 @@ def main():
     parser.add_argument(
         "--bucket",
         default="hf-audio/asr_leaderboard_h200",
-        help="HF bucket name (without the hf://buckets/ prefix). Default: hf-audio/asr_leaderboard",
+        help="HF bucket name (without the hf://buckets/ prefix). Default: hf-audio/asr_leaderboard_h200",
     )
     parser.add_argument(
         "--local_dir",
@@ -58,6 +60,15 @@ def main():
         "--hf_token",
         default=os.environ.get("HF_TOKEN"),
         help="HuggingFace token for private buckets. Defaults to $HF_TOKEN env var.",
+    )
+    parser.add_argument(
+        "--family",
+        action="append",
+        default="public",
+        choices=["appen", "dataocean", "public", "extra", "all"],
+        metavar="FAMILY",
+        help="Dataset family to include in the CSV summary (can be repeated). "
+             "Choices: appen, dataocean, public, extra, all. Defaults to public.",
     )
     parser.add_argument(
         "--model_id",
@@ -81,11 +92,15 @@ def main():
         print(f"ERROR: Local results directory not found: {local_dir}", file=sys.stderr)
         sys.exit(1)
 
+    families = args.family or ["public"]
+    if "all" in families:
+        families = None  # None means all families
+
     # Score the requested models; csv_only=True suppresses per-dataset and
     # composite output, printing only the CSV summary block.
     model_ids = args.model_id or [None]  # None means all models
     for model_id in model_ids:
-        score_results(local_dir, model_id=model_id, csv_only=True)
+        score_results(local_dir, model_id=model_id, csv_only=True, families=families)
 
 
 if __name__ == "__main__":

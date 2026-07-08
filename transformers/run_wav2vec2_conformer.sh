@@ -12,14 +12,13 @@ MODEL_IDs=(
 
 # ── Datasets: "name split" (comment / uncomment to select) ──────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test"
-    "ami test"
+    "ami_cleaned test"
+    "gigaspeech_cleaned test"
+    "voxpopuli_cleaned_aa test"
     "earnings22 test"
-    "gigaspeech test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "tedlium test"
 )
 
 for MODEL_ID in "${MODEL_IDs[@]}"; do

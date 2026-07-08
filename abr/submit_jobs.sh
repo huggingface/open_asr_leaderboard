@@ -20,13 +20,13 @@ MODEL_CONFIGS=(
 
 # ── Datasets: "name split" ────────────────────────────────────────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test"
-    "ami test"
+    "ami_cleaned test"
     "earnings22 test"
-    "gigaspeech test"
+    "gigaspeech_cleaned test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
+    "voxpopuli_cleaned_aa test"
 )
 
 # ── Submit one job per model/dataset combination ─────────────────────────────

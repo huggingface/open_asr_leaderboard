@@ -9,19 +9,18 @@ DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
-# ── Models: "model_id batch_size voxpopuli_batch_size" ───────────────────────
+# ── Models: "model_id batch_size" ────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "bosonai/higgs-audio-v3-8b-stt-v2 64 32"
-    "bosonai/higgs-audio-v3-stt        32 16"
+    "bosonai/higgs-audio-v3-8b-stt-v2 64"
+    "bosonai/higgs-audio-v3-stt        32"
 )
 
 # ── Datasets: "name split" ───────────────────────────────────────────────────
-# VoxPopuli batch size is set per-model in MODEL_CONFIGS (3rd field).
 DATASET_CONFIGS=(
-    "voxpopuli test"
-    "ami test"
+    "ami_cleaned test"
+    "gigaspeech_cleaned test"
+    "voxpopuli_cleaned_aa test"
     "earnings22 test"
-    "gigaspeech test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
@@ -29,8 +28,7 @@ DATASET_CONFIGS=(
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE VOX_BATCH_SIZE <<< "$model_cfg"
-    VOX_BATCH_SIZE=${VOX_BATCH_SIZE:-$BATCH_SIZE}
+    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -39,9 +37,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET SPLIT <<< "$cfg"
-        [[ "$DATASET" == "voxpopuli" ]] && BS=$VOX_BATCH_SIZE || BS=$BATCH_SIZE
-
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BS}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -61,7 +57,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${BS} \
+                    --batch_size=${BATCH_SIZE} \
                     --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
