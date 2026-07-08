@@ -6,6 +6,11 @@ import requests
 from . import APIProvider, PermanentError, register
 
 
+MODEL_VARIANT_TO_ENDPOINT = {
+    "vfast": "https://platform.modulate.ai/api/velma-2-stt-batch-english-vfast",
+    "multilingual": "https://platform.modulate.ai/api/velma-2-stt-batch",
+}
+
 @register("modulate")
 class ModulateProvider(APIProvider):
     def transcribe(
@@ -17,10 +22,12 @@ class ModulateProvider(APIProvider):
         language: str = "en",
         prompt: Optional[str] = None,
     ) -> str:
-        endpoint = os.getenv(
-            "MODULATE_ENDPOINT",
-            f"https://platform.modulate.ai/api/velma-2-stt-batch-english-{model_variant}",
-        )
+        if model_variant not in MODEL_VARIANT_TO_ENDPOINT:
+            raise PermanentError(
+                f"Unknown Modulate model variant '{model_variant}'. "
+                f"Known variants: {list(MODEL_VARIANT_TO_ENDPOINT)}"
+            )
+        endpoint = os.getenv("MODULATE_ENDPOINT", MODEL_VARIANT_TO_ENDPOINT[model_variant])
         api_key = os.getenv("MODULATE_API_KEY")
         if not api_key:
             raise PermanentError("MODULATE_API_KEY is not set.")
