@@ -21,26 +21,25 @@ FLAVOR="${FLAVOR:-cpu-basic}"
 ORG_NAME="${ORG_NAME:-}"
 
 
-# ── Models: "model_id use_url max_workers" ─────────────────────────────────
+# ── Models: "model_id max_workers" ──────────────────────────────────────────
 # Fields:
 #  - model_id:    provider-prefixed model name (e.g. 'elevenlabs/scribe_v1')
-#  - use_url:     true|false — whether the provider requires a remote audio URL
 #  - max_workers: number of concurrent threads for this model (required)
 MODEL_CONFIGS=(
-    # "openai/gpt-4o-transcribe      false  16"
-    # "openai/gpt-4o-mini-transcribe false  16"
-    # "openai/whisper-1              false  16"
-    # "assembly/universal-3-pro      false  4"   # `cpu-xl` needed for spgispeech
-    # "assembly/universal-3-5-pro    false  4"   # `cpu-xl` needed for spgispeech
-    # "elevenlabs/scribe_v1          false  16"
-    # "revai/machine                 false  8"
-    # "revai/fusion                  false  8"
-    # "speechmatics/enhanced         false  8"    # # `cpu-xl` needed for spgispeech
-    # "aquavoice/avalon-v1-en        false  16"
-    # "zoom/scribe_v1                false  32"
-    # "microsoft/azure-speech-05-2026  false  4"
-    # "reson8/resonant-1               false 16"
-    # "reson8/resonant-1-flash         false 16"
+    # "openai/gpt-4o-transcribe      16"
+    # "openai/gpt-4o-mini-transcribe 16"
+    # "openai/whisper-1              16"
+    # "assembly/universal-3-pro      4"   # `cpu-xl` needed for spgispeech
+    # "assembly/universal-3-5-pro    4"   # `cpu-xl` needed for spgispeech
+    # "elevenlabs/scribe_v1          16"
+    # "revai/machine                 8"
+    # "revai/fusion                  8"
+    # "speechmatics/enhanced         8"    # `cpu-xl` needed for spgispeech
+    # "aquavoice/avalon-v1-en        16"
+    # "zoom/scribe_v1                32"
+    # "microsoft/azure-speech-05-2026  4"
+    # "reson8/resonant-1             16"
+    # "reson8/resonant-1-flash       16"
 )
 
 # ── Datasets ──────────────────────────────────────────────────────────────────
@@ -59,10 +58,8 @@ LEXICAL_DATASETS="librispeech gigaspeech"
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    # parse: model_id use_url max_workers
-    read -r MODEL_ID USE_URL MODEL_MAX_WORKERS <<< "$model_cfg"
+    read -r MODEL_ID MODEL_MAX_WORKERS <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
-    USE_URL_FLAG=$([[ "$USE_URL" == "true" ]] && echo "--use_url" || echo "")
 
     echo "████████████████████████████████████████████████████████████████████████████████"
     echo "  Evaluating: ${MODEL_ID}"
@@ -105,7 +102,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
                     --max_workers=${MODEL_MAX_WORKERS} \
-                    ${USE_URL_FLAG} \
                     ${PROMPT_ARG} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/

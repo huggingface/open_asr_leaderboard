@@ -9,12 +9,19 @@ Hugging Face setup for writing results to HF bucket:
 
 
 Below is example usage for a script that will both build the Docker container and run the evaluation.
-- Set the relevant model in `MODEL_CONFIGS` of `api/run_api.sh`
-- Make sure your API key is passed to the `docker run` command.
-- Tip: try running with just `"librispeech:test.clean"` among `EVAL_DATASETS` for a smoke test 
+- Set the relevant model in `MODEL_CONFIGS` of `api/run_api.sh` with the model ID and the number max workers that the API allows, or pass `MODEL` via env var (see examples below).
+- Make sure your API key is set in the environment.
 
+Smoke test (single model, single dataset):
 ```bash
-AZURE_API_KEY=<YOUR_KEY> \  # set to relevant model
+ZOOM_API_KEY=<YOUR_KEY> MODEL="zoom/scribe_v1 32" \
+DATASETS="librispeech:test.clean" \
+bash api/run_api.sh
+```
+
+Full run with bucket upload:
+```bash
+ZOOM_API_KEY=<YOUR_KEY> MODEL="zoom/scribe_v1 32" \
 HF_TOKEN=<YOUR_TOKEN> \
 RESULTS_BUCKET=<YOUR_BUCKET> \
 bash api/run_api.sh

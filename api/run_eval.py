@@ -1,13 +1,10 @@
 import argparse
 from typing import Optional
 import datasets
-import evaluate
 import soundfile as sf
 import tempfile
 import time
 import os
-import requests
-import itertools
 from tqdm import tqdm
 from dotenv import load_dotenv
 from normalizer import data_utils
@@ -17,57 +14,16 @@ from providers import get_provider, PermanentError
 load_dotenv()
 
 
-def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=20):
-    API_URL = "https://datasets-server.huggingface.co/rows"
-
-    headers = {}
-    if os.environ.get("HF_TOKEN") is not None:
-        headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
-    else:
-        print("HF_TOKEN not set, might experience rate-limiting.")
-
-    size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={dataset}&split={split}"
-    size_response = requests.get(size_url, headers=headers).json()
-    total_rows = size_response["size"]["config"]["num_rows"]
-    audio_urls = []
-    for offset in tqdm(range(0, total_rows, batch_size), desc="Fetching audio URLs"):
-        params = {
-            "dataset": dataset_path,
-            "config": dataset,
-            "split": split,
-            "offset": offset,
-            "length": min(batch_size, total_rows - offset),
-        }
-
-        retries = 0
-        while retries <= max_retries:
-            try:
-                response = requests.get(API_URL, params=params, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-                yield from data["rows"]
-                break
-            except (requests.exceptions.RequestException, ValueError) as e:
-                retries += 1
-                print(
-                    f"Error fetching data: {e}, retrying ({retries}/{max_retries})..."
-                )
-                time.sleep(10)
-                if retries >= max_retries:
-                    raise Exception("Max retries exceeded while fetching data.")
-
-
 def transcribe_with_retry(
     model_name: str,
     audio_file_path: Optional[str],
     sample: dict,
     max_retries=10,
-    use_url=False,
     language="en",
     prompt=None,
 ):
     provider, variant = get_provider(model_name)
-    kwargs = dict(use_url=use_url, language=language)
+    kwargs = dict(language=language)
     if prompt is not None:
         kwargs["prompt"] = prompt
     retries = 0
@@ -81,13 +37,12 @@ def transcribe_with_retry(
             if retries > max_retries:
                 raise e
 
-            if not use_url:
-                sf.write(
-                    audio_file_path,
-                    sample["audio"]["array"],
-                    sample["audio"]["sampling_rate"],
-                    format="WAV",
-                )
+            sf.write(
+                audio_file_path,
+                sample["audio"]["array"],
+                sample["audio"]["sampling_rate"],
+                format="WAV",
+            )
             delay = 1
             print(
                 f"API Error: {str(e)}. Retrying in {delay}s... (Attempt {retries}/{max_retries})"
@@ -100,21 +55,14 @@ def transcribe_dataset(
     dataset,
     split,
     model_name,
-    use_url=False,
     max_samples=None,
     max_workers=4,
     prompt=None,
 ):
-    if use_url:
-        audio_rows = fetch_audio_urls(dataset_path, dataset, split)
-        if max_samples:
-            audio_rows = itertools.islice(audio_rows, max_samples)
-        ds = audio_rows
-    else:
-        ds = datasets.load_dataset(dataset_path, dataset, split=split, streaming=False)
-        ds = data_utils.prepare_data(ds)
-        if max_samples:
-            ds = ds.take(max_samples)
+    ds = datasets.load_dataset(dataset_path, dataset, split=split, streaming=False)
+    ds = data_utils.prepare_data(ds)
+    if max_samples:
+        ds = ds.take(max_samples)
 
     results = {
         "references": [],
@@ -126,43 +74,30 @@ def transcribe_dataset(
     print(f"Transcribing with model: {model_name}")
 
     def process_sample(sample):
-        if use_url:
-            reference = sample["row"]["text"].strip() or " "
-            audio_duration = sample["row"]["audio_length_s"]
-            start = time.time()
-            try:
-                transcription = transcribe_with_retry(
-                    model_name, None, sample, use_url=True, prompt=prompt
-                )
-            except Exception as e:
-                print(f"Failed to transcribe after retries: {e}")
-                transcription = ""
+        reference = sample.get("original_text", "").strip() or " "
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
+            sf.write(
+                tmpfile.name,
+                sample["audio"]["array"],
+                sample["audio"]["sampling_rate"],
+                format="WAV",
+            )
+            tmp_path = tmpfile.name
+            audio_duration = (
+                len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
+            )
 
-        else:
-            reference = sample.get("original_text", "").strip() or " "
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-                sf.write(
-                    tmpfile.name,
-                    sample["audio"]["array"],
-                    sample["audio"]["sampling_rate"],
-                    format="WAV",
-                )
-                tmp_path = tmpfile.name
-                audio_duration = (
-                    len(sample["audio"]["array"]) / sample["audio"]["sampling_rate"]
-                )
-
-            start = time.time()
-            try:
-                transcription = transcribe_with_retry(
-                    model_name, tmp_path, sample, use_url=False, prompt=prompt
-                )
-            except Exception as e:
-                print(f"Failed to transcribe after retries: {e}")
-                transcription = ""
-            finally:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
+        start = time.time()
+        try:
+            transcription = transcribe_with_retry(
+                model_name, tmp_path, sample, prompt=prompt
+            )
+        except Exception as e:
+            print(f"Failed to transcribe after retries: {e}")
+            transcription = ""
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
         transcription_time = time.time() - start
         return reference, transcription, audio_duration, transcription_time
@@ -195,18 +130,17 @@ def transcribe_dataset(
 
     print("Results saved at path:", manifest_path)
 
-    norm_refs = [data_utils.normalizer(r) or " " for r in results["references"]]
-    norm_preds = [data_utils.normalizer(p) or " " for p in results["predictions"]]
-    wer_metric = evaluate.load("wer")
-    wer = wer_metric.compute(
-        references=norm_refs, predictions=norm_preds
-    )
-    wer_percent = round(100 * wer, 2)
+    from kaldialign import batch_error_rate
+    norm_refs = [data_utils.normalizer(r) for r in results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in results["predictions"]]
+    refs_split = [tuple(r.split()) for r in norm_refs]
+    preds_split = [tuple(p.split()) for p in norm_preds]
+    wer = round(100 * batch_error_rate(refs_split, preds_split, merge_compounds=True)["err_rate"], 2)
     rtfx = round(
         sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2
     )
 
-    print("WER:", wer_percent, "%")
+    print("WER:", wer, "%")
     print("RTFx:", rtfx)
 
 
@@ -227,11 +161,6 @@ if __name__ == "__main__":
         "--max_workers", type=int, default=300, help="Number of concurrent threads"
     )
     parser.add_argument(
-        "--use_url",
-        action="store_true",
-        help="Use URL-based audio fetching instead of datasets",
-    )
-    parser.add_argument(
         "--prompt",
         type=str,
         default=None,
@@ -245,7 +174,6 @@ if __name__ == "__main__":
         dataset=args.dataset,
         split=args.split,
         model_name=args.model_name,
-        use_url=args.use_url,
         max_samples=args.max_samples,
         max_workers=args.max_workers,
         prompt=args.prompt,

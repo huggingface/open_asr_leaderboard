@@ -9,30 +9,28 @@ if [[ -n "${RESULTS_BUCKET}" && -z "${HF_TOKEN}" ]]; then
     exit 1
 fi
 
-# ── Models: "model_id use_url max_workers" ───────────────────────────────────
-# use_url=true  → provider receives a remote audio URL (revai, zoom)
-# use_url=false → provider receives a local audio file (all others)
+# ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    # "openai/gpt-4o-transcribe      false  16"
-    # "openai/gpt-4o-mini-transcribe false  16"
-    # "openai/whisper-1              false  16"
-    # "assembly/universal-3-pro      false  4"
-    # "assembly/universal-3-5-pro    false  4"
-    # "elevenlabs/scribe_v2          false  8"
-    # "revai/machine                 false  4"
-    # "revai/fusion                  false  4"
-    # "speechmatics/enhanced         false  4"
-    # "aquavoice/avalon-v1-en        false  5"
-    # "zoom/scribe_v1                false  32"
-    # "smallestai/pulse              false  16"
-    # "reson8/resonant-1             false  16"
-    # "reson8/resonant-1-flash       false  16"
-    # "microsoft/azure-speech-05-2026  false  4"
-    # "modulate/vfast   false  25"
+    # "openai/gpt-4o-transcribe      16"
+    # "openai/gpt-4o-mini-transcribe 16"
+    # "openai/whisper-1              16"
+    # "assembly/universal-3-pro      4"
+    # "assembly/universal-3-5-pro    4"
+    # "elevenlabs/scribe_v2          8"
+    # "revai/machine                 4"
+    # "revai/fusion                  4"
+    # "speechmatics/enhanced         4"
+    # "aquavoice/avalon-v1-en        5"
+    # "zoom/scribe_v1                32"
+    # "smallestai/pulse              16"
+    # "reson8/resonant-1             16"
+    # "reson8/resonant-1-flash       16"
+    # "microsoft/azure-speech-05-2026  4"
+    # "modulate/vfast                25"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
-declare -a EVAL_DATASETS=(
+EVAL_DATASETS=(
     "ami_cleaned:test"
     "earnings22:test"
     "gigaspeech_cleaned:test"
@@ -41,6 +39,15 @@ declare -a EVAL_DATASETS=(
     "spgispeech:test"
     "voxpopuli_cleaned_aa:test"
 )
+
+# Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
+#   DATASETS="librispeech:test.clean" MODEL="modulate/vfast 25" bash run_api.sh
+if [[ -n "${DATASETS:-}" ]]; then
+    read -ra EVAL_DATASETS <<< "$DATASETS"
+fi
+if [[ -n "${MODEL:-}" ]]; then
+    MODEL_CONFIGS=("$MODEL")
+fi
 
 # Datasets that require lexical format prompt
 LEXICAL_DATASETS="librispeech gigaspeech"
@@ -52,8 +59,7 @@ echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
 docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID USE_URL MAX_WORKERS <<< "$model_cfg"
-    USE_URL_FLAG=$([[ "$USE_URL" == "true" ]] && echo "--use_url" || echo "")
+    read -r MODEL_ID MAX_WORKERS <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     for entry in "${EVAL_DATASETS[@]}"; do
@@ -92,7 +98,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
                     --max_workers=${MAX_WORKERS} \
-                    ${USE_URL_FLAG} \
                     ${PROMPT_FLAG}
             "
     done
