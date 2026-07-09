@@ -27,6 +27,7 @@ MODEL_CONFIGS=(
     # "reson8/resonant-1-flash       16"
     # "microsoft/azure-speech-05-2026  4"
     # "modulate/vfast                25"
+    # "gladia/solaria-3             20"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
@@ -78,6 +79,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e HF_DATASETS_CACHE=/hf_cache/datasets \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
+            -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
