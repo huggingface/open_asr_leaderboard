@@ -10,30 +10,28 @@ DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
-# ── Models: "model_id batch_size voxpopuli_batch_size" ──────────────────────
-# batch_size           → used for all datasets except voxpopuli
-# voxpopuli_batch_size → voxpopuli has longer audio, so use a smaller value may be better
+# ── Models: "model_id batch_size" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    "openai/whisper-large-v3-turbo      1024 1024"
-    "openai/whisper-large-v3            128 128"
-    "distil-whisper/distil-large-v3.5   1024 1024"
-    # "openai/whisper-tiny.en           128 64"
-    # "openai/whisper-small.en          128 64"
-    # "openai/whisper-base.en           128 64"
-    # "openai/whisper-medium.en         128 64"
-    # "openai/whisper-large             64  32"
-    # "openai/whisper-large-v2          64  32"
-    # "distil-whisper/distil-medium.en  128 64"
-    # "distil-whisper/distil-large-v2   64  32"
-    # "distil-whisper/distil-large-v3   64  32"
+    "openai/whisper-large-v3-turbo      1024"
+    "openai/whisper-large-v3            128"
+    "distil-whisper/distil-large-v3.5   1024"
+    # "openai/whisper-tiny.en           128"
+    # "openai/whisper-small.en          128"
+    # "openai/whisper-base.en           128"
+    # "openai/whisper-medium.en         128"
+    # "openai/whisper-large             64"
+    # "openai/whisper-large-v2          64"
+    # "distil-whisper/distil-medium.en  128"
+    # "distil-whisper/distil-large-v2   64"
+    # "distil-whisper/distil-large-v3   64"
 )
 
 # ── Datasets: "name split" (comment / uncomment to select) ──────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test"
-    "ami test"
+    "ami_cleaned test"
+    "gigaspeech_cleaned test"
+    "voxpopuli_cleaned_aa test"
     "earnings22 test"
-    "gigaspeech test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
@@ -41,7 +39,7 @@ DATASET_CONFIGS=(
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE VOXPOPULI_BATCH_SIZE <<< "$model_cfg"
+    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
     # Sanitize model ID for use as a folder name (e.g. "openai/whisper" -> "openai-whisper")
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
@@ -51,13 +49,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET SPLIT <<< "$cfg"
-        if [[ "$DATASET" == "voxpopuli" ]]; then
-            EFFECTIVE_BATCH_SIZE="${VOXPOPULI_BATCH_SIZE}"
-        else
-            EFFECTIVE_BATCH_SIZE="${BATCH_SIZE}"
-        fi
-
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -76,7 +68,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${EFFECTIVE_BATCH_SIZE} \
+                    --batch_size=${BATCH_SIZE} \
                     --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/

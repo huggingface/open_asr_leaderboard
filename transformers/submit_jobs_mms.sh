@@ -12,15 +12,14 @@ ORG_NAME="${ORG_NAME:-}"
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
     "facebook/mms-1b-all"
-    "facebook/mms-1b-fl102"
 )
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test 48"
-    "ami test 48"
+    "ami_cleaned test 48"
+    "gigaspeech_cleaned test 48"
+    "voxpopuli_cleaned_aa test 48"
     "earnings22 test 48"
-    "gigaspeech test 48"
     "librispeech test.clean 48"
     "librispeech test.other 48"
     "spgispeech test 48"

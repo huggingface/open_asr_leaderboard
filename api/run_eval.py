@@ -1,7 +1,6 @@
 import argparse
 from typing import Optional
 import datasets
-import evaluate
 import soundfile as sf
 import tempfile
 import time
@@ -195,18 +194,17 @@ def transcribe_dataset(
 
     print("Results saved at path:", manifest_path)
 
-    norm_refs = [data_utils.normalizer(r) or " " for r in results["references"]]
-    norm_preds = [data_utils.normalizer(p) or " " for p in results["predictions"]]
-    wer_metric = evaluate.load("wer")
-    wer = wer_metric.compute(
-        references=norm_refs, predictions=norm_preds
-    )
-    wer_percent = round(100 * wer, 2)
+    from kaldialign import batch_error_rate
+    norm_refs = [data_utils.normalizer(r) for r in results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in results["predictions"]]
+    refs_split = [tuple(r.split()) for r in norm_refs]
+    preds_split = [tuple(p.split()) for p in norm_preds]
+    wer = round(100 * batch_error_rate(refs_split, preds_split, merge_compounds=True)["err_rate"], 2)
     rtfx = round(
         sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2
     )
 
-    print("WER:", wer_percent, "%")
+    print("WER:", wer, "%")
     print("RTFx:", rtfx)
 
 

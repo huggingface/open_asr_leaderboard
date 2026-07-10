@@ -17,8 +17,8 @@ MODEL_IDs=(
     "openai/whisper-1"
     "assembly/universal-3-pro"
     "elevenlabs/scribe_v2"
-    "revai/machine" # please use --use_url=True
-    "revai/fusion" # please use --use_url=True
+    "revai/machine"
+    "revai/fusion"
     "speechmatics/enhanced"
     "aquavoice/avalon-v1-en"
     "reson8/resonant-1"

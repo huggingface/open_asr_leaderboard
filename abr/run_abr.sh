@@ -11,19 +11,18 @@ SUBBATCH_SAMPLES=30000000
 # ── Models: "model_id revision" ──────────────────────────────────────────────
 MODEL_CONFIGS=(
     "abr-ai/niagara-19m-batch.en dab6545337495482f2fc05455432a7a05c88d3cc"
-    "abr-ai/niagara-38m-batch.en 8d2e2247703c0215f722b7056fbc1c7db623d40d"
+    "abr-ai/niagara-38m-batch.en 4f3ec18d377b1fd01e94d15dc9b9db0a8cd74bd2"
 )
 
 # ── Datasets: "name split" (comment / uncomment to select) ──────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test"
-    "ami test"
+    "ami_cleaned test"
     "earnings22 test"
-    "gigaspeech test"
+    "gigaspeech_cleaned test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "tedlium test"
+    "voxpopuli_cleaned_aa test"
 )
 
 for model_cfg in "${MODEL_CONFIGS[@]}"; do

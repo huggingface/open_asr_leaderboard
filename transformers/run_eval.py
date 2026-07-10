@@ -13,10 +13,12 @@ from tqdm import tqdm
 from transformers import (
     MODEL_FOR_CTC_MAPPING,
     MODEL_FOR_MULTIMODAL_LM_MAPPING,
+    MODEL_FOR_RNNT_MAPPING,
     MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
     AutoConfig,
     AutoModelForCTC,
     AutoModelForMultimodalLM,
+    AutoModelForRNNT,
     AutoModelForSpeechSeq2Seq,
     AutoProcessor,
     CompileConfig,
@@ -58,6 +60,8 @@ def main(args):
         cls_model = AutoModelForMultimodalLM
     elif type(config) in MODEL_FOR_CTC_MAPPING:
         cls_model = AutoModelForCTC
+    elif type(config) in MODEL_FOR_RNNT_MAPPING:
+        cls_model = AutoModelForRNNT
     else:
         raise ValueError(f"Model config of type {type(config)} not recognized in Transformers mappings.")
     is_ctc = cls_model == AutoModelForCTC
@@ -85,6 +89,7 @@ def main(args):
     processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
     is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
+    is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
     is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
@@ -135,7 +140,10 @@ def main(args):
         raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
     if args.torch_compile is not None:
-        if model.can_generate():
+        if is_nemotron:
+            # RNNT uses its own generate implementation; compile the model directly
+            model = torch.compile(model, mode=args.torch_compile, fullgraph=args.compile_fullgraph)
+        elif model.can_generate():
             gen_kwargs["compile_config"] = CompileConfig(mode=args.torch_compile, fullgraph=args.compile_fullgraph)
             # enable static k/v cache for autoregressive models
             model.generation_config.cache_implementation = "static"
@@ -175,7 +183,18 @@ def main(args):
             padding_audios = [audios[-1] for _ in range(padding_size)]
             audios.extend(padding_audios)
 
-        if is_cohere:
+        if is_nemotron:
+            rnnt_processor_kwargs = dict(
+                sampling_rate=sampling_rate,
+                padding=True,
+                return_tensors="pt",
+            )
+            # Multilingual RNNT models accept a language prompt;
+            # English-only models (e.g. nemotron-speech-streaming-en) do not.
+            if "-en" not in args.model_id.lower():
+                rnnt_processor_kwargs["language"] = args.language
+            inputs = processor(audios, **rnnt_processor_kwargs)
+        elif is_cohere:
             inputs = processor(
                 audios,
                 sampling_rate=sampling_rate,
@@ -249,7 +268,11 @@ def main(args):
         else:
             sdpa_backends = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
         with sdpa_kernel(sdpa_backends):
-            if model.can_generate():
+            if is_nemotron:
+                # 2.0 RNNT generation (cache-aware FastConformer-RNNT)
+                rnnt_output = model.generate(**inputs, **gen_kwargs, return_dict_in_generate=True)
+                pred_ids = rnnt_output.sequences
+            elif model.can_generate():
                 # 2.1 Auto-regressive generation for LM-based models
                 is_moonshine = "moonshine" in args.model_id.lower()
                 if is_moonshine:
@@ -283,7 +306,9 @@ def main(args):
             pred_ids = pred_ids[:-padding_size, ...]
 
         # 3.2 Convert token ids to text transcription
-        if is_cohere:
+        if is_nemotron:
+            pred_text = processor.decode(pred_ids, skip_special_tokens=True)
+        elif is_cohere:
             audio_chunk_index = inputs.get("audio_chunk_index")
             pred_text = processor.decode(
                 pred_ids,
@@ -499,6 +524,13 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Model revision to use (e.g. 'refs/pr/11' for a PR branch). Defaults to the main branch.",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        default="en-US",
+        help="Language tag for models that accept a language prompt (e.g. Nemotron multilingual). "
+             "Supported values for Nemotron 3.5: 'en-US', 'en-GB'.",
     )
     args = parser.parse_args()
 

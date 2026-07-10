@@ -10,23 +10,21 @@ FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 DTYPE=float16
 
-# ── Models: "model_id batch_size voxpopuli_batch_size" ──────────────────────
-# batch_size           → used for all datasets except voxpopuli
-# voxpopuli_batch_size → voxpopuli has longer audio, so use a smaller value
+# ── Models: "model_id batch_size" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    "usefulsensors/moonshine-streaming-tiny   1024 512"
-    "usefulsensors/moonshine-streaming-small  512 256"
-    "usefulsensors/moonshine-streaming-medium 512 256"
-    "usefulsensors/moonshine-base             1024 512"
-    "usefulsensors/moonshine-tiny              1024 512"
+    "usefulsensors/moonshine-streaming-tiny   1024"
+    "usefulsensors/moonshine-streaming-small  512"
+    "usefulsensors/moonshine-streaming-medium 512"
+    "usefulsensors/moonshine-base             1024"
+    "usefulsensors/moonshine-tiny              1024"
 )
 
 # ── Datasets: "name split" ───────────────────────────────────────────────────
 DATASET_CONFIGS=(
-    "voxpopuli test"
-    "ami test"
+    "ami_cleaned test"
+    "gigaspeech_cleaned test"
+    "voxpopuli_cleaned_aa test"
     "earnings22 test"
-    "gigaspeech test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
@@ -34,7 +32,7 @@ DATASET_CONFIGS=(
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE VOXPOPULI_BATCH_SIZE <<< "$model_cfg"
+    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -43,13 +41,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET SPLIT <<< "$cfg"
-        if [[ "$DATASET" == "voxpopuli" ]]; then
-            EFFECTIVE_BATCH_SIZE="${VOXPOPULI_BATCH_SIZE}"
-        else
-            EFFECTIVE_BATCH_SIZE="${BATCH_SIZE}"
-        fi
-
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -68,7 +60,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${EFFECTIVE_BATCH_SIZE} \
+                    --batch_size=${BATCH_SIZE} \
                     --max_eval_samples=-1 \
                     --dtype=${DTYPE} &&
                 mkdir -p /results/${MODEL_FOLDER} &&

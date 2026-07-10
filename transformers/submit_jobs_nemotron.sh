@@ -1,37 +1,34 @@
 #!/bin/bash
-# Local script to submit HF Jobs for ABR ASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# Local script to submit HF Jobs for Nemotron streaming ASR evaluation.
+# Usage: HF_TOKEN=hf_... bash submit_jobs_nemotron.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-abr}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
-BATCH_SIZE=512
-WARMUP_STEPS=5
-SUBBATCH_SAMPLES=30000000
 
-# ── Models: "model_id revision" ──────────────────────────────────────────────
+# ── Models: "model_id batch_size" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    "abr-ai/niagara-19m-batch.en dab6545337495482f2fc05455432a7a05c88d3cc"
-    "abr-ai/niagara-38m-batch.en 4f3ec18d377b1fd01e94d15dc9b9db0a8cd74bd2"
+    "nvidia/nemotron-3.5-asr-streaming-0.6b   64"
+    "nvidia/nemotron-speech-streaming-en-0.6b  64"
 )
 
-# ── Datasets: "name split" ────────────────────────────────────────────────────
+# ── Datasets: "name split" ───────────────────────────────────────────────────
 DATASET_CONFIGS=(
     "ami_cleaned test"
-    "earnings22 test"
     "gigaspeech_cleaned test"
+    "voxpopuli_cleaned_aa test"
+    "earnings22 test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "voxpopuli_cleaned_aa test"
 )
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID REVISION <<< "$model_cfg"
+    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -40,8 +37,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET SPLIT <<< "$cfg"
-
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -50,20 +46,17 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND=soundfile \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
                 PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
-                    --revision=${REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
+                    --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --warmup_steps=${WARMUP_STEPS} \
-                    --subbatch_samples=${SUBBATCH_SAMPLES} \
                     --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/

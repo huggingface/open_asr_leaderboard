@@ -13,14 +13,13 @@ BATCH_SIZE=64
 # ── Datasets: "name split [batch_size]" (comment / uncomment to select) ──────
 # VoxPopuli has longer audio, so we use a smaller batch size to fit in VRAM.
 DATASET_CONFIGS=(
-    "voxpopuli test 32"
-    "ami test"
+    "ami_cleaned test"
+    "gigaspeech_cleaned test"
+    "voxpopuli_cleaned_aa test"
     "earnings22 test"
-    "gigaspeech test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "tedlium test"
 )
 
 for MODEL in "${MODELS[@]}"; do
