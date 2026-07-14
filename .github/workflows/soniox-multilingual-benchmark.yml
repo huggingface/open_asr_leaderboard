@@ -23,8 +23,13 @@ on:
         required: true
         default: "240"
         type: string
+      seed_run_id:
+        description: "Prior one-sample smoke run ID to reuse (optional)"
+        required: false
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -74,6 +79,7 @@ jobs:
       HF_AUDIO_DECODER_BACKEND: soundfile
       MAX_SAMPLES: ${{ inputs.max_samples }}
       MAX_WORKERS: ${{ inputs.max_workers }}
+      SEED_RUN_ID: ${{ inputs.seed_run_id }}
     steps:
       - name: Check out benchmark code
         uses: actions/checkout@v4
@@ -92,6 +98,16 @@ jobs:
 
       - name: Install evaluation dependencies
         run: python -m pip install --disable-pip-version-check -r api/action-requirements.txt
+
+      - name: Download paid smoke result
+        if: inputs.seed_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: soniox-1-${{ matrix.config }}
+          path: api/seed-results
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.seed_run_id }}
+          github-token: ${{ github.token }}
 
       - name: Validate inputs and secret
         shell: bash
@@ -116,6 +132,10 @@ jobs:
             echo "max_samples must be empty or a positive integer." >&2
             exit 1
           fi
+          if [[ -n "$SEED_RUN_ID" && ! "$SEED_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "seed_run_id must be empty or a positive integer." >&2
+            exit 1
+          fi
 
       - name: Evaluate Soniox Async
         working-directory: api
@@ -132,6 +152,12 @@ jobs:
           )
           if [[ -n "$MAX_SAMPLES" ]]; then
             args+=(--max_samples "$MAX_SAMPLES")
+          fi
+          if [[ -n "$SEED_RUN_ID" ]]; then
+            args+=(
+              --seed_manifest
+              "$GITHUB_WORKSPACE/api/seed-results/MODEL_soniox-stt-async-v5_DATASET_nithinraok-asr-leaderboard-datasets_${{ matrix.config }}_test.jsonl"
+            )
           fi
           python run_eval_ml.py "${args[@]}"
 

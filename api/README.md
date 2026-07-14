@@ -54,4 +54,6 @@ the `Soniox multilingual benchmark` GitHub Actions workflow. Configure
 Set `max_samples` to `1` for a 13-config smoke test or leave it empty for the
 full benchmark. Dataset configs run serially to share one Soniox project rate
 limit safely; result manifests and the final CSV row are uploaded as workflow
-artifacts.
+artifacts. For the full run, set `seed_run_id` to the successful one-sample
+smoke workflow run ID so those already-paid transcriptions are reused instead
+of submitted to Soniox again.

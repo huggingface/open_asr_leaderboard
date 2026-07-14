@@ -117,6 +117,7 @@ def transcribe_dataset(
     max_workers=4,
     prompt=None,
     resume=False,
+    seed_manifest=None,
 ):
     if use_url:
         audio_rows = fetch_audio_urls(dataset_path, config_name, split)
@@ -153,6 +154,29 @@ def transcribe_dataset(
                     float(item["transcription_time_s"]),
                 )
         print(f"Resuming from {len(completed)} checkpointed samples")
+
+    if resume and seed_manifest:
+        seed_path = Path(seed_manifest)
+        if not seed_path.exists():
+            raise FileNotFoundError(f"Seed manifest does not exist: {seed_path}")
+        seeded = 0
+        with seed_path.open("r", encoding="utf-8") as seed_file:
+            for index, line in enumerate(seed_file):
+                if not line.strip() or index in completed:
+                    continue
+                if index >= len(ds):
+                    raise ValueError(
+                        f"Seed manifest has more rows than dataset {config_name}"
+                    )
+                item = json.loads(line)
+                completed[index] = (
+                    str(item["text"]),
+                    str(item["pred_text"]),
+                    float(item["duration"]),
+                    float(item["time"]),
+                )
+                seeded += 1
+        print(f"Seeded {seeded} completed samples from {seed_path}")
 
     print(f"Transcribing with model: {model_name}, language: {language}, config: {config_name}")
 
@@ -335,6 +359,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Checkpoint successful samples and resume an interrupted evaluation.",
     )
+    parser.add_argument(
+        "--seed_manifest",
+        default=None,
+        help="Completed ordered manifest whose rows should seed a resumed run.",
+    )
 
     args = parser.parse_args()
 
@@ -349,4 +378,5 @@ if __name__ == "__main__":
         max_workers=args.max_workers,
         prompt=args.prompt,
         resume=args.resume,
+        seed_manifest=args.seed_manifest,
     )
