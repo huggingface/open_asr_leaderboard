@@ -58,3 +58,4 @@ from . import reson8_provider
 from . import microsoft_azure_provider
 from . import modulate_provider
 from . import gladia_provider
+from . import soniox_provider

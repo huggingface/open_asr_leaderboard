@@ -26,3 +26,32 @@ HF_TOKEN=<YOUR_TOKEN> \
 RESULTS_BUCKET=<YOUR_BUCKET> \
 bash api/run_api.sh
 ```
+
+Multilingual Soniox Async evaluation (FLEURS, Common Voice, and MLS):
+```bash
+cd api
+SONIOX_API_KEY=<YOUR_KEY> \
+MODEL_ID=soniox/stt-async-v5 \
+MAX_WORKERS=20 \
+bash run_api_ml.sh
+```
+
+Add `MAX_SAMPLES=1` for a smoke test. If the Hugging Face Dataset Viewer is
+available for the benchmark dataset, add `USE_URL=1` to let Soniox fetch the
+public audio URLs directly instead of downloading the Parquet audio locally.
+The multilingual runner checkpoints completed samples by default and resumes
+after interruption; set `RESUME=0` to disable this. Soniox requests are capped
+at 240 file-management and 240 transcription requests per minute by default.
+Override `SONIOX_FILE_REQUESTS_PER_MINUTE` or
+`SONIOX_TRANSCRIPTION_REQUESTS_PER_MINUTE` only when the corresponding Soniox
+project limits are known to be different.
+
+Soniox model documentation: https://soniox.com/docs/stt/models
+
+The full multilingual run can also be executed without local compute through
+the `Soniox multilingual benchmark` GitHub Actions workflow. Configure
+`SONIOX_API_KEY` as a repository Actions secret, then dispatch the workflow.
+Set `max_samples` to `1` for a 13-config smoke test or leave it empty for the
+full benchmark. Dataset configs run serially to share one Soniox project rate
+limit safely; result manifests and the final CSV row are uploaded as workflow
+artifacts.
