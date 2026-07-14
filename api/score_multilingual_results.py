@@ -7,7 +7,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import evaluate
+from jiwer import wer
 
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs, read_manifest
@@ -31,7 +31,7 @@ CONFIG_COLUMNS = (
 )
 
 
-def score_manifest(manifest_path: Path, language: str, wer_metric) -> float:
+def score_manifest(manifest_path: Path, language: str) -> float:
     manifest = read_manifest(str(manifest_path))
     references = [
         data_utils.ml_normalizer(item["text"], lang=language) for item in manifest
@@ -41,10 +41,7 @@ def score_manifest(manifest_path: Path, language: str, wer_metric) -> float:
         for item in manifest
     ]
     references, predictions = normalize_compound_pairs(references, predictions)
-    return round(
-        100 * wer_metric.compute(references=references, predictions=predictions),
-        2,
-    )
+    return round(100 * wer(references, predictions), 2)
 
 
 def score_multilingual_results(
@@ -56,7 +53,6 @@ def score_multilingual_results(
 ) -> str:
     model_slug = model_id.replace("/", "-")
     dataset_slug = dataset_path.replace("/", "-")
-    wer_metric = evaluate.load("wer")
     scores = []
 
     for config_name, column, language in CONFIG_COLUMNS:
@@ -65,7 +61,7 @@ def score_multilingual_results(
         )
         if not manifest_path.exists():
             raise FileNotFoundError(f"Missing result manifest: {manifest_path}")
-        score = score_manifest(manifest_path, language, wer_metric)
+        score = score_manifest(manifest_path, language)
         scores.append(score)
         print(f"{column}: {score:.2f}")
 

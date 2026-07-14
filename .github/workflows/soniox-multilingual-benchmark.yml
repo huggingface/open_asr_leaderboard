@@ -27,6 +27,10 @@ on:
         description: "Prior one-sample smoke run ID to reuse (optional)"
         required: false
         type: string
+      result_run_id:
+        description: "Prior run ID to score without transcribing (optional)"
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -39,6 +43,7 @@ concurrency:
 jobs:
   transcribe:
     name: ${{ matrix.config }}
+    if: inputs.result_run_id == ''
     runs-on: ubuntu-latest
     timeout-minutes: 355
     strategy:
@@ -181,6 +186,9 @@ jobs:
   score:
     name: Score multilingual results
     needs: transcribe
+    if: >-
+      always() &&
+      (needs.transcribe.result == 'success' || inputs.result_run_id != '')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -197,14 +205,26 @@ jobs:
       - name: Install scoring dependencies
         run: |
           python -m pip install --disable-pip-version-check \
-            evaluate jiwer num2words regex kaldialign==0.12.0
+            datasets==2.19.0 jiwer num2words regex kaldialign==0.12.0
 
-      - name: Download result manifests
+      - name: Download current result manifests
+        if: inputs.result_run_id == ''
         uses: actions/download-artifact@v4
         with:
           pattern: soniox-${{ github.run_attempt }}-*
           path: api/results
           merge-multiple: true
+
+      - name: Download prior result manifests
+        if: inputs.result_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: soniox-1-*
+          path: api/results
+          merge-multiple: true
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.result_run_id }}
+          github-token: ${{ github.token }}
 
       - name: Score and publish summary
         working-directory: api
