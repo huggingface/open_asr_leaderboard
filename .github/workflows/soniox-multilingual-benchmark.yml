@@ -1,4 +1,5 @@
 name: Soniox multilingual benchmark
+run-name: Soniox multilingual (max samples ${{ inputs.max_samples || 'all' }})
 
 on:
   workflow_dispatch:
