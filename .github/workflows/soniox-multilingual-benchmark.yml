@@ -191,9 +191,14 @@ jobs:
       (needs.transcribe.result == 'success' || inputs.result_run_id != '')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
     steps:
       - name: Check out benchmark code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -250,3 +255,25 @@ jobs:
           path: api/soniox-multilingual-scores.txt
           if-no-files-found: error
           retention-days: 30
+
+      - name: Update full leaderboard row
+        if: inputs.max_samples == '' && inputs.result_run_id == ''
+        run: |
+          python api/update_multilingual_csv.py \
+            --csv-path scripts/data/multilingual.csv \
+            --scores-path api/soniox-multilingual-scores.txt \
+            --model-id soniox/stt-async-v5
+
+      - name: Commit full leaderboard row
+        if: inputs.max_samples == '' && inputs.result_run_id == ''
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/data/multilingual.csv
+          if git diff --cached --quiet; then
+            echo "Leaderboard row is already current."
+          else
+            git commit -m "Add Soniox multilingual benchmark results"
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi

@@ -56,4 +56,6 @@ full benchmark. Dataset configs run serially to share one Soniox project rate
 limit safely; result manifests and the final CSV row are uploaded as workflow
 artifacts. For the full run, set `seed_run_id` to the successful one-sample
 smoke workflow run ID so those already-paid transcriptions are reused instead
-of submitted to Soniox again.
+of submitted to Soniox again. A successful full run inserts or replaces the
+Soniox row in `scripts/data/multilingual.csv` and commits it back to the
+dispatched branch.
