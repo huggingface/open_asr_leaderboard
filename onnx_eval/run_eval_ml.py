@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import platform
@@ -18,6 +19,7 @@ os.environ.setdefault("DATASETS_USE_TORCHCODEC", "0")
 
 import numpy as np
 import onnxruntime as ort
+import soundfile as sf
 from datasets import Audio, load_dataset
 from huggingface_hub import snapshot_download
 from jiwer import wer as compute_wer
@@ -135,12 +137,21 @@ def load_backend(args: argparse.Namespace, model_path: str) -> Backend:
 
 
 def decode_audio(audio: object) -> tuple[np.ndarray, int]:
-    if not isinstance(audio, dict) or "array" not in audio:
-        raise TypeError(f"Expected a decoded datasets.Audio dictionary, got {type(audio)!r}")
-    waveform = np.asarray(audio["array"], dtype=np.float32)
-    sample_rate = int(audio["sampling_rate"])
+    if not isinstance(audio, dict):
+        raise TypeError(f"Expected a datasets.Audio dictionary, got {type(audio)!r}")
+    if audio.get("array") is not None:
+        waveform = np.asarray(audio["array"], dtype=np.float32)
+        sample_rate = int(audio["sampling_rate"])
+    elif audio.get("bytes") is not None:
+        waveform, sample_rate = sf.read(io.BytesIO(audio["bytes"]), dtype="float32", always_2d=False)
+    elif audio.get("path"):
+        waveform, sample_rate = sf.read(audio["path"], dtype="float32", always_2d=False)
+    else:
+        raise ValueError("Audio sample contains neither array, bytes, nor path data")
+    waveform = np.asarray(waveform, dtype=np.float32)
     if waveform.ndim == 2:
-        waveform = waveform.mean(axis=0, dtype=np.float32)
+        channel_axis = 0 if waveform.shape[0] <= 8 and waveform.shape[0] < waveform.shape[1] else 1
+        waveform = waveform.mean(axis=channel_axis, dtype=np.float32)
     if waveform.ndim != 1:
         raise ValueError(f"Expected mono audio, got shape {waveform.shape}")
     if sample_rate != SAMPLE_RATE:
@@ -217,7 +228,7 @@ def main() -> None:
         selected_samples = len(dataset)
     if not smoke_run and "duration" in dataset.column_names:
         dataset = dataset.sort("duration", reverse=True)
-    dataset = dataset.cast_column("audio", Audio(sampling_rate=SAMPLE_RATE, decode=True))
+    dataset = dataset.cast_column("audio", Audio(decode=False))
 
     batches = iter(iter_batches(dataset, args.batch_size, selected_samples))
     try:
