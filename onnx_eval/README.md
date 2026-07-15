@@ -17,9 +17,10 @@ configs and validates that no config is missing before it can update
 `scripts/data/multilingual.csv`.
 
 Use **Actions → Primeline ONNX multilingual benchmark → Run workflow**. Set
-`max_samples` to a small positive number for a smoke run. A publishable run uses
-`max_samples=0` and `commit_results=true`; only that combination commits the two
-validated leaderboard rows.
+`max_samples` to a small positive number for a two-job German smoke run, one job
+per runtime. A publishable run uses `max_samples=0` and
+`commit_results=true`; only that combination starts the 26-job matrix and
+commits the two validated leaderboard rows.
 
 The initial pinned variants are:
 
