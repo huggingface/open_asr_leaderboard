@@ -310,7 +310,8 @@ jobs:
           cp benchmark-summary/primeline-onnx-multilingual.json onnx_eval/results/primeline-onnx-multilingual.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/data/multilingual.csv onnx_eval/results/primeline-onnx-multilingual.json
+          git add scripts/data/multilingual.csv
+          git add --force onnx_eval/results/primeline-onnx-multilingual.json
           if git diff --cached --quiet; then
             echo "No benchmark changes to commit"
           else
