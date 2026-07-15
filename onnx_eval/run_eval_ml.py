@@ -119,6 +119,7 @@ def download_model(args: argparse.Namespace) -> str:
     kwargs: dict[str, object] = {
         "repo_id": args.repo_id,
         "revision": args.revision,
+        "max_workers": 16,
     }
     if args.backend == "onnx-asr":
         # The repository also contains a separate int8 export. The fp32 encoder

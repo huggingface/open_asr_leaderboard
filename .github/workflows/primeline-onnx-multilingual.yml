@@ -74,6 +74,7 @@ jobs:
           MODEL_REPO: ${{ matrix.variant.repo_id }}
           MODEL_REVISION: ${{ matrix.variant.revision }}
           HF_HUB_DISABLE_TELEMETRY: "1"
+          HF_HUB_DISABLE_XET: "1"
         run: |
           python -m pip install "huggingface_hub==0.33.4"
           python - <<'PY'
@@ -83,6 +84,7 @@ jobs:
           kwargs = {
               "repo_id": os.environ["MODEL_REPO"],
               "revision": os.environ["MODEL_REVISION"],
+              "max_workers": 16,
           }
           if os.environ["BACKEND_VARIANT"] == "fp32":
               kwargs["ignore_patterns"] = ["*-int8.onnx", "scriber-quantizations.json"]
@@ -166,6 +168,7 @@ jobs:
       - name: Evaluate ${{ matrix.variant.name }} on ${{ matrix.config.name }}
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"
+          HF_HUB_DISABLE_XET: "1"
           MAX_SAMPLES: ${{ inputs.max_samples }}
         run: |
           python onnx_eval/run_eval_ml.py \
