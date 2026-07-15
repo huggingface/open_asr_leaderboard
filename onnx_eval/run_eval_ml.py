@@ -148,9 +148,9 @@ def decode_audio(audio: object) -> tuple[np.ndarray, int]:
     return np.ascontiguousarray(waveform), sample_rate
 
 
-def iter_batches(dataset, batch_size: int):
+def iter_batches(dataset, batch_size: int, total_samples: int):
     batch: list[Sample] = []
-    for row in tqdm(dataset, total=len(dataset), desc="Preparing and transcribing"):
+    for row in tqdm(dataset, total=total_samples, desc="Preparing and transcribing"):
         reference = str(row.get("text", "")).strip()
         if not data_utils.is_target_text_in_range(reference):
             continue
@@ -203,20 +203,23 @@ def main() -> None:
     backend = load_backend(args, model_path)
 
     print(f"Loading {args.dataset_id}/{args.config_name}:{args.split}")
+    smoke_run = args.max_samples > 0
     dataset = load_dataset(
         args.dataset_id,
         args.config_name,
         split=args.split,
-        streaming=False,
+        streaming=smoke_run,
     )
-    if args.max_samples:
-        dataset = dataset.select(range(min(args.max_samples, len(dataset))))
-    if "duration" in dataset.column_names:
+    if smoke_run:
+        dataset = dataset.take(args.max_samples)
+        selected_samples = args.max_samples
+    else:
+        selected_samples = len(dataset)
+    if not smoke_run and "duration" in dataset.column_names:
         dataset = dataset.sort("duration", reverse=True)
     dataset = dataset.cast_column("audio", Audio(sampling_rate=SAMPLE_RATE, decode=True))
-    selected_samples = len(dataset)
 
-    batches = iter(iter_batches(dataset, args.batch_size))
+    batches = iter(iter_batches(dataset, args.batch_size, selected_samples))
     try:
         first_batch = next(batches)
     except StopIteration as exc:
