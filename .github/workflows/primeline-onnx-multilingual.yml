@@ -39,8 +39,59 @@ jobs:
             exit 1
           fi
 
-  evaluate:
+  prepare-model:
     needs: validate-inputs
+    name: prepare-${{ matrix.variant.name }}-model
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - name: fp32
+            repo_id: Buttermilk03/parakeet-primeline-onnx
+            revision: 2e2f9169c7030984cf0e9e35c0a68eadfac376e4
+            cache_repo: Buttermilk03--parakeet-primeline-onnx
+          - name: int8
+            repo_id: flozen1981/parakeet-primeline-onnx
+            revision: d548e25b9bfe559aa274f361892dc4ed5d64743a
+            cache_repo: flozen1981--parakeet-primeline-onnx
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore immutable model snapshot
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub/models--${{ matrix.variant.cache_repo }}
+          key: hf-model-${{ runner.os }}-${{ matrix.variant.name }}-${{ matrix.variant.revision }}
+
+      - name: Download model once for all config jobs
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        env:
+          BACKEND_VARIANT: ${{ matrix.variant.name }}
+          MODEL_REPO: ${{ matrix.variant.repo_id }}
+          MODEL_REVISION: ${{ matrix.variant.revision }}
+          HF_HUB_DISABLE_TELEMETRY: "1"
+        run: |
+          python -m pip install "huggingface_hub==0.33.4"
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+
+          kwargs = {
+              "repo_id": os.environ["MODEL_REPO"],
+              "revision": os.environ["MODEL_REVISION"],
+          }
+          if os.environ["BACKEND_VARIANT"] == "fp32":
+              kwargs["ignore_patterns"] = ["*-int8.onnx", "scriber-quantizations.json"]
+          print(snapshot_download(**kwargs))
+          PY
+
+  evaluate:
+    needs: [validate-inputs, prepare-model]
+    name: evaluate-${{ matrix.variant.name }}-${{ matrix.config.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
