@@ -1,8 +1,21 @@
 import argparse
+import concurrent.futures
+import itertools
 import json
+import os
 from pathlib import Path
 import sys
+import tempfile
+import time
 from typing import Optional
+
+import datasets
+from datasets import Audio
+import evaluate
+import soundfile as sf
+import requests
+from tqdm import tqdm
+from dotenv import load_dotenv
 
 # Make the repository-level normalizer importable when this entry point is
 # launched directly with Windows Python (which uses ';', not ':', in
@@ -11,21 +24,9 @@ REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-import datasets
-from datasets import Audio
-import evaluate
-import soundfile as sf
-import tempfile
-import time
-import os
-import requests
-import itertools
-from tqdm import tqdm
-from dotenv import load_dotenv
-from normalizer import data_utils
-from normalizer.eval_utils import normalize_compound_pairs
-import concurrent.futures
-from providers import get_provider, PermanentError
+from normalizer import data_utils  # noqa: E402
+from normalizer.eval_utils import normalize_compound_pairs  # noqa: E402
+from providers import PermanentError, get_provider  # noqa: E402
 
 load_dotenv()
 

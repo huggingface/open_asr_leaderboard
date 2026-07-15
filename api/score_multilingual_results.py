@@ -2,15 +2,18 @@ import argparse
 from pathlib import Path
 import sys
 
+from jiwer import wer
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from jiwer import wer
-
-from normalizer import data_utils
-from normalizer.eval_utils import normalize_compound_pairs, read_manifest
+from normalizer import data_utils  # noqa: E402
+from normalizer.eval_utils import (  # noqa: E402
+    normalize_compound_pairs,
+    read_manifest,
+)
 
 
 # The leaderboard labels the Mozilla Common Voice source splits as CoVoST.
