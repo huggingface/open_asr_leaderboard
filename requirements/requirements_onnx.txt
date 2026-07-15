@@ -1,0 +1,9 @@
+datasets==3.6.0
+huggingface_hub==0.33.4
+jiwer==3.1.0
+num2words==0.5.14
+onnx-asr==0.10.2
+onnxruntime==1.22.0
+sherpa-onnx==1.13.4
+soundfile==0.13.1
+tqdm==4.67.1

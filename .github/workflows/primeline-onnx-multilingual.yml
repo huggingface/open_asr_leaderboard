@@ -1,0 +1,189 @@
+name: Primeline ONNX multilingual benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_samples:
+        description: "Samples per config; 0 runs every sample"
+        required: true
+        default: "8"
+        type: string
+      commit_results:
+        description: "Commit validated full results to this branch"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: primeline-onnx-multilingual-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          MAX_SAMPLES: ${{ inputs.max_samples }}
+          COMMIT_RESULTS: ${{ inputs.commit_results }}
+        run: |
+          if ! [[ "$MAX_SAMPLES" =~ ^[0-9]+$ ]]; then
+            echo "max_samples must be a non-negative integer" >&2
+            exit 1
+          fi
+          if [[ "$COMMIT_RESULTS" == "true" && "$MAX_SAMPLES" != "0" ]]; then
+            echo "commit_results requires max_samples=0" >&2
+            exit 1
+          fi
+
+  evaluate:
+    needs: validate-inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        variant:
+          - name: fp32
+            backend: onnx-asr
+            repo_id: Buttermilk03/parakeet-primeline-onnx
+            model_id: Buttermilk03/parakeet-primeline-onnx
+            revision: 2e2f9169c7030984cf0e9e35c0a68eadfac376e4
+            batch_size: 4
+            cache_repo: Buttermilk03--parakeet-primeline-onnx
+          - name: int8
+            backend: sherpa-onnx
+            repo_id: flozen1981/parakeet-primeline-onnx
+            model_id: flozen1981/parakeet-primeline-onnx
+            revision: d548e25b9bfe559aa274f361892dc4ed5d64743a
+            batch_size: 8
+            cache_repo: flozen1981--parakeet-primeline-onnx
+        config:
+          - name: fleurs_de
+            language: de
+          - name: fleurs_fr
+            language: fr
+          - name: fleurs_it
+            language: it
+          - name: fleurs_es
+            language: es
+          - name: fleurs_pt
+            language: pt
+          - name: mcv_de
+            language: de
+          - name: mcv_es
+            language: es
+          - name: mcv_fr
+            language: fr
+          - name: mcv_it
+            language: it
+          - name: mls_es
+            language: es
+          - name: mls_fr
+            language: fr
+          - name: mls_it
+            language: it
+          - name: mls_pt
+            language: pt
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/requirements_onnx.txt
+
+      - name: Restore model snapshot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub/models--${{ matrix.variant.cache_repo }}
+          key: hf-model-${{ runner.os }}-${{ matrix.variant.name }}-${{ matrix.variant.revision }}
+
+      - name: Install runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg libsndfile1
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/requirements_onnx.txt
+
+      - name: Evaluate ${{ matrix.variant.name }} on ${{ matrix.config.name }}
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+          MAX_SAMPLES: ${{ inputs.max_samples }}
+        run: |
+          python onnx_eval/run_eval_ml.py \
+            --backend "${{ matrix.variant.backend }}" \
+            --variant "${{ matrix.variant.name }}" \
+            --repo-id "${{ matrix.variant.repo_id }}" \
+            --revision "${{ matrix.variant.revision }}" \
+            --model-id "${{ matrix.variant.model_id }}" \
+            --config-name "${{ matrix.config.name }}" \
+            --language "${{ matrix.config.language }}" \
+            --batch-size "${{ matrix.variant.batch_size }}" \
+            --num-threads "$(nproc)" \
+            --max-samples "$MAX_SAMPLES" \
+            --output-dir "benchmark-output/${{ matrix.variant.name }}-${{ matrix.config.name }}"
+
+      - name: Upload config result
+        uses: actions/upload-artifact@v4
+        with:
+          name: primeline-${{ matrix.variant.name }}-${{ matrix.config.name }}
+          path: benchmark-output/${{ matrix.variant.name }}-${{ matrix.config.name }}
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    needs: evaluate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download every config result
+        uses: actions/download-artifact@v4
+        with:
+          pattern: primeline-*
+          path: benchmark-artifacts
+
+      - name: Validate and aggregate results
+        env:
+          MAX_SAMPLES: ${{ inputs.max_samples }}
+        run: |
+          args=(
+            --artifact-root benchmark-artifacts
+            --variant "fp32=Buttermilk03/parakeet-primeline-onnx,0.6"
+            --variant "int8=flozen1981/parakeet-primeline-onnx,0.6"
+            --summary-output benchmark-summary/primeline-onnx-multilingual.json
+          )
+          if [[ "$MAX_SAMPLES" == "0" ]]; then
+            args+=(--csv scripts/data/multilingual.csv)
+          fi
+          python onnx_eval/aggregate_multilingual.py "${args[@]}"
+
+      - name: Upload aggregate summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: primeline-multilingual-summary
+          path: benchmark-summary/primeline-onnx-multilingual.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Commit full benchmark results
+        if: inputs.commit_results
+        run: |
+          mkdir -p onnx_eval/results
+          cp benchmark-summary/primeline-onnx-multilingual.json onnx_eval/results/primeline-onnx-multilingual.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/data/multilingual.csv onnx_eval/results/primeline-onnx-multilingual.json
+          if git diff --cached --quiet; then
+            echo "No benchmark changes to commit"
+          else
+            git commit -m "Add Primeline ONNX multilingual benchmark results"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
