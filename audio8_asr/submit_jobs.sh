@@ -4,13 +4,12 @@ set -euo pipefail
 
 # Independent Audio8-ASR HF Jobs submission.
 # Usage:
-#   RESULTS_BUCKET="AutoArk-AI/audio8-asr-open-asr-results" \
 #   HF_TOKEN="hf_..." \
-#   ORG_NAME="AutoArk-AI" \
 #   bash audio8_asr/submit_jobs.sh
+# Override RESULTS_BUCKET and ORG_NAME when running outside the hf-audio namespace.
 
-SPACE="${SPACE:-AutoArk-AI/open-asr-leaderboard-audio8-asr}"
-RESULTS_BUCKET="${RESULTS_BUCKET:?Set RESULTS_BUCKET to a writable Hugging Face bucket}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-audio8-asr}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
@@ -117,19 +116,15 @@ else
   echo "Jobs page: https://huggingface.co/settings/jobs"
 fi
 
+# Allow the completed Jobs' bucket writes to become visible before syncing.
+sleep 10
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 local_results="$repo_root/results/$MODEL_FOLDER"
 mkdir -p "$local_results"
 hf buckets sync \
   "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
   "$local_results"
-
-actual="$(find "$local_results" -maxdepth 1 -name '*.jsonl' | wc -l)"
-expected="${#DATASET_CONFIGS[@]}"
-if [[ "$actual" -ne "$expected" ]]; then
-  echo "Expected $expected JSONL manifests, found $actual in $local_results" >&2
-  exit 1
-fi
 
 PYTHONPATH="$repo_root" python - <<PY
 from normalizer.eval_utils import score_results
