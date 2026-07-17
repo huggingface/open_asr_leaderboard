@@ -1,15 +1,16 @@
 # This script is used to evaluate NeMo ASR models on the Multi-Lingual datasets
 
 import argparse
-import io
 import os
-os.environ["DATASETS_USE_TORCHCODEC"] = "0"
+# Force soundfile audio decoding before datasets is imported/used,
+# to avoid the torchcodec AudioDecoder object being returned.
+os.environ.setdefault("HF_AUDIO_DECODER_BACKEND", "soundfile")
 import torch
 import evaluate
 import soundfile
 import numpy as np
 from tqdm import tqdm
-from datasets import load_dataset
+from datasets import load_dataset, Audio
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs
 from nemo.collections.asr.models import ASRModel
@@ -62,7 +63,12 @@ def main(args):
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
 
     dataset = load_dataset(args.dataset, CONFIG_NAME, split=SPLIT_NAME, streaming=args.streaming)
-    
+
+    # Re-sample and cast audio to a consistent dict format ({"array", "sampling_rate"}),
+    # matching run_eval.py's data_utils.prepare_data(). Without this, some `datasets`
+    # versions/backends decode audio into a non-subscriptable AudioDecoder object.
+    dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
+
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
         dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
@@ -86,14 +92,8 @@ def main(args):
             unique_id = f"{CONFIG_NAME}_{i}_{os.path.basename(file_name).replace('.wav', '')}"
             audio_path = os.path.join(CACHE_DIR, f"{unique_id}.wav")
 
-            if "array" in sample:
-                audio_array = np.float32(sample["array"])
-                sample_rate = sample.get("sampling_rate", 16000)
-            elif "bytes" in sample:
-                with io.BytesIO(sample["bytes"]) as audio_file:
-                    audio_array, sample_rate = soundfile.read(audio_file, dtype="float32")
-            else:
-                raise ValueError("Sample must have either 'array' or 'bytes' key")
+            audio_array = np.float32(sample["array"])
+            sample_rate = sample["sampling_rate"]
 
             if not os.path.exists(audio_path):
                 os.makedirs(os.path.dirname(audio_path), exist_ok=True)
@@ -234,8 +234,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        default="nithinraok/asr-leaderboard-datasets",
-        help="Dataset name. Default is 'nithinraok/asr-leaderboard-datasets'"
+        default="hf-audio/open-asr-leaderboard-multilingual-datasets",
+        help="Dataset name. Default is 'hf-audio/open-asr-leaderboard-multilingual-datasets'"
     )
     parser.add_argument(
         "--config_name",

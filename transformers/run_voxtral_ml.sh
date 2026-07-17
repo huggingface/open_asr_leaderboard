@@ -14,7 +14,7 @@ MODEL_IDs=(
 DEVICE_ID=0
 
 # Available datasets and languages
-DATASETS="nithinraok/asr-leaderboard-datasets"
+DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
 # Voxtral supports: English, Spanish, French, Portuguese, Hindi, German, Dutch, Italian
 DATASET_NAMES=("fleurs" "mcv" "mls")

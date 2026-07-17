@@ -14,7 +14,7 @@ BATCH_SIZE=64
 DEVICE_ID=0
 
 # Available datasets and languages
-DATASETS="nithinraok/asr-leaderboard-datasets"
+DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
 # Voxtral Realtime supports: en, fr, es, de, ru, zh, ja, it, pt, nl, ar, hi, ko
 DATASET_NAMES=("fleurs" "mcv" "mls")

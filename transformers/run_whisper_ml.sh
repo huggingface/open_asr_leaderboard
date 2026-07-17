@@ -7,7 +7,7 @@ export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
 MODEL_IDs=(
-    # "openai/whisper-large-v3"
+    "openai/whisper-large-v3"
     "openai/whisper-large-v3-turbo"
 )
 
@@ -15,9 +15,9 @@ BATCH_SIZE=64
 DEVICE_ID=0
 
 # Available datasets and languages
-DATASETS="nithinraok/asr-leaderboard-datasets"
+DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
-# German, French, Italian, Spanish, Portuguese
+# # German, French, Italian, Spanish, Portuguese
 DATASET_NAMES=("fleurs" "mcv" "mls")
 DATASET_LANGS_fleurs="de fr it es pt"
 DATASET_LANGS_mcv="de es fr it"
@@ -98,9 +98,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
 
     # Evaluate results
     RUNDIR=`pwd`
-    cd ../normalizer
-    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}', multilingual=True)"
-    cd "$RUNDIR"
+    python -c "from normalizer.eval_utils import score_results; score_results('${RUNDIR}/results', '${MODEL_ID}', multilingual=True)"
 
     echo ""
 done
