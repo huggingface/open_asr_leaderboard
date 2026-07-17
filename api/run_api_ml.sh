@@ -13,6 +13,7 @@ export AQUAVOICE_API_KEY="your_api_key"
 export SPEECHMATICS_API_KEY="your_api_key"
 export RESON8_API_KEY="your_api_key"
 export AZURE_API_KEY="your_api_key"
+export MODULATE_API_KEY="your_api_key"
 
 # Configuration
 MODEL_IDs=(
@@ -22,13 +23,15 @@ MODEL_IDs=(
     # "assembly/universal-3-pro"
     # "elevenlabs/scribe_v2"
     # "speechmatics/enhanced"
-    "reson8/resonant-1"
-    "reson8/resonant-1-flash"
-    "microsoft/azure-speech-05-2026"
+    # "reson8/resonant-1"
+    # "reson8/resonant-1-flash"
+    # "microsoft/azure-speech-05-2026"
+    # "modulate/multilingual"   # 25
 )
 
-MAX_WORKERS=20
-DATASET_PATH="nithinraok/asr-leaderboard-datasets"
+MAX_WORKERS=4
+# MAX_WORKERS=20
+DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
 # German, French, Italian, Spanish, Portuguese
 DATASET_NAMES=("fleurs" "mls" "mcv")
@@ -114,11 +117,42 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
     echo "Evaluating results for $MODEL_ID"
     echo "========================================================"
 
-    # Evaluate results
     RUNDIR=`pwd`
-    cd ../normalizer
-    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}', multilingual=True)"
-    cd "$RUNDIR"
+    MODEL_FOLDER="${MODEL_ID//\//-}"
+
+    # Move this model's result files into their own folder
+    MODEL_RESULTS_DIR="${RUNDIR}/results/${MODEL_FOLDER}"
+    mkdir -p "${MODEL_RESULTS_DIR}"
+    model_files=("${RUNDIR}/results/MODEL_${MODEL_FOLDER}_DATASET_"*.jsonl)
+    if [[ -e "${model_files[0]}" ]]; then
+        mv "${model_files[@]}" "${MODEL_RESULTS_DIR}/"
+    else
+        echo "WARNING: no result files found for ${MODEL_ID}"
+    fi
+
+    # Collect the set of languages actually evaluated (across all datasets)
+    ALL_LANGUAGES=()
+    for dataset in "${DATASET_NAMES[@]}"; do
+        varname="DATASET_LANGS_${dataset}"
+        languages="${!varname}"
+        for language in $languages; do
+            if [[ ! " ${ALL_LANGUAGES[*]} " == *" ${language} "* ]]; then
+                ALL_LANGUAGES+=("$language")
+            fi
+        done
+    done
+
+    # Evaluate results: one call per language, so each is normalized with the
+    # correct language-specific normalizer and only its "ml_<lang>" family
+    # CSV block is printed.
+    for language in "${ALL_LANGUAGES[@]}"; do
+        python -c "
+import os, sys
+sys.path.insert(0, os.path.join('${RUNDIR}', '..'))
+from normalizer.eval_utils import score_results
+score_results('${MODEL_RESULTS_DIR}', '${MODEL_ID}', multilingual=True, language='${language}', families=['ml_${language}'])
+"
+    done
 
     echo ""
 done
