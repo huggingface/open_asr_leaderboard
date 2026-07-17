@@ -14,19 +14,21 @@ export SPEECHMATICS_API_KEY="your_api_key"
 export RESON8_API_KEY="your_api_key"
 export AZURE_API_KEY="your_api_key"
 export SONIOX_API_KEY="${SONIOX_API_KEY:-}"
+export MODULATE_API_KEY="your_api_key"
 
 # Configuration
 MODEL_IDs=(
-    # "openai/gpt-4o-transcribe"
-    # "openai/gpt-4o-mini-transcribe"
-    # "openai/whisper-1"
-    # "assembly/universal-3-pro"
-    # "elevenlabs/scribe_v2"
-    # "speechmatics/enhanced"
+    "openai/gpt-4o-transcribe"
+    "openai/gpt-4o-mini-transcribe"
+    "openai/whisper-1"
+    "assembly/universal-3-pro"
+    "elevenlabs/scribe_v2"
+    "speechmatics/enhanced"
     # "soniox/stt-async-v5"
     "reson8/resonant-1"
     "reson8/resonant-1-flash"
     "microsoft/azure-speech-05-2026"
+    "modulate/multilingual"
 )
 
 MAX_WORKERS=20
