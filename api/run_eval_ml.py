@@ -1,32 +1,20 @@
 import argparse
-import concurrent.futures
-import itertools
-import json
-import os
-from pathlib import Path
-import sys
-import tempfile
-import time
 from typing import Optional
-
 import datasets
 from datasets import Audio
 import evaluate
 import soundfile as sf
+import tempfile
+import time
+import os
 import requests
+import itertools
 from tqdm import tqdm
 from dotenv import load_dotenv
-
-# Make the repository-level normalizer importable when this entry point is
-# launched directly with Windows Python (which uses ';', not ':', in
-# PYTHONPATH). This is a no-op in the Linux container setup.
-REPO_ROOT = str(Path(__file__).resolve().parents[1])
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-
-from normalizer import data_utils  # noqa: E402
-from normalizer.eval_utils import normalize_compound_pairs  # noqa: E402
-from providers import PermanentError, get_provider  # noqa: E402
+from normalizer import data_utils
+from normalizer.eval_utils import normalize_compound_pairs
+import concurrent.futures
+from providers import get_provider, PermanentError
 
 load_dotenv()
 
@@ -54,7 +42,7 @@ def fetch_audio_urls(dataset_path, config_name, split, batch_size=100, max_retri
                     headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"
                 else:
                     print("HF_TOKEN not set, might experience rate-limiting.")
-                response = requests.get(API_URL, params=params, headers=headers)
+                response = requests.get(API_URL, params=params)
                 response.raise_for_status()
                 data = response.json()
                 yield from data["rows"]
@@ -117,72 +105,28 @@ def transcribe_dataset(
     max_samples=None,
     max_workers=4,
     prompt=None,
-    resume=False,
-    seed_manifest=None,
 ):
     if use_url:
         audio_rows = fetch_audio_urls(dataset_path, config_name, split)
         if max_samples:
             audio_rows = itertools.islice(audio_rows, max_samples)
-        ds = list(audio_rows)
+        ds = audio_rows
     else:
         ds = datasets.load_dataset(dataset_path, config_name, split=split, streaming=False)
         ds = ds.cast_column("audio", Audio(sampling_rate=16000))
         if max_samples:
             ds = ds.select(range(min(max_samples, len(ds))))
 
-    model_slug = model_name.replace("/", "-")
-    dataset_slug = dataset_path.replace("/", "-")
-    checkpoint_dir = Path("results") / ".checkpoints"
-    checkpoint_path = checkpoint_dir / (
-        f"MODEL_{model_slug}_DATASET_{dataset_slug}_{config_name}_{split}.jsonl.partial"
-    )
-    completed: dict[int, tuple[str, str, float, float]] = {}
-    if resume and checkpoint_path.exists():
-        with checkpoint_path.open("r", encoding="utf-8") as checkpoint_file:
-            for line in checkpoint_file:
-                if not line.strip():
-                    continue
-                try:
-                    item = json.loads(line)
-                except json.JSONDecodeError:
-                    print("Ignoring an incomplete trailing checkpoint record")
-                    continue
-                completed[int(item["index"])] = (
-                    item["reference"],
-                    item["prediction"],
-                    float(item["audio_length_s"]),
-                    float(item["transcription_time_s"]),
-                )
-        print(f"Resuming from {len(completed)} checkpointed samples")
-
-    if resume and seed_manifest:
-        seed_path = Path(seed_manifest)
-        if not seed_path.exists():
-            raise FileNotFoundError(f"Seed manifest does not exist: {seed_path}")
-        seeded = 0
-        with seed_path.open("r", encoding="utf-8") as seed_file:
-            for index, line in enumerate(seed_file):
-                if not line.strip() or index in completed:
-                    continue
-                if index >= len(ds):
-                    raise ValueError(
-                        f"Seed manifest has more rows than dataset {config_name}"
-                    )
-                item = json.loads(line)
-                completed[index] = (
-                    str(item["text"]),
-                    str(item["pred_text"]),
-                    float(item["duration"]),
-                    float(item["time"]),
-                )
-                seeded += 1
-        print(f"Seeded {seeded} completed samples from {seed_path}")
+    results = {
+        "references": [],
+        "predictions": [],
+        "audio_length_s": [],
+        "transcription_time_s": [],
+    }
 
     print(f"Transcribing with model: {model_name}, language: {language}, config: {config_name}")
 
-    def process_sample(index):
-        sample = ds[index]
+    def process_sample(sample):
         if use_url:
             reference = sample["row"]["text"].strip()
             audio_duration = sample["row"]["audio_length_s"]
@@ -192,7 +136,8 @@ def transcribe_dataset(
                     model_name, None, sample, use_url=True, language=language, prompt=prompt
                 )
             except Exception as e:
-                return index, None, str(e)
+                print(f"Failed to transcribe after retries: {e}")
+                return None
 
         else:
             reference = sample.get("text", "").strip()
@@ -214,76 +159,34 @@ def transcribe_dataset(
                     model_name, tmp_path, sample, use_url=False, language=language, prompt=prompt
                 )
             except Exception as e:
-                return index, None, str(e)
+                print(f"Failed to transcribe after retries: {e}")
+                os.unlink(tmp_path)
+                return None
             finally:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
+                else:
+                    print(f"File {tmp_path} does not exist")
 
         transcription_time = time.time() - start
-        return index, (
-            reference,
-            transcription,
-            audio_duration,
-            transcription_time,
-        ), None
+        return reference, transcription, audio_duration, transcription_time
 
-    sample_count = len(ds)
-    pending_indices = [index for index in range(sample_count) if index not in completed]
-    failures = []
-    checkpoint_file = None
-    if resume:
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        checkpoint_file = checkpoint_path.open("a", encoding="utf-8")
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_index = {
-            executor.submit(process_sample, index): index for index in pending_indices
+        future_to_sample = {
+            executor.submit(process_sample, sample): sample for sample in ds
         }
-        try:
-            for future in tqdm(
-                concurrent.futures.as_completed(future_to_index),
-                total=len(future_to_index),
-                desc="Transcribing",
-            ):
-                index, result, error = future.result()
-                if result is None:
-                    failures.append((index, error))
-                    print(f"Sample {index} failed after retries: {error}")
-                    continue
-                completed[index] = result
-                if checkpoint_file is not None:
-                    reference, prediction, audio_duration, transcription_time = result
-                    checkpoint_file.write(
-                        json.dumps(
-                            {
-                                "index": index,
-                                "reference": reference,
-                                "prediction": prediction,
-                                "audio_length_s": audio_duration,
-                                "transcription_time_s": transcription_time,
-                            },
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
-                    checkpoint_file.flush()
-        finally:
-            if checkpoint_file is not None:
-                checkpoint_file.close()
-
-    if failures:
-        preview = ", ".join(str(index) for index, _ in failures[:10])
-        raise RuntimeError(
-            f"{len(failures)} samples failed (indices: {preview}). "
-            f"Successful samples remain checkpointed at {checkpoint_path}."
-        )
-
-    ordered_results = [completed[index] for index in range(sample_count)]
-    results = {
-        "references": [item[0] for item in ordered_results],
-        "predictions": [item[1] for item in ordered_results],
-        "audio_length_s": [item[2] for item in ordered_results],
-        "transcription_time_s": [item[3] for item in ordered_results],
-    }
+        for future in tqdm(
+            concurrent.futures.as_completed(future_to_sample),
+            total=len(future_to_sample),
+            desc="Transcribing",
+        ):
+            result = future.result()
+            if result:
+                reference, transcription, audio_duration, transcription_time = result
+                results["predictions"].append(transcription)
+                results["references"].append(reference)
+                results["audio_length_s"].append(audio_duration)
+                results["transcription_time_s"].append(transcription_time)
 
     # Filter empty references (consistent with English pipeline's prepare_data)
     filtered = [
@@ -323,8 +226,6 @@ def transcribe_dataset(
 
     print("WER:", wer_percent, "%")
     print("RTFx:", rtfx)
-    if resume and checkpoint_path.exists():
-        checkpoint_path.unlink()
 
 
 if __name__ == "__main__":
@@ -355,16 +256,6 @@ if __name__ == "__main__":
         default=None,
         help="Optional prompt to pass to the provider (e.g., 'Output must be in lexical format.')",
     )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Checkpoint successful samples and resume an interrupted evaluation.",
-    )
-    parser.add_argument(
-        "--seed_manifest",
-        default=None,
-        help="Completed ordered manifest whose rows should seed a resumed run.",
-    )
 
     args = parser.parse_args()
 
@@ -378,6 +269,4 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         max_workers=args.max_workers,
         prompt=args.prompt,
-        resume=args.resume,
-        seed_manifest=args.seed_manifest,
     )

@@ -10,7 +10,6 @@
 #   AQUAVOICE_API_KEY=... \
 #   ZOOM_API_KEY=... \
 #   AZURE_API_KEY=... \
-#   SONIOX_API_KEY=... \
 #   bash submit_jobs.sh
 
 # Global defaults (can be left as-is; per-model `max_workers` will override)
@@ -41,7 +40,6 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-05-2026  4"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
-    # "soniox/stt-async-v5           20"
 )
 
 # ── Datasets ──────────────────────────────────────────────────────────────────
@@ -93,7 +91,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --env ZOOM_API_KEY="$ZOOM_API_KEY" \
             --env AZURE_API_KEY="$AZURE_API_KEY" \
             --env AZURE_REGION="$AZURE_REGION" \
-            --env SONIOX_API_KEY="$SONIOX_API_KEY" \
             --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \

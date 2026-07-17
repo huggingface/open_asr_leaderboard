@@ -29,7 +29,7 @@ MODEL_IDs=(
     "microsoft/azure-speech-05-2026"
 )
 
-MAX_WORKERS="${MAX_WORKERS:-20}"
+MAX_WORKERS=20
 DATASET_PATH="nithinraok/asr-leaderboard-datasets"
 
 # German, French, Italian, Spanish, Portuguese
@@ -38,18 +38,8 @@ DATASET_LANGS_fleurs="de fr it es pt"
 DATASET_LANGS_mcv="de es fr it"
 DATASET_LANGS_mls="es fr it pt"
 
-# Run a single provider without editing this file, for example:
-#   SONIOX_API_KEY=... MODEL_ID=soniox/stt-async-v5 bash run_api_ml.sh
-if [[ -n "${MODEL_ID:-}" ]]; then
-    MODEL_IDs=("$MODEL_ID")
-fi
-
 # Datasets that require lexical format prompt (azure only)
 LEXICAL_DATASETS="mls-it"
-RESUME_ARGS=()
-if [[ "${RESUME:-1}" != "0" ]]; then
-    RESUME_ARGS=(--resume)
-fi
 
 # Function to run evaluation
 run_evaluation() {
@@ -79,9 +69,6 @@ run_evaluation() {
         --split="test" \
         --model_name="$model_id" \
         --max_workers="$MAX_WORKERS" \
-        ${MAX_SAMPLES:+--max_samples="$MAX_SAMPLES"} \
-        ${USE_URL:+--use_url} \
-        "${RESUME_ARGS[@]}" \
         "${prompt_args[@]}"
 
     local exit_code=$?
@@ -119,10 +106,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
             echo ""
 
             for language in $languages; do
-                if ! run_evaluation "$MODEL_ID" "$dataset" "$language"; then
-                    echo "Stopping after failed evaluation: ${dataset}_${language}" >&2
-                    exit 1
-                fi
+                run_evaluation "$MODEL_ID" "$dataset" "$language"
             done
         fi
     done
@@ -132,12 +116,11 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
     echo "Evaluating results for $MODEL_ID"
     echo "========================================================"
 
-    # Score every config with its own language normalizer and print a row in
-    # the exact column order expected by scripts/data/multilingual.csv.
-    python score_multilingual_results.py \
-        --results-dir "$(pwd)/results" \
-        --model-id "$MODEL_ID" \
-        --dataset-path "$DATASET_PATH"
+    # Evaluate results
+    RUNDIR=`pwd`
+    cd ../normalizer
+    python -c "import eval_utils; eval_utils.score_results('${RUNDIR}/results', '${MODEL_ID}', multilingual=True)"
+    cd "$RUNDIR"
 
     echo ""
 done
