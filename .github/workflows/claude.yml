@@ -30,8 +30,27 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Check authorization
+        id: check_auth
+        run: |
+          AUTHOR_ASSOCIATION=""
+          if [ "${{ github.event_name }}" = "issue_comment" ] || [ "${{ github.event_name }}" = "pull_request_review_comment" ]; then
+            AUTHOR_ASSOCIATION="${{ github.event.comment.author_association }}"
+          elif [ "${{ github.event_name }}" = "pull_request_review" ]; then
+            AUTHOR_ASSOCIATION="${{ github.event.review.author_association }}"
+          elif [ "${{ github.event_name }}" = "issues" ]; then
+            AUTHOR_ASSOCIATION="${{ github.event.issue.author_association }}"
+          fi
+          
+          if [[ "$AUTHOR_ASSOCIATION" != "OWNER" && "$AUTHOR_ASSOCIATION" != "MEMBER" && "$AUTHOR_ASSOCIATION" != "COLLABORATOR" ]]; then
+            echo "Unauthorized: author_association is $AUTHOR_ASSOCIATION"
+            exit 1
+          fi
+          echo "Authorized: $AUTHOR_ASSOCIATION"
+
       - name: Run Claude Code
         id: claude
+        if: success()
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -43,8 +62,6 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr *)'
+          # Security: Restrict Claude capabilities to prevent prompt injection
+          claude_args: '--allowed-tools Bash(gh pr *) --allowed-tools Git(*)'
 
