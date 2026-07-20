@@ -328,6 +328,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
         total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
         wer = r["err_rate"]
+        extra = {"ins": total_ins, "del": total_del, "sub": total_sub}
 
         wer = round(100 * wer, 2)
 
@@ -339,7 +340,6 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
             audio_length = inference_time = rtfx = None
 
         result_key = f"{model_id_of_file} | {dataset_id}"
-        extra = {"ins": total_ins, "del": total_del, "sub": total_sub}
         results[result_key] = {"wer": wer, "audio_length": audio_length, "inference_time": inference_time, "rtfx": rtfx, **extra}
 
     if not csv_only:

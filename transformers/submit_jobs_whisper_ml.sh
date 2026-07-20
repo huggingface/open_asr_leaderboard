@@ -11,6 +11,16 @@ DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-dataset
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval_ml.py instead of the version
+# committed to the Space (useful for iterating without pushing to the Space).
+USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_SCRIPT_INJECT=""
+if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+    LOCAL_SCRIPT_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_ml.py")
+    LOCAL_SCRIPT_INJECT="echo '${LOCAL_SCRIPT_B64}' | base64 -d > /app/run_eval_ml.py &&"
+fi
+
 # ── Models: "model_id batch_size" ───────────────────────────────────────────
 MODEL_CONFIGS=(
     "openai/whisper-large-v3-turbo      64"
@@ -61,6 +71,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
+                ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
                     --dataset=${DATASET_PATH} \
@@ -116,7 +127,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     for LANGUAGE in "${ALL_LANGUAGES[@]}"; do
         PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'])
+score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
 "
     done
 

@@ -117,7 +117,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     for LANGUAGE in "${ALL_LANGUAGES[@]}"; do
         PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'])
+score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
 "
     done
 

@@ -31,6 +31,65 @@ from normalizer.eval_utils import score_results
 # Languages covered by the multilingual (FLEURS/MCV/MLS) benchmarks.
 ML_LANGUAGES = ["de", "fr", "it", "es", "pt"]
 
+# Columns of the combined multilingual CSV summary: (column label, dataset substring).
+ML_CSV_COLUMNS = [
+    ("de_covost", "mcv_de_test"),
+    ("de_fleurs", "fleurs_de_test"),
+    ("fr_covost", "mcv_fr_test"),
+    ("fr_mls", "mls_fr_test"),
+    ("fr_fleurs", "fleurs_fr_test"),
+    ("it_covost", "mcv_it_test"),
+    ("it_mls", "mls_it_test"),
+    ("it_fleurs", "fleurs_it_test"),
+    ("es_covost", "mcv_es_test"),
+    ("es_mls", "mls_es_test"),
+    ("es_fleurs", "fleurs_es_test"),
+    ("pt_mls", "mls_pt_test"),
+    ("pt_fleurs", "fleurs_pt_test"),
+]
+
+
+def print_multilingual_csv(all_results: dict) -> None:
+    """Print a combined CSV summary across all multilingual results.
+
+    Columns: model, RTFx, <one column per language/dataset>, Avg.
+    """
+    # Group results per model.
+    model_keys = sorted({key.split(" | ")[0].strip() for key in all_results})
+
+    print()
+    print("*" * 80)
+    print("CSV Summary (multilingual):")
+    print("*" * 80)
+    header = ["model", "RTFx"] + [label for label, _ in ML_CSV_COLUMNS] + ["Avg"]
+    print(",".join(header))
+
+    for model_key in model_keys:
+        model_results = {k: v for k, v in all_results.items() if k.split(" | ")[0].strip() == model_key}
+
+        wer_vals = []
+        for _label, ds_substr in ML_CSV_COLUMNS:
+            wer = next(
+                (v["wer"] for k, v in model_results.items() if ds_substr in k),
+                None,
+            )
+            wer_vals.append(wer)
+
+        # RTFx over all multilingual datasets with timing info.
+        audio = sum(v["audio_length"] for v in model_results.values()
+                    if v.get("audio_length") and v.get("inference_time"))
+        time = sum(v["inference_time"] for v in model_results.values()
+                   if v.get("audio_length") and v.get("inference_time"))
+        rtfx = str(round(audio / time, 2)) if time else ""
+
+        present = [v for v in wer_vals if v is not None]
+        avg = str(round(sum(present) / len(present), 2)) if present else ""
+
+        cols = [model_key, rtfx] + [str(v) if v is not None else "" for v in wer_vals] + [avg]
+        print(",".join(cols))
+
+    print("*" * 80)
+
 
 def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None) -> None:
     """Sync an HF bucket to a local directory using the `hf` CLI."""
@@ -129,10 +188,11 @@ def main():
 
     if args.multilingual:
         languages = args.language or ML_LANGUAGES
+        all_results = {}
         for model_id in model_ids:
             for language in languages:
                 try:
-                    score_results(
+                    _, results = score_results(
                         local_dir,
                         model_id=model_id,
                         multilingual=True,
@@ -140,8 +200,11 @@ def main():
                         families=[f"ml_{language}"],
                         csv_only=True,
                     )
+                    all_results.update(results)
                 except ValueError as e:
                     print(f"Skipping language={language} model_id={model_id}: {e}")
+        if all_results:
+            print_multilingual_csv(all_results)
     else:
         families = args.family or ["public"]
         if "all" in families:

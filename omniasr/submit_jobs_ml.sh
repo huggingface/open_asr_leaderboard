@@ -23,22 +23,23 @@ fi
 
 # ── Models: "model_id batch_size" (conservative batch size due to LLM memory requirements) ──
 MODEL_CONFIGS=(
-    "facebook/omniASR-CTC-300M      64"
-    "facebook/omniASR-CTC-1B        64"
-    "facebook/omniASR-CTC-3B        64"
-    "facebook/omniASR-CTC-7B        64"
     "facebook/omniASR-CTC-300M-v2   64"
     "facebook/omniASR-CTC-1B-v2     64"
     "facebook/omniASR-CTC-3B-v2     64"
     "facebook/omniASR-CTC-7B-v2     64"
-    "facebook/omniASR-LLM-300M      64"
-    "facebook/omniASR-LLM-1B        64"
-    "facebook/omniASR-LLM-3B        64"
-    "facebook/omniASR-LLM-7B        64"
     "facebook/omniASR-LLM-300M-v2   64"
     "facebook/omniASR-LLM-1B-v2     64"
     "facebook/omniASR-LLM-3B-v2     64"
     "facebook/omniASR-LLM-7B-v2     64"
+    # "facebook/omniASR-CTC-300M      64"
+    # "facebook/omniASR-CTC-1B        64"
+    # "facebook/omniASR-CTC-3B        64"
+    # "facebook/omniASR-CTC-7B        64"
+    # "facebook/omniASR-LLM-300M      64"
+    # "facebook/omniASR-LLM-1B        64"
+    # "facebook/omniASR-LLM-3B        64"
+    # "facebook/omniASR-LLM-7B        64"
+
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
@@ -143,7 +144,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     for LANGUAGE in "${ALL_LANGUAGES[@]}"; do
         PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'])
+score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
 "
     done
 
