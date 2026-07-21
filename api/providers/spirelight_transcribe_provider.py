@@ -14,7 +14,7 @@ POLL_INTERVAL_SEC = 2
 POLL_TIMEOUT_SEC = 3600
 
 
-@register("tsp")
+@register("spirelight")
 class TSPProvider(APIProvider):
     def transcribe(self, model_variant, audio_file_path, sample, use_url=False,
                    language="en", prompt=None):
