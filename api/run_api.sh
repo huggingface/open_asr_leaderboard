@@ -28,6 +28,7 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-05-2026  4"
     # "modulate/vfast                25"
     # "gladia/solaria-3             20"
+    # "spirelight/transcribe        16"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
@@ -90,6 +91,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e TSP_API_KEY="${TSP_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \

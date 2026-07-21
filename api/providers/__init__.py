@@ -61,5 +61,6 @@ from . import (
     revai_provider,
     smallest_provider,
     speechmatics_provider,
+    spirelight_transcribe_provider,
     zoom_provider,
 )
