@@ -20,9 +20,9 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
   After submitting a model to the leaderboard, the maintainers will evaluate on private sets, as described [here](https://huggingface.co/blog/open-asr-leaderboard-private-data).
 
 
-# Evaluate a model (as of 24 June 2026)
+# Evaluate a model (as of 23 July 2026)
 
-English short-form evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes a Docker image on the same hardware, to minimize environment and driver differences. Multilingual and long-form evaluations will migrate to HF Jobs in the future.
+English short-form and long-form evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes a Docker image on the same hardware, to minimize environment and driver differences. Multilingual evaluations will migrate to HF Jobs in the future.
 
 Jobs are launched on the following hardware ([flavor](https://huggingface.co/docs/hub/jobs-configuration#hardware-flavor) in HF Jobs terminology):
 ```
@@ -34,7 +34,7 @@ Example costs for a full run over the main public datasets:
 - $4.75 for `openai/whisper-large-v3-turbo`
 - $5.58 for `Qwen/Qwen3-ASR-1.7B`
 
-Each model family has its own Docker image with the necessaru software requirements. The evalulation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
+Each model family has its own Docker image with the necessary software requirements. The evaluation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
 
 **To launch an evaluation:**
 
@@ -70,9 +70,22 @@ RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 ORG_NAME="<org-name>" RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 ```
 
+For long-form evaluations, launch the family containing the model. The scripts
+run Earnings21, Earnings22, TED-LIUM, and all eight CORAAL subsets, then print a
+comparison with the current leaderboard. Dataset repositories are mounted
+read-only and their revisions are recorded in the launcher; TED-LIUM uses its
+original `distil-whisper/tedlium-long-form` source because it is no longer in
+the consolidated long-form repository. Full per-sample JSONL inference traces
+are stored at `<bucket>/longform/<model-slug>/`, and completed splits are reused
+when a run is resumed:
+```bash
+RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash transformers/submit_jobs_longform.sh
+RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash nemo_asr/submit_jobs_longform.sh
+```
+
 ## Local evaluation
 
-For contributors who want to test locally or evaluate multilingual/long-form models before HF Jobs support is added, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
+For contributors who want to test locally, or evaluate multilingual models before HF Jobs support is added, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
 
 Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
 

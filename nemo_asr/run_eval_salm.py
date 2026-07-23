@@ -67,6 +67,33 @@ def transcribe(model, dloader) -> list[str]:
     return hyps
 
 
+def chunk_audio_files(audio_files, chunk_length_s):
+    """Split recordings into fixed-size chunks and return paths plus group sizes."""
+    chunk_paths = []
+    chunks_per_file = []
+    for audio_path in audio_files:
+        audio, sample_rate = soundfile.read(audio_path, dtype="float32")
+        chunk_samples = int(chunk_length_s * sample_rate)
+        file_chunk_paths = []
+        for index, start in enumerate(range(0, len(audio), chunk_samples)):
+            chunk_path = f"{audio_path}.chunk-{index:05d}.wav"
+            if not os.path.exists(chunk_path):
+                soundfile.write(chunk_path, audio[start : start + chunk_samples], sample_rate)
+            file_chunk_paths.append(chunk_path)
+        chunk_paths.extend(file_chunk_paths)
+        chunks_per_file.append(len(file_chunk_paths))
+    return chunk_paths, chunks_per_file
+
+
+def merge_chunk_transcriptions(transcriptions, chunks_per_file):
+    merged = []
+    offset = 0
+    for count in chunks_per_file:
+        merged.append(" ".join(transcriptions[offset : offset + count]))
+        offset += count
+    return merged
+
+
 def parse_hyp(answer: torch.Tensor, eos_tokens):
     end = (answer == torch.isin(answer, eos_tokens)).nonzero(as_tuple=True)[0]
     if end.numel() == 0:
@@ -178,14 +205,26 @@ def main(args):
     total_time = 0
     for _ in range(2): # warmup once and calculate rtf
         if _ == 0:
-            audio_files = all_data["audio_filepaths"][:args.batch_size * 4] # warmup with 4 batches
+            audio_files = all_data["audio_filepaths"][:1]
         else:
             audio_files = all_data["audio_filepaths"]
-        dloader = setup_dloader(audio_files=audio_files, batch_size=args.batch_size, num_workers=1)
+        if args.longform:
+            inference_files, chunks_per_file = chunk_audio_files(audio_files, args.chunk_length_s)
+            if _ == 0:
+                # One fixed-size chunk is sufficient to initialize the model;
+                # the complete recording is processed in the timed pass below.
+                inference_files = inference_files[:1]
+                chunks_per_file = [1]
+        else:
+            inference_files = audio_files
+            chunks_per_file = None
+        dloader = setup_dloader(audio_files=inference_files, batch_size=args.batch_size, num_workers=1)
         with torch.inference_mode():
             start_time = time.time()
             transcriptions = transcribe(model, dloader)
             end_time = time.time()
+        if chunks_per_file is not None:
+            transcriptions = merge_chunk_transcriptions(transcriptions, chunks_per_file)
         if _ == 1:
             total_time += end_time - start_time
     total_time = total_time
@@ -234,6 +273,12 @@ if __name__ == "__main__":
         '--dataset_path', type=str, default='hf-audio/open-asr-leaderboard', help='Dataset path. By default, it is `hf-audio/open-asr-leaderboard`'
     )
     parser.add_argument(
+        '--dataset_revision', type=str, default=None, help='Optional immutable dataset revision used for reproducible evaluations.'
+    )
+    parser.add_argument(
+        '--data_files', type=str, default=None, help='Optional local Parquet glob supplied by an HF Jobs dataset mount.'
+    )
+    parser.add_argument(
         "--dataset",
         type=str,
         required=True,
@@ -262,6 +307,17 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
+        "--longform",
+        action="store_true",
+        help="Split long recordings into chunks and concatenate their transcriptions.",
+    )
+    parser.add_argument(
+        "--chunk_length_s",
+        type=float,
+        default=30,
+        help="Chunk length used with --longform.",
+    )
+    parser.add_argument(
         "--streaming",
         action="store_true",
         help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
@@ -273,5 +329,7 @@ if __name__ == "__main__":
         help="Root directory for caching audio files. Defaults to 'audio_cache' in current directory.",
     )
     args = parser.parse_args()
+    if args.chunk_length_s <= 0:
+        parser.error("--chunk_length_s must be positive")
 
     main(args)
