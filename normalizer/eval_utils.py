@@ -271,7 +271,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
             f"{dataset}_{lang}_test": (f"{ML_DATASET_LABELS[dataset]} WER", None)
             for dataset in datasets
         }
-        header = "model," + ",".join(
+        header = "model,RTFx," + ",".join(
             f"{ML_DATASET_LABELS[dataset]} WER" for dataset in datasets
         )
         FAMILY_CONFIGS.append((f"ml_{lang}", f"_{lang}_test", header, col_map))
@@ -434,7 +434,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                 print(f"{csv_model_label},{avg_overall},{avg_scripted},{avg_conv}," + ",".join(wer_cols))
             else:
                 n_prefix = len(header.split(',')) - 1 - len(csv_columns)
-                if family_key == "public":
+                if family_key == "public" or (family_key or "").startswith("ml_"):
                     family_audio = sum(
                         results[rk]["audio_length"]
                         for ds_substr in col_map

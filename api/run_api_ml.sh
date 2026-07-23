@@ -24,6 +24,7 @@ MODEL_CONFIGS=(
     # "reson8/resonant-1-flash       16"
     # "microsoft/azure-speech        4"
     # "modulate/multilingual         25"
+    # "soniox/stt-async-v5           20"
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
@@ -116,6 +117,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
