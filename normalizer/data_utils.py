@@ -69,13 +69,27 @@ def normalize(batch):
 
 
 def load_data(args):
-    dataset = load_dataset(
-        args.dataset_path,
-        args.dataset,
-        split=args.split,
-        streaming=args.streaming,
-        token=True,
-    )
+    data_files = getattr(args, "data_files", None)
+    if data_files:
+        dataset = load_dataset(
+            "parquet",
+            data_files={args.split: data_files},
+            split=args.split,
+            streaming=args.streaming,
+        )
+    else:
+        dataset = load_dataset(
+            args.dataset_path,
+            args.dataset,
+            split=args.split,
+            streaming=args.streaming,
+            token=True,
+            revision=getattr(args, "dataset_revision", None),
+            # Some benchmark datasets were repacked without refreshing the
+            # dataset-card byte counts. The example content is valid, so do
+            # not fail solely on stale split-size metadata.
+            verification_mode="no_checks",
+        )
 
     return dataset
 

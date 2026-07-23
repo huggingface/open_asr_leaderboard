@@ -38,7 +38,8 @@ def main(args):
     if args.model_id.endswith(".nemo"):
         asr_model = ASRModel.restore_from(args.model_id, map_location=device)
     else:
-        asr_model = ASRModel.from_pretrained(args.model_id, map_location=device)  # type: ASRModel
+        model_load_id = args.model_load_id or args.model_id
+        asr_model = ASRModel.from_pretrained(model_load_id, map_location=device)  # type: ASRModel
        
     if args.longform:
         asr_model.change_attention_model("rel_pos_local_attn", [128, 128])  # local attn
@@ -59,16 +60,13 @@ def main(args):
             # Use a unique filename based on global index
             audio_path = os.path.join(CACHE_DIR, f"sample_{global_idx}.wav")
 
-            if "array" in sample:
-                audio_array = np.float32(sample["array"])
-                sample_rate = 16000
-
-            elif "bytes" in sample: # added to be compatible with latest datasets library (3.x.x) that produces byte stream
+            if isinstance(sample, dict) and "bytes" in sample and "array" not in sample:
                 with io.BytesIO(sample["bytes"]) as audio_file:
                     audio_array, sample_rate = soundfile.read(audio_file, dtype="float32")
-
             else:
-                raise ValueError("Sample must have either 'array' or 'bytes' key")
+                # Supports both the legacy dict and datasets 4.x AudioDecoder.
+                audio_array = np.float32(sample["array"])
+                sample_rate = sample["sampling_rate"]
 
             if not os.path.exists(audio_path):
                 os.makedirs(os.path.dirname(audio_path), exist_ok=True)
@@ -116,10 +114,24 @@ def main(args):
     all_data["references"] = [all_data["references"][i] for i in sorted_indices]
     all_data["durations"] = [all_data["durations"][i] for i in sorted_indices]
 
+    def make_warmup_file(audio_path, max_duration_s=30):
+        """Create a short, unmeasured warmup clip from a long-form recording."""
+        warmup_path = f"{audio_path}.warmup-{max_duration_s}s.wav"
+        if not os.path.exists(warmup_path):
+            sample_rate = soundfile.info(audio_path).samplerate
+            audio, _ = soundfile.read(
+                audio_path, frames=int(max_duration_s * sample_rate), dtype="float32"
+            )
+            soundfile.write(warmup_path, audio, sample_rate)
+        return warmup_path
+
     total_time = 0
     for _ in range(2): # warmup once and calculate rtf
         if _ == 0:
-            audio_files = all_data["audio_filepaths"][:args.batch_size * 4] # warmup with 4 batches
+            if args.longform:
+                audio_files = [make_warmup_file(all_data["audio_filepaths"][0])]
+            else:
+                audio_files = all_data["audio_filepaths"][:args.batch_size * 4]
         else:
             audio_files = all_data["audio_filepaths"]
         start_time = time.time()
@@ -180,7 +192,19 @@ if __name__ == "__main__":
         "--model_id", type=str, required=True, help="Model identifier. Should be loadable with NVIDIA NeMo.",
     )
     parser.add_argument(
+        "--model_load_id",
+        type=str,
+        default=None,
+        help="Optional NeMo/NGC loading identifier when the leaderboard model ID differs.",
+    )
+    parser.add_argument(
         '--dataset_path', type=str, default='hf-audio/open-asr-leaderboard', help='Dataset path. By default, it is `hf-audio/open-asr-leaderboard`'
+    )
+    parser.add_argument(
+        '--dataset_revision', type=str, default=None, help='Optional immutable dataset revision used for reproducible evaluations.'
+    )
+    parser.add_argument(
+        '--data_files', type=str, default=None, help='Optional local Parquet glob supplied by an HF Jobs dataset mount.'
     )
     parser.add_argument(
         "--dataset",
