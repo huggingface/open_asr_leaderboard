@@ -1,43 +1,49 @@
 #!/bin/bash
-# Local script to submit HF Jobs for Qwen ASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# Local script to submit HF Jobs for multilingual Cohere ASR evaluation.
+# Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
+# This script is NOT pushed to the HF Space — it runs on your local machine.
+# Usage: HF_TOKEN=hf_... bash submit_jobs_cohere_ml.sh
 
-# ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-hojo-asr}"
-RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
+DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
-MAX_NEW_TOKENS=256  # matches the official qwen-asr package default
+MAX_NEW_TOKENS=500
 
-# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval_ml.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
 USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_SCRIPT_INJECT=""
 if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    LOCAL_SCRIPT_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
-    LOCAL_SCRIPT_INJECT="echo '${LOCAL_SCRIPT_B64}' | base64 -d > /app/run_eval.py &&"
+    LOCAL_SCRIPT_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_ml.py")
+    LOCAL_SCRIPT_INJECT="echo '${LOCAL_SCRIPT_B64}' | base64 -d > /app/run_eval_ml.py &&"
 fi
 
-# ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "HojoAI/Hojo-ASR-V1"
+    "CohereLabs/cohere-transcribe-03-2026      64"
 )
 
-# ── Datasets: "name split batch_size" ────────────────────────────────────────
+# Cohere ASR supports: en, es, fr, de, it, pt, nl, el, pl, ar, ja, ko, vi, zh
 DATASET_CONFIGS=(
-    "ami_cleaned test 32"
-    "gigaspeech_cleaned test 32"
-    "voxpopuli_cleaned_aa test 32"
-    "earnings22 test 32"
-    "librispeech test.clean 32"
-    "librispeech test.other 32"
-    "spgispeech test 32"
+    "fleurs de"
+    "fleurs fr"
+    "fleurs it"
+    "fleurs es"
+    "fleurs pt"
+    "mcv de"
+    "mcv es"
+    "mcv fr"
+    "mcv it"
+    "mls es"
+    "mls fr"
+    "mls it"
+    "mls pt"
 )
 
-# ── Submit one job per model/dataset combination ─────────────────────────────
-for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -45,9 +51,9 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT BATCH_SIZE <<< "$cfg"
-
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
+        read -r DATASET LANGUAGE <<< "$cfg"
+        CONFIG_NAME="${DATASET}_${LANGUAGE}"
+        echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -56,17 +62,17 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
                 ${LOCAL_SCRIPT_INJECT}
-                PYTHONPATH=/app python run_eval.py \
+                PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET} \
-                    --split=${SPLIT} \
+                    --dataset=${DATASET_PATH} \
+                    --config_name=${CONFIG_NAME} \
+                    --language=${LANGUAGE} \
+                    --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
                     --max_eval_samples=-1 \
@@ -82,8 +88,8 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
     fi
 
     wait
-    echo "All jobs finished for ${MODEL_ID}."
-    sleep 10  # allow time for the last results to be flushed to the bucket
+    echo "All jobs finished."
+    sleep 10
 
     mkdir -p "./results/${MODEL_FOLDER}"
     hf buckets sync \
@@ -98,10 +104,21 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
         echo "All ${ACTUAL} result files present."
     fi
 
-    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
-    PYTHONPATH="${REPO_ROOT}" python -c "
+    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+    ALL_LANGUAGES=()
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET LANGUAGE <<< "$cfg"
+        if [[ ! " ${ALL_LANGUAGES[*]} " == *" ${LANGUAGE} "* ]]; then
+            ALL_LANGUAGES+=("$LANGUAGE")
+        fi
+    done
+
+    for LANGUAGE in "${ALL_LANGUAGES[@]}"; do
+        PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
+score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
 "
+    done
 
 done

@@ -229,7 +229,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        help="Dataset name. E.g. 'nithinraok/asr-leaderboard-datasets'",
+        help="Dataset name. E.g. 'hf-audio/open-asr-leaderboard-multilingual-datasets'",
     )
     parser.add_argument(
         "--config_name",

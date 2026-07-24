@@ -2,8 +2,8 @@ import argparse
 from typing import Optional
 import datasets
 from datasets import Audio
-import evaluate
 import soundfile as sf
+from kaldialign import batch_error_rate
 import tempfile
 import time
 import os
@@ -216,9 +216,10 @@ def transcribe_dataset(
 
     norm_refs = [data_utils.ml_normalizer(r, lang=language) for r in results["references"]]
     norm_preds = [data_utils.ml_normalizer(t, lang=language) for t in results["predictions"]]
-    wer_metric = evaluate.load("wer")
     wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
-    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
+    refs_split = [tuple(r.split()) for r in wer_refs]
+    preds_split = [tuple(p.split()) for p in wer_preds]
+    wer = batch_error_rate(refs_split, preds_split, merge_compounds=True)["err_rate"]
     wer_percent = round(100 * wer, 2)
     rtfx = round(
         sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2

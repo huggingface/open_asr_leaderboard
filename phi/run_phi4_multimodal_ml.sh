@@ -14,7 +14,7 @@ MAX_NEW_TOKENS=128
 DEVICE_ID=0
 
 # Available datasets and languages
-DATASETS="nithinraok/asr-leaderboard-datasets"
+DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
 default_user_prompt="Transcribe the audio clip into text."
 

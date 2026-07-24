@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
 from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, CompileConfig
@@ -15,6 +16,20 @@ wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
 
 
+def remove_brackets(text):
+    """
+    Remove parentheses from text, replacing them with spaces.
+
+    Some models (e.g. Cohere ASR) output parentheses that would cause the
+    normalizer to delete the enclosed text entirely, leading to false
+    deletion errors in the predictions.
+    """
+    text = text.replace("(", " ").replace(")", " ")
+    # replace spans of multiple spaces as a single space
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
 def main(args):
 
     # Set seed for reproducibility
@@ -27,7 +42,7 @@ def main(args):
 
     torch_dtype = getattr(torch, args.dtype)
 
-    config = AutoConfig.from_pretrained(args.model_id)
+    config = AutoConfig.from_pretrained(args.model_id, revision=args.revision)
     if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING:
         cls_model = AutoModelForSpeechSeq2Seq
     elif type(config) in MODEL_FOR_MULTIMODAL_LM_MAPPING:
@@ -41,13 +56,17 @@ def main(args):
     model = cls_model.from_pretrained(
         args.model_id,
         dtype=torch_dtype,
+        revision=args.revision,
         attn_implementation=args.attn_implementation,
     )
     model.to(args.device)
     model.eval()
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
-    processor = AutoProcessor.from_pretrained(args.model_id)
+    processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
+    is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
+    # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
+    is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
 
     # Extract sampling rate from processor
     if hasattr(processor, "feature_extractor") and processor.feature_extractor is not None:
@@ -135,7 +154,19 @@ def main(args):
             padding_audios = [audios[-1] for _ in range(padding_size)]
             audios.extend(padding_audios)
 
-        if has_transcription_processor:
+        if is_cohere:
+            # Cohere ASR requires an explicit language and does not use apply_transcription_request
+            inputs = processor(
+                audios,
+                sampling_rate=sampling_rate,
+                return_tensors="pt",
+                language=norm_language,
+                punctuation=norm_language != "en",
+            )
+        elif is_voxtral_realtime:
+            # Realtime model uses a plain processor call — no prompt, no apply_transcription_request
+            inputs = processor(audios, return_tensors="pt")
+        elif has_transcription_processor:
             if "voxtral" in args.model_id.lower():
                 inputs = processor.apply_transcription_request(
                     language=args.language,  # None = auto-detect
@@ -163,7 +194,7 @@ def main(args):
                 audios,
                 sampling_rate=sampling_rate,
                 return_tensors="pt",
-                padding="longest",
+                padding="max_length",
                 return_attention_mask=True,
                 device=args.device,
             )
@@ -190,7 +221,19 @@ def main(args):
             pred_ids = pred_ids[:-padding_size, ...]
 
         # Convert token ids to text transcription
-        if has_transcription_processor:
+        if is_cohere:
+            audio_chunk_index = inputs.get("audio_chunk_index")
+            pred_text = processor.decode(
+                pred_ids,
+                skip_special_tokens=True,
+                audio_chunk_index=audio_chunk_index,
+                language=norm_language,
+            )
+            pred_text = [remove_brackets(t) for t in pred_text]
+        elif is_voxtral_realtime:
+            # No prompt tokens to strip — decode directly
+            pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        elif has_transcription_processor:
             pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_ctc:
             # don't use skip_special_tokens as it collapses double letters
@@ -304,10 +347,16 @@ if __name__ == "__main__":
         help="Model identifier. Should be loadable with Transformers",
     )
     parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Model revision to use (e.g. 'refs/pr/11' for a PR branch). Defaults to the main branch.",
+    )
+    parser.add_argument(
         "--dataset",
         type=str,
         required=True,
-        help="Dataset name. E.g. 'nithinraok/asr-leaderboard-datasets'",
+        help="Dataset name. E.g. 'hf-audio/open-asr-leaderboard-multilingual-datasets'",
     )
     parser.add_argument(
         "--config_name",
