@@ -36,14 +36,16 @@ License | Size (B) | # Languages | Encoder | Decoder
 -- | -- | -- | -- | -- 
  x | x | x | x | x 
 
-For LLM-based models, be sure to count the **total number** of parameters. You can get the exact number by adding the following line in your `run_eval.py` script:
+- [ ] Be sure to count the **total number** of parameters. You can get the exact number by adding the following line in your `run_eval.py` script:
 ```python
 print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
 ```
+- [ ] Does the license appear on your model card? 
+- [ ] Training data disclosure as linkable section on your model card ([example](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3#training-dataset)).
 
 ### API models
 
-- [ ] Please contact the maintainers to provide an API key.
+- [ ] Please contact the maintainers (Eric Bezzam or Steven Zheng) to provide an API key.
 - [ ] Add an `<API>_provider.py` file [here](https://github.com/huggingface/open_asr_leaderboard/tree/main/api/providers).
 - [ ] Import your `<API>_provider.py` file [here](https://github.com/huggingface/open_asr_leaderboard/blob/4e4880b9fb203d60830ed2920c521e067026f269/api/providers/__init__.py#L48).
 - [ ] In [api/run_api.sh](https://github.com/huggingface/open_asr_leaderboard/blob/main/api/run_api.sh) add:
@@ -53,6 +55,7 @@ print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B para
 - [ ] Please provide the following information:
     - Link to API documentation that we can cross-link on the leaderboard.
     - How many languages the API supports
+    - The entry-level cost ($/hour), e.g. when one first signs up and adds credits, and link to pricing.
 
 See [here](https://github.com/huggingface/open_asr_leaderboard/blob/main/api/README.md) for tips on evaluating API models.
 
