@@ -15,7 +15,7 @@ BATCH_SIZE=64
 DEVICE_ID=0
 
 # Available datasets and languages
-DATASETS="nithinraok/asr-leaderboard-datasets"
+DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
 # German, French, Italian, Spanish, Portuguese, English
 DATASET_NAMES=("fleurs" "mcv" "mls")

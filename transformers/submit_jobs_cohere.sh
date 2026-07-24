@@ -9,7 +9,6 @@ DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MAX_NEW_TOKENS=500
-REVISION="refs/pr/11"  # TODO: remove after merging transformer native changes to the HF model
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
@@ -63,8 +62,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
                     --device=0 \
                     --batch_size=${EFFECTIVE_BATCH_SIZE} \
                     --max_eval_samples=-1 \
-                    --max_new_tokens=${MAX_NEW_TOKENS} \
-                    --revision=${REVISION} &&
+                    --max_new_tokens=${MAX_NEW_TOKENS} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &

@@ -93,7 +93,7 @@ def prepare_data(dataset, sampling_rate=16000):
 
 AUDIO_FILEPATH_METADATA_KEYS = [
     "id",           # Main: https://huggingface.co/datasets/hf-audio/open-asr-leaderboard
-    "file_name",    # Multilingual: https://huggingface.co/datasets/nithinraok/asr-leaderboard-datasets
+    "file_name",    # Multilingual: https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets
     "file_name",    # Private
 ]
 

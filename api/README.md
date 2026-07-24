@@ -26,3 +26,31 @@ HF_TOKEN=<YOUR_TOKEN> \
 RESULTS_BUCKET=<YOUR_BUCKET> \
 bash api/run_api.sh
 ```
+
+## Multilingual
+
+Same idea, but using `api/run_api_ml.sh`, which evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
+- Set the relevant model in `MODEL_CONFIGS` of `api/run_api_ml.sh` with the model ID and the number max workers that the API allows, or pass `MODEL` via env var.
+- Set the relevant dataset/language pairs in `DATASET_CONFIGS` of `api/run_api_ml.sh`, or pass `"dataset:language"` pairs via `DATASETS` (see examples below).
+
+Smoke test (single model, single dataset/language):
+```bash
+AZURE_API_KEY=<YOUR_KEY> MODEL="microsoft/azure-speech 4" \
+DATASETS="fleurs:de" \
+bash api/run_api_ml.sh
+```
+
+To pass multiple dataset/language pairs via `DATASETS`, separate them with a space:
+```bash
+AZURE_API_KEY=<YOUR_KEY> MODEL="microsoft/azure-speech 4" \
+DATASETS="fleurs:de mcv:de mls:it" \
+bash api/run_api_ml.sh
+```
+
+Full run with bucket upload:
+```bash
+AZURE_API_KEY=<YOUR_KEY> MODEL="microsoft/azure-speech 4" \
+HF_TOKEN=<YOUR_TOKEN> \
+RESULTS_BUCKET=<YOUR_BUCKET> \
+bash api/run_api_ml.sh
+```

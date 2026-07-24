@@ -66,6 +66,7 @@ class OfflineZipformerTransducer:
         self.model.load_state_dict(state_dict, strict=True)
         self.model.to(self.device)
         self.model.eval()
+        print(f"Model size: {sum(p.numel() for p in self.model.parameters()) / 1e9:.2f}B parameters")
 
         self.fbank_opts = knf.FbankOptions.from_dict(model_config["feature_opts"])
 

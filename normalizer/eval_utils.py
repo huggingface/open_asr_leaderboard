@@ -153,9 +153,9 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         csv_only: If True, suppress all output except the CSV summary block.
         language: Language code used for normalization (e.g. 'en', 'de', 'fr').
                   When not 'en', ml_normalizer is used instead of the English normalizer.
-        families: Optional list of family keys ("appen", "dataocean", "public", "extra")
-                  restricting which CSV summary blocks are printed. None prints all
-                  detected families.
+        families: Optional list of family keys ("appen", "dataocean", "public", "extra",
+                  "ml_de", "ml_fr", "ml_it", "ml_es", "ml_pt") restricting which CSV
+                  summary blocks are printed. None prints all detected families.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -195,97 +195,6 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         ds_fp = fp[ds_index:]
         dataset_id = ds_fp.replace("DATASET_", "").removesuffix(".jsonl")
         return model_id, dataset_id
-
-    # Compute WER results per dataset, and RTFx over all datasets
-    from normalizer import data_utils  # deferred to avoid circular import
-    results = {}
-    wer_metric = None  # loaded lazily only when multilingual=True
-
-    for result_file in result_files:
-        manifest = read_manifest(result_file)
-        model_id_of_file, dataset_id = parse_filepath(result_file)
-
-        if language == "en":
-            normalize = data_utils.normalizer
-        else:
-            normalize = lambda t: data_utils.ml_normalizer(t, lang=language)
-        references = [normalize(datum["text"]) for datum in manifest]
-        predictions = [normalize(datum["pred_text"]) for datum in manifest]
-
-        time = [datum["time"] for datum in manifest]
-        duration = [datum["duration"] for datum in manifest]
-        compute_rtfx = all(time) and all(duration)
-
-        if multilingual:
-            # TODO update to use kaldialign
-            if wer_metric is None:
-                import evaluate
-                wer_metric = evaluate.load("wer")
-            references, predictions = normalize_compound_pairs(references, predictions)
-            wer = wer_metric.compute(references=references, predictions=predictions)
-        else:
-            # Use kaldialign batch_error_rate with merge_compounds=True so that
-            # split compounds (e.g. "white paper" vs "whitepaper") count as
-            # 0 errors in either direction.
-            refs_split  = [tuple(r.split()) for r in references]
-            preds_split = [tuple(p.split()) for p in predictions]
-            r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
-            total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
-            wer = r["err_rate"]
-
-        wer = round(100 * wer, 2)
-
-        if compute_rtfx:
-            audio_length = sum(duration)
-            inference_time = sum(time)
-            rtfx = round(sum(duration) / sum(time), 4)
-        else:
-            audio_length = inference_time = rtfx = None
-
-        result_key = f"{model_id_of_file} | {dataset_id}"
-        extra = {"ins": total_ins, "del": total_del, "sub": total_sub} if not multilingual else {}
-        results[result_key] = {"wer": wer, "audio_length": audio_length, "inference_time": inference_time, "rtfx": rtfx, **extra}
-
-    if not csv_only:
-        print("*" * 80)
-        print("Results per dataset:")
-        print("*" * 80)
-
-        for k, v in results.items():
-            metrics = f"{k}: WER = {v['wer']:0.2f} %"
-            if v["rtfx"] is not None:
-                metrics += f", RTFx = {v['rtfx']:0.2f}"
-            print(metrics)
-
-    # composite WER should be computed over all datasets and with the same key
-    composite_wer = defaultdict(float)
-    composite_audio_length = defaultdict(float)
-    composite_inference_time = defaultdict(float)
-    count_entries = defaultdict(int)
-    for k, v in results.items():
-        key = k.split("|")[0].strip()
-        composite_wer[key] += v["wer"]
-        if v["rtfx"] is not None:
-            composite_audio_length[key] += v["audio_length"]
-            composite_inference_time[key] += v["inference_time"]
-        else:
-            composite_audio_length[key] = composite_inference_time[key] = None
-        count_entries[key] += 1
-
-    # normalize scores & print
-    if not csv_only:
-        print()
-        print("*" * 80)
-        print("Composite Results:")
-        print("*" * 80)
-        for k, v in composite_wer.items():
-            wer = v / count_entries[k]
-            print(f"{k}: WER = {wer:0.2f} %")
-        for k in composite_audio_length:
-            if composite_audio_length[k] is not None:
-                rtfx = composite_audio_length[k] / composite_inference_time[k]
-                print(f"{k}: RTFx = {rtfx:0.2f}")
-        print("*" * 80)
 
     # ── Family definitions ────────────────────────────────────────────────────
     # Each entry: (family_key, presence_substring, header, col_map)
@@ -347,6 +256,133 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         ),
     ]
 
+    # Multilingual families: one per language, covering whichever of
+    # FLEURS / MCV / MLS include that language.
+    ML_LANG_DATASETS = {
+        "de": ["fleurs", "mcv"],
+        "fr": ["fleurs", "mcv", "mls"],
+        "it": ["fleurs", "mcv", "mls"],
+        "es": ["fleurs", "mcv", "mls"],
+        "pt": ["fleurs", "mls"],
+    }
+    ML_DATASET_LABELS = {"fleurs": "FLEURS", "mcv": "MCV", "mls": "MLS"}
+    for lang, datasets in ML_LANG_DATASETS.items():
+        col_map = {
+            f"{dataset}_{lang}_test": (f"{ML_DATASET_LABELS[dataset]} WER", None)
+            for dataset in datasets
+        }
+        header = "model,RTFx," + ",".join(
+            f"{ML_DATASET_LABELS[dataset]} WER" for dataset in datasets
+        )
+        FAMILY_CONFIGS.append((f"ml_{lang}", f"_{lang}_test", header, col_map))
+
+    # Restrict scoring to only the datasets relevant to the requested families.
+    # Without this, files outside the requested families would still be scored
+    # (and printed in the "Results per dataset"/"Composite Results" sections)
+    # using whichever `language` normalizer was passed for this call, which is
+    # wrong for unrelated-language datasets that happen to share the directory.
+    if families is not None:
+        allowed_substrs = []
+        for family_key, presence_substr, _header, col_map in FAMILY_CONFIGS:
+            if family_key in families:
+                if presence_substr is not None:
+                    allowed_substrs.append(presence_substr)
+                else:
+                    allowed_substrs.extend(col_map.keys())
+        result_files = [
+            fp for fp in result_files
+            if any(substr in parse_filepath(fp)[1] for substr in allowed_substrs)
+        ]
+        if len(result_files) == 0:
+            raise ValueError(f"No result files found in {directory} matching families {families}")
+
+    # Compute WER results per dataset, and RTFx over all datasets
+    from normalizer import data_utils  # deferred to avoid circular import
+    results = {}
+
+    for result_file in result_files:
+        manifest = read_manifest(result_file)
+        model_id_of_file, dataset_id = parse_filepath(result_file)
+
+        if language == "en":
+            normalize = data_utils.normalizer
+        else:
+            normalize = lambda t: data_utils.ml_normalizer(t, lang=language)
+        references = [normalize(datum["text"]) for datum in manifest]
+        predictions = [normalize(datum["pred_text"]) for datum in manifest]
+
+        time = [datum["time"] for datum in manifest]
+        duration = [datum["duration"] for datum in manifest]
+        compute_rtfx = all(time) and all(duration)
+
+        if multilingual:
+            # Align compound word boundaries (e.g. German/Italian compounds)
+            # before scoring, so split-vs-joined spelling doesn't count as an error.
+            references, predictions = normalize_compound_pairs(references, predictions)
+
+        # Use kaldialign batch_error_rate with merge_compounds=True so that
+        # split compounds (e.g. "white paper" vs "whitepaper") count as
+        # 0 errors in either direction.
+        refs_split  = [tuple(r.split()) for r in references]
+        preds_split = [tuple(p.split()) for p in predictions]
+        r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
+        total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
+        wer = r["err_rate"]
+        extra = {"ins": total_ins, "del": total_del, "sub": total_sub}
+
+        wer = round(100 * wer, 2)
+
+        if compute_rtfx:
+            audio_length = sum(duration)
+            inference_time = sum(time)
+            rtfx = round(sum(duration) / sum(time), 4)
+        else:
+            audio_length = inference_time = rtfx = None
+
+        result_key = f"{model_id_of_file} | {dataset_id}"
+        results[result_key] = {"wer": wer, "audio_length": audio_length, "inference_time": inference_time, "rtfx": rtfx, **extra}
+
+    if not csv_only:
+        print("*" * 80)
+        print("Results per dataset:")
+        print("*" * 80)
+
+        for k, v in results.items():
+            metrics = f"{k}: WER = {v['wer']:0.2f} %"
+            if v["rtfx"] is not None:
+                metrics += f", RTFx = {v['rtfx']:0.2f}"
+            print(metrics)
+
+    # composite WER should be computed over all datasets and with the same key
+    composite_wer = defaultdict(float)
+    composite_audio_length = defaultdict(float)
+    composite_inference_time = defaultdict(float)
+    count_entries = defaultdict(int)
+    for k, v in results.items():
+        key = k.split("|")[0].strip()
+        composite_wer[key] += v["wer"]
+        if v["rtfx"] is not None:
+            composite_audio_length[key] += v["audio_length"]
+            composite_inference_time[key] += v["inference_time"]
+        else:
+            composite_audio_length[key] = composite_inference_time[key] = None
+        count_entries[key] += 1
+
+    # normalize scores & print
+    if not csv_only:
+        print()
+        print("*" * 80)
+        print("Composite Results:")
+        print("*" * 80)
+        for k, v in composite_wer.items():
+            wer = v / count_entries[k]
+            print(f"{k}: WER = {wer:0.2f} %")
+        for k in composite_audio_length:
+            if composite_audio_length[k] is not None:
+                rtfx = composite_audio_length[k] / composite_inference_time[k]
+                print(f"{k}: RTFx = {rtfx:0.2f}")
+        print("*" * 80)
+
     all_dataset_ids = " ".join(results.keys())
 
     def find_wer_in(model_key, col_label, col_map):
@@ -398,7 +434,7 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                 print(f"{csv_model_label},{avg_overall},{avg_scripted},{avg_conv}," + ",".join(wer_cols))
             else:
                 n_prefix = len(header.split(',')) - 1 - len(csv_columns)
-                if family_key == "public":
+                if family_key == "public" or (family_key or "").startswith("ml_"):
                     family_audio = sum(
                         results[rk]["audio_length"]
                         for ds_substr in col_map
@@ -423,7 +459,10 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
     for family_key, presence_substr, header, col_map in FAMILY_CONFIGS:
         if families is not None and family_key not in families:
             continue
-        family_name = family_key.capitalize()  # "Appen", "Dataocean", "Public", "Extra"
+        if family_key.startswith("ml_"):
+            family_name = family_key[len("ml_"):]  # "de", "fr", "it", "es", "pt"
+        else:
+            family_name = family_key.capitalize()  # "Appen", "Dataocean", "Public", "Extra"
         # Public block: print only if at least one public dataset key is found
         if presence_substr is None:
             has_public = any(ds_substr in all_dataset_ids for ds_substr in col_map)
