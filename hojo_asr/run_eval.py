@@ -14,8 +14,7 @@ wer_metric = evaluate.load("wer")
 def main(args):
     # Load hojo model
     model = HOJO_ASR.load_model(args.model_id, device=args.device)
-
-    print("load hojo ASR model finish")
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
 
     dataset = data_utils.load_data(args)
     dataset = data_utils.prepare_data(dataset)
