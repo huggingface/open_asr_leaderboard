@@ -60,6 +60,7 @@ from . import (
     reson8_provider,
     revai_provider,
     smallest_provider,
+    soniox_provider,
     speechmatics_provider,
     zoom_provider,
 )

@@ -28,6 +28,7 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-05-2026  4"
     # "modulate/vfast                25"
     # "gladia/solaria-3             20"
+    # "soniox/stt-async-v5           20"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
@@ -81,6 +82,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+            -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
             -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
