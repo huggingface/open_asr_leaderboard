@@ -27,7 +27,10 @@ def main(args):
         batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
-        start_time = time.time()
+        torch.cuda.synchronize(device=args.device)
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
 
         results = model.run_infer(audios, batch_size=args.batch_size)
 
