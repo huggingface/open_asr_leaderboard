@@ -8,6 +8,7 @@ import os
 import requests
 import itertools
 from tqdm import tqdm
+from kaldialign import batch_error_rate
 from dotenv import load_dotenv
 from normalizer import data_utils
 import concurrent.futures
@@ -194,7 +195,6 @@ def transcribe_dataset(
 
     print("Results saved at path:", manifest_path)
 
-    from kaldialign import batch_error_rate
     norm_refs = [data_utils.normalizer(r) for r in results["references"]]
     norm_preds = [data_utils.normalizer(p) for p in results["predictions"]]
     refs_split = [tuple(r.split()) for r in norm_refs]

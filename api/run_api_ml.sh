@@ -181,10 +181,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     done
 
     if [[ -n "${RESULTS_BUCKET}" ]]; then
-        # Only upload the specific files for the datasets in DATASET_CONFIGS to
-        # avoid accidentally pushing private dataset results to the public bucket.
-        # hf buckets sync is directory-based, so we use --include to whitelist
-        # only the exact filenames we want to upload.
+        # Only upload the specific files for the datasets in DATASET_CONFIGS
         DATASET_PATH_SLUG="${DATASET_PATH//\//-}"
         INCLUDE_ARGS=()
         for cfg in "${DATASET_CONFIGS[@]}"; do
