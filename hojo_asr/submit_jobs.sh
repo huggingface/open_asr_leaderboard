@@ -3,8 +3,8 @@
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-HojoAI/open-asr-leaderboard-hojo-asr}"
-RESULTS_BUCKET="${RESULTS_BUCKET:-HojoAI/openasr_eval}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-hojo-asr}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
