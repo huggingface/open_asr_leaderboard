@@ -38,7 +38,9 @@ def main(args):
         pred_text = [val["text"] for val in results]
 
         # END TIMING
-        runtime = time.time() - start_time
+        end_event.record()
+        torch.cuda.synchronize(device=args.device)
+        runtime = start_event.elapsed_time(end_event) / 1000.0
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
