@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from jiwer import wer
+from kaldialign import batch_error_rate
 from normalizer import EnglishTextNormalizer
 
 
@@ -63,8 +63,15 @@ def score_manifests(results_dir, model_id):
                 times.append(sample["time"])
 
         dataset_id = Path(manifest_path).stem.split("_DATASET_", 1)[1]
+        refs_split = [tuple(reference.split()) for reference in references]
+        preds_split = [tuple(prediction.split()) for prediction in predictions]
+        error_rate = batch_error_rate(
+            refs_split,
+            preds_split,
+            merge_compounds=True,
+        )["err_rate"]
         results[dataset_id] = {
-            "wer": round(100 * wer(references, predictions), 2),
+            "wer": round(100 * error_rate, 2),
             "audio_length": sum(durations),
             "inference_time": sum(times),
         }
@@ -114,7 +121,7 @@ def main():
     old_average = float(current["Average"])
     old_rtfx = float(current["RTFx"])
     print("\nComparison with current leaderboard:")
-    print("| Metric | Current | H200 | Change |")
+    print("| Metric | Current | New run | Change |")
     print("| --- | ---: | ---: | ---: |")
     if current["coraal_avg"].strip():
         print(f"| Average WER | {old_average:.2f} | {average:.2f} | {format_delta(average, old_average)} |")
@@ -124,7 +131,10 @@ def main():
             f"{format_delta(without_coraal, old_average)} |"
         )
         print(f"| Full average WER (now including CORAAL) | n/a | {average:.2f} | new |")
-    print(f"| RTFx | {old_rtfx:.2f} | {rtfx:.2f} | {rtfx / old_rtfx:.2f}x |")
+    if old_rtfx > 0:
+        print(f"| RTFx | {old_rtfx:.2f} | {rtfx:.2f} | {rtfx / old_rtfx:.2f}x |")
+    else:
+        print(f"| RTFx | n/a | {rtfx:.2f} | new |")
     for key, label in (("earnings21", "Earnings21 WER"), ("earnings22", "Earnings22 WER"), ("tedlium", "TED-LIUM WER")):
         old = float(current[key])
         new = metrics[key]["wer"]

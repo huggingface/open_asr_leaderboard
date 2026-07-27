@@ -331,7 +331,7 @@ run_longform_model() {
     return 1
   fi
 
-  if python -c 'import jiwer, regex' >/dev/null 2>&1; then
+  if python -c 'import kaldialign, regex' >/dev/null 2>&1; then
     PYTHONPATH="$repo_root" python \
       "$repo_root/scripts/score_longform_results.py" \
       "$local_results" \
@@ -339,7 +339,7 @@ run_longform_model() {
       --current-csv "$repo_root/scripts/data/en_longform.csv"
   else
     PYTHONPATH="$repo_root" uv run \
-      --with jiwer \
+      --with kaldialign==0.12.0 \
       --with regex \
       python "$repo_root/scripts/score_longform_results.py" \
       "$local_results" \
