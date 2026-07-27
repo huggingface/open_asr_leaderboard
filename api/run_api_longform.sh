@@ -54,7 +54,7 @@ do
         --max_workers ${MAX_WORKERS}
 
     # CORAAL evaluation ATL DCA DCB DTA LES PRV ROC VLD
-    for SUBSET in PRV ROC VLD; do
+    for SUBSET in ATL DCA DCB DTA LES PRV ROC VLD; do
         python run_eval.py \
             --dataset_path="bezzam/coraal" \
             --dataset=${SUBSET} \
