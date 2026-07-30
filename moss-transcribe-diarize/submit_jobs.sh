@@ -30,6 +30,27 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
     exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
+# committed to the Space (useful for iterating without pushing to the Space).
+USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+LOCAL_SCRIPT_INJECT=""
+if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
+fi
+
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
+USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
+LOCAL_NORMALIZER_INJECT=""
+if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
+    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
+    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
+fi
+
 MODEL_FOLDER="${MODEL_ID//\//-}"
 NAMESPACE_ARGS=()
 if [[ -n "${ORG_NAME}" ]]; then
