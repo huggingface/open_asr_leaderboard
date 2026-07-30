@@ -73,6 +73,8 @@ for config in "${DATASET_CONFIGS[@]}"; do
             "hf.co/spaces/${SPACE}" \
             bash -c "
                 set -euo pipefail
+                ${LOCAL_NORMALIZER_INJECT}
+                ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval.py \
                     --model_id='${MODEL_ID}' \
                     --model_revision='${MODEL_REVISION}' \
