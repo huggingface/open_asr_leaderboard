@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SPACE="${SPACE:-Cb1ock/open-asr-leaderboard-moss-transcribe-diarize}"
-RESULTS_BUCKET="${RESULTS_BUCKET:-Cb1ock/open-asr-leaderboard-moss-transcribe-diarize-results}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-moss-transcribe-diarize}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
