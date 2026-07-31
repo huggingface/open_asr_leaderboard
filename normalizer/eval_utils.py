@@ -6,6 +6,61 @@ from difflib import SequenceMatcher
 from collections import defaultdict
 from kaldialign import batch_error_rate
 
+# Languages scored with voi_oiwer (Orthographically Informed WER over a
+# reference lattice) instead of plain WER. Maps language code → voi_oiwer
+# input_language name.
+OIWER_LANGUAGES = {
+    "hi": "hindi",
+}
+
+
+def score_oiwer(manifest: list, language_name: str):
+    """Score a manifest with voi_oiwer (lattice-based, orthography-aware WER).
+
+    Each manifest entry must have "pred_text" and a reference in one of:
+      - "reference_lists": the lattice — list of slots, each a list of
+        accepted variants (a variant may span multiple words);
+      - "text" as a JSON-encoded lattice (list of lists of str);
+      - "text" as a plain string, converted to a trivial single-variant
+        lattice (one slot per word).
+
+    voi_oiwer applies its own indicnlp-based normalization internally, so no
+    external normalizer should be applied beforehand.
+
+    Returns (err_rate, total_ins, total_del, total_sub) with err_rate in [0, 1].
+    """
+    from voi_oiwer import oiwer  # deferred import: only needed for OIWER languages
+
+    total_ins = total_del = total_sub = 0
+    total_ref_words = 0
+    for datum in manifest:
+        reference_lists = datum.get("reference_lists")
+        if reference_lists is None:
+            text = datum["text"]
+            if isinstance(text, str) and text.lstrip().startswith("[["):
+                try:
+                    text = json.loads(text)
+                except json.JSONDecodeError:
+                    pass
+            if isinstance(text, list):
+                reference_lists = text
+            else:
+                # Plain string reference: trivial lattice, one slot per word.
+                reference_lists = [[word] for word in str(text).split()]
+
+        _score, _h, _r, _ops, (ins, dele, sub), ref_words, _meta, _std = oiwer(
+            hypothesis=datum["pred_text"],
+            reference_lists=reference_lists,
+            input_language=language_name,
+        )
+        total_ins += ins
+        total_del += dele
+        total_sub += sub
+        total_ref_words += ref_words
+
+    err_rate = (total_ins + total_del + total_sub) / total_ref_words if total_ref_words else 0.0
+    return err_rate, total_ins, total_del, total_sub
+
 
 def normalize_compound_pairs(refs, preds):
     """Align compound word boundaries between ref/pred pairs.
@@ -153,6 +208,8 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         csv_only: If True, suppress all output except the CSV summary block.
         language: Language code used for normalization (e.g. 'en', 'de', 'fr').
                   When not 'en', ml_normalizer is used instead of the English normalizer.
+                  Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
+                  voi_oiwer over a reference lattice instead of plain WER.
         families: Optional list of family keys ("appen", "dataocean", "public", "extra",
                   "ml_de", "ml_fr", "ml_it", "ml_es", "ml_pt") restricting which CSV
                   summary blocks are printed. None prints all detected families.
@@ -264,8 +321,10 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         "it": ["fleurs", "mcv", "mls"],
         "es": ["fleurs", "mcv", "mls"],
         "pt": ["fleurs", "mls"],
+        # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
+        "hi": ["Monsoon"],
     }
-    ML_DATASET_LABELS = {"fleurs": "FLEURS", "mcv": "MCV", "mls": "MLS"}
+    ML_DATASET_LABELS = {"fleurs": "FLEURS", "mcv": "MCV", "mls": "MLS", "Monsoon": "Monsoon"}
     for lang, datasets in ML_LANG_DATASETS.items():
         col_map = {
             f"{dataset}_{lang}_test": (f"{ML_DATASET_LABELS[dataset]} WER", None)
@@ -304,32 +363,39 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
         manifest = read_manifest(result_file)
         model_id_of_file, dataset_id = parse_filepath(result_file)
 
-        if language == "en":
-            normalize = data_utils.normalizer
-        else:
-            normalize = lambda t: data_utils.ml_normalizer(t, lang=language)
-        references = [normalize(datum["text"]) for datum in manifest]
-        predictions = [normalize(datum["pred_text"]) for datum in manifest]
-
         time = [datum["time"] for datum in manifest]
         duration = [datum["duration"] for datum in manifest]
         compute_rtfx = all(time) and all(duration)
 
-        if multilingual:
-            # Align compound word boundaries (e.g. German/Italian compounds)
-            # before scoring, so split-vs-joined spelling doesn't count as an error.
-            references, predictions = normalize_compound_pairs(references, predictions)
+        if language in OIWER_LANGUAGES:
+            # Lattice-based, orthography-aware scoring (voi_oiwer). The package
+            # applies its own indicnlp-based normalization internally.
+            wer, total_ins, total_del, total_sub = score_oiwer(
+                manifest, OIWER_LANGUAGES[language]
+            )
+        else:
+            if language == "en":
+                normalize = data_utils.normalizer
+            else:
+                normalize = lambda t: data_utils.ml_normalizer(t, lang=language)
+            references = [normalize(datum["text"]) for datum in manifest]
+            predictions = [normalize(datum["pred_text"]) for datum in manifest]
 
-        # Use kaldialign batch_error_rate with merge_compounds=True so that
-        # split compounds (e.g. "white paper" vs "whitepaper") count as
-        # 0 errors in either direction.
-        refs_split  = [tuple(r.split()) for r in references]
-        preds_split = [tuple(p.split()) for p in predictions]
-        r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
-        total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
-        wer = r["err_rate"]
+            if multilingual:
+                # Align compound word boundaries (e.g. German/Italian compounds)
+                # before scoring, so split-vs-joined spelling doesn't count as an error.
+                references, predictions = normalize_compound_pairs(references, predictions)
+
+            # Use kaldialign batch_error_rate with merge_compounds=True so that
+            # split compounds (e.g. "white paper" vs "whitepaper") count as
+            # 0 errors in either direction.
+            refs_split  = [tuple(r.split()) for r in references]
+            preds_split = [tuple(p.split()) for p in predictions]
+            r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
+            total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
+            wer = r["err_rate"]
+
         extra = {"ins": total_ins, "del": total_del, "sub": total_sub}
-
         wer = round(100 * wer, 2)
 
         if compute_rtfx:

@@ -1908,7 +1908,8 @@ english_name_normalizer = {
 }
 
 
-# Regex-based multi-word → single-token mappings.
+# Regex-based multi-word → single-token mappings, plus spellings that vary too
+# freely to enumerate in english_spelling_normalizer (e.g. elongations).
 # Applied after symbol removal, so hyphens/punctuation are already stripped.
 # Keys are used with re.sub; values are the replacement strings.
 english_compound_normalizer = {
@@ -1928,5 +1929,13 @@ english_compound_normalizer = {
     r"\ba\s+m\b": "am",
     r"\bp\s+m\b": "pm",
     r"\bo\s+k\b": "okay",
+    # Interjection "oh" and its elongated / alternate spellings: "ohh", "ohhh",
+    # "ooh", "oooh", "ooo". Unlike hesitations such as "uh" this is not treated
+    # as a filler word (see filler_words in normalizer.py) because ASR systems
+    # do transcribe it, so reference and hypothesis are folded onto one
+    # spelling instead of dropped. "oo" is left alone: it is a word in some of
+    # the languages that appear in code-switched speech (e.g. Tagalog "oo").
+    r"\bo+h+\b": "oh",
+    r"\booo+\b": "oh",
 }
 

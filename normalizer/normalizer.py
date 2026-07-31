@@ -73,6 +73,17 @@ def remove_symbols(s: str):
     return "".join(" " if unicodedata.category(c)[0] in "MSP" else c for c in unicodedata.normalize("NFKC", s))
 
 
+def remove_symbols_keep_marks(s: str):
+    """
+    Replace symbols and punctuation with a space, keeping combining marks.
+
+    Unlike `remove_symbols`, combining marks (category 'M') are preserved. This
+    is required for scripts like Devanagari, where vowel signs (matras) and the
+    virama are combining marks that are integral to words.
+    """
+    return "".join(" " if unicodedata.category(c)[0] in "SP" else c for c in unicodedata.normalize("NFKC", s))
+
+
 class BasicTextNormalizer:
     def __init__(self, remove_diacritics: bool = False, split_letters: bool = False):
         self.clean = remove_symbols_and_diacritics if remove_diacritics else remove_symbols
@@ -94,7 +105,10 @@ class BasicTextNormalizer:
 
 class BasicMultilingualTextNormalizer:
     def __init__(self, remove_diacritics: bool = True):
-        self.clean = remove_symbols_and_diacritics if remove_diacritics else remove_symbols
+        # When keeping diacritics, also keep combining marks (category 'M'):
+        # scripts like Devanagari encode vowel signs and the virama as
+        # combining marks, so stripping them mangles words.
+        self.clean = remove_symbols_and_diacritics if remove_diacritics else remove_symbols_keep_marks
 
     def __call__(self, s: str):
         s = s.lower()
@@ -102,8 +116,8 @@ class BasicMultilingualTextNormalizer:
         s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
         s = self.clean(s).lower()
 
-        # Remove punctuations and extra spaces
-        s = re.sub(r"[^\w\s]", "", s)
+        # Remove punctuations and extra spaces (keep combining marks, \p{M})
+        s = regex.sub(r"[^\w\s\p{M}]", "", s)
         s = re.sub(r"\s+", " ", s).strip()
 
         return s
@@ -284,7 +298,20 @@ class EnglishNumberNormalizer:
                     yield output(value)
                 yield output(current)
             elif current in self.zeros:
-                value = str(value or "") + "0"
+                # "oh" is far more often the interjection than a spoken zero, so
+                # only read it as a digit when it sits inside a number sequence
+                # ("four oh one", "nineteen oh five"). On its own — including the
+                # doubled "oh oh" — it stays a word. "o" and "zero" are
+                # unchanged.
+                in_number = (
+                    value is not None
+                    or next_is_numeric
+                    or (next in self.words and next not in self.zeros)
+                )
+                if current == "oh" and not in_number:
+                    yield output(current)
+                else:
+                    value = str(value or "") + "0"
             elif current in self.ones:
                 ones = self.ones[current]
 
@@ -581,8 +608,45 @@ class EnglishNameNormalizer:
 
 class EnglishTextNormalizer:
     def __init__(self, english_spelling_mapping=english_spelling_normalizer):
-        self.ignore_patterns = r"\b(hmm|mm|mhm|mmm|uh|um|ah|aha|ahh|ahm|eh|ehehe|em|hm|huh|hum|mhum|uhm|umm|uhuh)\b"
+        # Filler words / hesitations to remove. Written as regexes so that
+        # arbitrary elongation is covered without enumerating every spelling
+        # ("uh", "uhh", "uuuh", "uhhhh", ...). Each alternative is wrapped in
+        # \b...\b below, so a shorter alternative cannot match a prefix of a
+        # longer token and the order of the single-token patterns is irrelevant.
+        # Hyphens are word boundaries too, which is why most hyphenated forms
+        # need no entry ("um-hmm" is matched as "um" + "hmm") — but any whose
+        # halves are not both fillers must be listed *before* the patterns,
+        # otherwise only the first half is matched ("ah-ha" -> "ha").
+        filler_words = [
+            "ah-ha",         # "ha" alone is not a filler, so match the pair first
+            r"a+h+m*",       # ah, aah, ahh, ahhh, aaah, ahm, ahmm
+            r"a+h+a+",       # aha, ahaa, ahaaa
+            r"e+h+m*",       # eh, ehh, eeeh, ehhh, ehm, ehmm
+            r"e+m+",         # em, emm
+            r"e+r+m*",       # er, err, errr, erm
+            r"h+a+h+",       # hah, hahh
+            r"h+e+h+",       # heh, hehh
+            r"h+m+",         # hm, hmm, hmmm, hhm
+            r"h+u+h+",       # huh, huhh
+            r"m{2,}",        # mm, mmm, mmmm
+            r"m+h+m*",       # mh, mhm, mhmm, mmhm
+            r"t+s+k+",       # tsk
+            r"u+g+h+",       # ugh, uuugh
+            r"u+h+m*",       # uh, uuh, uhh, uhhh, uuuh, uhm, uuuhm
+            r"u+h+u+[hm]*",  # uhuh, uhum
+            r"u+m+h*",       # um, umm, ummm, uuum, umh
+            # Irregular forms, not worth a pattern of their own.
+            "ahem", "eheh", "ehehe", "ehr", "hmmph", "hum", "hunh", "mhum", "mmkay",
+        ]
+        self.ignore_patterns = r"\b(" + "|".join(filler_words) + r")\b"
         self.replacers = {
+            # Bare o'clock times: the ":00" is not spoken as words, so drop it
+            # ("2:00 AM" -> "2 am"). Applied here, while the colon is still
+            # present, so that a time is distinguishable from an unrelated
+            # digit sequence — by the time symbols are stripped "3:00" and
+            # "3 00" look alike. Without this the minutes are absorbed into the
+            # hour ("3:00" -> "30") or left as a stray token ("11:00" -> "11 0").
+            r"\b(\d{1,2}):00\b": r"\1",
             # common contractions
             r"\bwon't\b": "will not",
             r"\bcan't\b": "can not",
