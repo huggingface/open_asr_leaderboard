@@ -1,45 +1,34 @@
 #!/bin/bash
-# Local script to submit HF Jobs for Parakeet ASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs_parakeet.sh
+# Local script to submit HF Jobs for VibeVoice ASR evaluation.
+# Usage: HF_TOKEN=hf_... bash submit_jobs_vibevoice.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-nemo}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
-ORG_NAME="${ORG_NAME:-}"
 FLAVOR="${FLAVOR:-h200}"
+ORG_NAME="${ORG_NAME:-}"
+MAX_NEW_TOKENS=512  # matches the official qwen-asr package default
 
-# ── Models: "model_id batch_size" ────────────────────────────────────────────
-MODEL_CONFIGS=(
-    "nvidia/parakeet-tdt-0.6b-v3 128"
-    "nvidia/parakeet-tdt-0.6b-v2 128"
-    "nvidia/parakeet-tdt-1.1b 128"
-    "nvidia/parakeet-rnnt-1.1b 128"
-    "nvidia/parakeet-rnnt-0.6b 128"
-    "nvidia/parakeet-ctc-1.1b 128"
-    "nvidia/parakeet-ctc-0.6b 128"
-    "nvidia/parakeet-tdt_ctc-110m 128"
-    # "nvidia/stt_en_fastconformer_transducer_large 128"
-    # "nvidia/stt_en_fastconformer_ctc_large 128"
-    # "nvidia/stt_en_conformer_ctc_large 128"
-    # "stt_en_conformer_transducer_small 128"
-    # "nvidia/stt_en_conformer_ctc_small 128"
+# ── Models (comment / uncomment to select) ──────────────────────────────────
+MODEL_IDs=(
+    "Qwen/Qwen3-ASR-0.6B-hf"
+    "Qwen/Qwen3-ASR-1.7B-hf"
 )
 
-# ── Datasets: "name split" ────────────────────────────────────────────────────
+# ── Datasets: "name split batch_size" ────────────────────────────────────────
 DATASET_CONFIGS=(
-    "ami_cleaned test"
-    "gigaspeech_cleaned test"
-    "voxpopuli_cleaned_aa test"
-    "earnings22 test"
-    "librispeech test.clean"
-    "librispeech test.other"
-    "spgispeech test"
+    "ami_cleaned test 256"
+    "gigaspeech_cleaned test 256"
+    "voxpopuli_cleaned_aa test 256"
+    "earnings22 test 256"
+    "librispeech test.clean 256"
+    "librispeech test.other 256"
+    "spgispeech test 256"
 )
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
-for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
+for MODEL_ID in "${MODEL_IDs[@]}"; do
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -47,9 +36,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT <<< "$cfg"
+        read -r DATASET SPLIT EFFECTIVE_BATCH_SIZE <<< "$cfg"
+        if [[ -z "${EFFECTIVE_BATCH_SIZE}" ]]; then
+            echo "ERROR: batch_size missing for '${DATASET} ${SPLIT}' in DATASET_CONFIGS" >&2
+            exit 1
+        fi
 
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -68,8 +61,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${BATCH_SIZE} \
-                    --max_eval_samples=-1 &&
+                    --batch_size=${EFFECTIVE_BATCH_SIZE} \
+                    --max_eval_samples=-1 \
+                    --max_new_tokens=${MAX_NEW_TOKENS} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &
