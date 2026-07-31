@@ -286,6 +286,14 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
             },
         ),
         (
+            "private_hi",
+            "HF_Hindi_Private_Set",
+            "model,Hindi WER",
+            {
+                "HF_Hindi_Private_Set__test": ("Hindi WER", None),
+            },
+        ),
+        (
             "public",
             None,   # always printed when public datasets are present
             "model,RTFx,License,Size (B),# Languages,Encoder,Decoder,"
