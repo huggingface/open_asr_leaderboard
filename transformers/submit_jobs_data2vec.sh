@@ -11,8 +11,8 @@ ORG_NAME="${ORG_NAME:-}"
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
-    "facebook/data2vec-audio-large-960h"
-    "facebook/data2vec-audio-base-960h"
+    # "facebook/data2vec-audio-large-960h"
+    # "facebook/data2vec-audio-base-960h"
 )
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────

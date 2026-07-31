@@ -12,7 +12,7 @@ ORG_NAME="${ORG_NAME:-}"
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
     "facebook/hubert-large-ls960-ft"
-    "facebook/hubert-xlarge-ls960-ft"
+    # "facebook/hubert-xlarge-ls960-ft"
 )
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────

@@ -12,9 +12,9 @@ ORG_NAME="${ORG_NAME:-}"
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
     "efficient-speech/lite-whisper-large-v3-acc"
-    "efficient-speech/lite-whisper-large-v3"
-    "efficient-speech/lite-whisper-large-v3-fast"
-    "efficient-speech/lite-whisper-large-v3-turbo-acc"
+    # "efficient-speech/lite-whisper-large-v3"
+    # "efficient-speech/lite-whisper-large-v3-fast"
+    # "efficient-speech/lite-whisper-large-v3-turbo-acc"
 )
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────

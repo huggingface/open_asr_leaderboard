@@ -255,7 +255,7 @@ def main(args):
                     audios,
                     sampling_rate=sampling_rate,
                     return_tensors="pt",
-                    padding="max_length",
+                    padding="longest",
                     return_attention_mask=True,
                     device=args.device,
                 )
