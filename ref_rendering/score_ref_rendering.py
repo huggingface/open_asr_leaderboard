@@ -59,12 +59,10 @@ import re
 import subprocess
 import sys
 
+from ref_rendering_utils import REPORTED_CLASSES, score_pairs, wilson
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
-sys.path.insert(0, HERE)
-sys.path.insert(0, REPO_ROOT)
-
-from ref_rendering_utils import REPORTED_CLASSES, score_pairs, wilson  # noqa: E402
 
 DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
 

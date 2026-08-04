@@ -112,11 +112,22 @@ fixed by meaning. Blocked, keyed on the normalized form (plural forms likewise):
 | `biassed` / `biased`       | `biassed` is vanishingly rare in either dialect                             |
 | `tyre` / `tire`            | the verb "to tire" is spelled the same in en-GB                             |
 
-*Number pruning.* `oh` and `o` for zero are dropped: how a digit was spoken is
-audible, not a way of writing it. Ordinals up to `10th` and bare integers below
-`11` are dropped: at those magnitudes spelling the number out is the near-uniform
-convention of edited prose, so the reference is following a rule rather than
-choosing.
+*Number band.* A number span is kept only if the normalized form is a bare integer
+or ordinal in 11–99, and the raw span is number words only, with no digits and no
+punctuation. Everything else in the class fails one of the two tests, in three
+distinct ways:
+
+| dropped | share of the raw class (vox / ami / giga) | why |
+| --- | --- | --- |
+| below 11 | — | spelling small numbers out is the near-uniform convention of edited prose, so the reference followed a rule rather than choosing |
+| year-like, ≥1000, 100–999 | 60% / 16% / 38% | more than one natural spoken form: `1984` is "nineteen eighty-four" or "one thousand nine hundred eighty-four", `999` is "nine ninety-nine" or "nine hundred ninety-nine". The audio decides, so audibility fails |
+| currency and percent | 0% / 29% / 19% | `forty percent` → `40%` and `twenty five Euros` → `€25` fold a symbol choice into the number |
+| merge artifacts | 12% / 8% / 12% | the normalizer glued across a boundary, so the two forms are not renderings of one another: `six o'clock` → `60 clock`, `one third` → `13rd`, `eleven one` → `111`, `seven, eight` → `78` |
+| punctuation inside or trailing | — | `forty,` → `40` is a joint punctuation-and-number choice |
+
+An ordinal whose suffix disagrees with its digits (`13rd`) is rejected for the same
+reason as the merge artifacts. What survives is the band where there is exactly one
+way to say the number, so the only thing left to vary is how it was written.
 
 ## Limitations
 

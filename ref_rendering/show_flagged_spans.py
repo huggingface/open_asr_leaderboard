@@ -34,17 +34,11 @@ from __future__ import annotations
 
 import argparse
 import html
-import os
 import random
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(HERE)
-sys.path.insert(0, HERE)
-sys.path.insert(0, REPO_ROOT)
-
-from ref_rendering_utils import REPORTED_CLASSES, score_clip, flagged_spans_for  # noqa: E402
-from score_ref_rendering import find_manifests, read_manifest  # noqa: E402
+from ref_rendering_utils import REPORTED_CLASSES, flagged_spans_for, score_clip
+from score_ref_rendering import find_manifests, read_manifest
 
 CONTEXT_WORDS = 6
 
