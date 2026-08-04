@@ -307,7 +307,7 @@ def ref_error_agreement(edits: list[RefEdit]) -> dict[str, dict]:
     Returns ``{model: {"rate", "n_ref", "n_eligible", "lo", "hi"}}``, where
     ``rate = n_ref / n_eligible`` and ``lo``/``hi`` are a 95% Wilson interval.
     Models are only charged for edits they were eligible for, so denominators
-    differ between models and must be reported alongside the rate.
+    differ slightly between models; the count is written alongside the rate.
     """
     tally: dict[str, list[int]] = {}
     for edit in edits:

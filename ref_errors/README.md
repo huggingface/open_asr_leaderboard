@@ -1,8 +1,6 @@
 # Reference error agreement rate on VoxPopuli
 
-VoxPopuli's English references derive from parliamentary records rather than from
-the audio, so some spans they contain were never spoken and some spoken words
-they omit. The [`ArtificialAnalysis/VoxPopuli-Cleaned-AA`](https://huggingface.co/datasets/ArtificialAnalysis/VoxPopuli-Cleaned-AA)
+VoxPopuli's reference transcripts contain errors. The [`ArtificialAnalysis/VoxPopuli-Cleaned-AA`](https://huggingface.co/datasets/ArtificialAnalysis/VoxPopuli-Cleaned-AA)
 subset supplies a human-corrected reference for 628 clips of `voxpopuli_test`,
 and the leaderboard already reports WER against it (`Voxpopuli-Cleaned-AA WER`).
 
@@ -29,13 +27,7 @@ pip install -r requirements/requirements_jobs.txt
 # Syncs the public results bucket, then scores every model in it.
 python ref_errors/score_ref_errors.py --bucket hf-audio/asr_leaderboard_h200
 ```
-
-Nothing is inferred and no audio is read: both reference sets and all
-hypotheses come from prediction manifests already published in the bucket. The
-`text` field of the `voxpopuli_test` manifests carries the official reference,
-the `text` field of the `voxpopuli_cleaned_aa_test` manifests carries the
-correction, and the `pred_text` field of the latter carries the hypotheses. To
-re-score an already-downloaded copy:
+To re-score an already-downloaded copy:
 
 ```bash
 python ref_errors/score_ref_errors.py --preds-dir results
@@ -45,13 +37,13 @@ python ref_errors/score_ref_errors.py --preds-dir results
 
 `ref_error_agreement_voxpopuli.csv` — one row per model:
 
-| column | meaning |
-| --- | --- |
-| `model` | model id as it appears in the results bucket |
-| `rate` | agreement rate, `n_ref / n_eligible` |
-| `lo`, `hi` | 95% Wilson interval on `rate` |
-| `n_ref` | spans where the output matched the official reference |
-| `n_eligible` | spans the model was scored on |
+| column       | meaning                                               |
+| ------------ | ----------------------------------------------------- |
+| `model`      | model id as it appears in the results bucket          |
+| `rate`       | agreement rate, `n_ref / n_eligible`                  |
+| `lo`, `hi`   | 95% Wilson interval on `rate`                         |
+| `n_ref`      | spans where the output matched the official reference |
+| `n_eligible` | spans the model was scored on                         |
 
 `edits_voxpopuli.jsonl` — one row per disagreement: clip key, `kind`
 (`delete` where the official reference carries a span the correction removes or
@@ -77,11 +69,12 @@ official reference is read from there; it need not be the same model.
 
 ## Interpretation notes
 
-- **Denominators differ between models and must be reported.** A model is scored
-  on a clip only if its output reproduces at least half the reference tokens
-  (`min_ref_match`), so empty, truncated and off-language outputs are dropped
-  rather than counted as agreement with the correction. Report `n_eligible`
-  alongside `rate`.
+- **Denominators vary slightly.** A model is scored on a clip only if its output
+  reproduces at least half the reference tokens (`min_ref_match`), so empty,
+  truncated and off-language outputs are dropped rather than counted as agreement
+  with the correction. In practice this is a small effect — 525 to 564 spans of
+  564, with 67 of 81 current models at the full 564 — and `n_eligible` is written
+  to the CSV.
 - **Spans that survive normalization only.** A `delete` span is kept only if what
   the correction puts in its place is character-wise far from it
   (`min_consensus_cer = 0.30`), which removes spacing, accent and spelling
