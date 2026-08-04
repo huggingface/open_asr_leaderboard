@@ -1929,13 +1929,6 @@ english_compound_normalizer = {
     r"\ba\s+m\b": "am",
     r"\bp\s+m\b": "pm",
     r"\bo\s+k\b": "okay",
-    # Interjection "oh" and its elongated / alternate spellings: "ohh", "ohhh",
-    # "ooh", "oooh", "ooo". Unlike hesitations such as "uh" this is not treated
-    # as a filler word (see filler_words in normalizer.py) because ASR systems
-    # do transcribe it, so reference and hypothesis are folded onto one
-    # spelling instead of dropped. "oo" is left alone: it is a word in some of
-    # the languages that appear in code-switched speech (e.g. Tagalog "oo").
     r"\bo+h+\b": "oh",
     r"\booo+\b": "oh",
 }
-

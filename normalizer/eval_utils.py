@@ -13,6 +13,9 @@ OIWER_LANGUAGES = {
     "hi": "hindi",
 }
 
+# Reverse map: voi_oiwer input_language name → language code (for FILLER_WORDS).
+_OIWER_NAME_TO_CODE = {name: code for code, name in OIWER_LANGUAGES.items()}
+
 
 def score_oiwer(manifest: list, language_name: str):
     """Score a manifest with voi_oiwer (lattice-based, orthography-aware WER).
@@ -25,11 +28,20 @@ def score_oiwer(manifest: list, language_name: str):
         lattice (one slot per word).
 
     voi_oiwer applies its own indicnlp-based normalization internally, so no
-    external normalizer should be applied beforehand.
+    external normalizer should be applied beforehand. Language-specific filler
+    words (see ``data_utils.FILLER_WORDS``) are the exception: they are stripped
+    from both the hypothesis and every reference-lattice variant beforehand,
+    since voi_oiwer's normalization does not remove them.
 
     Returns (err_rate, total_ins, total_del, total_sub) with err_rate in [0, 1].
     """
     from voi_oiwer import oiwer  # deferred import: only needed for OIWER languages
+    from normalizer import data_utils  # deferred to avoid circular import
+
+    lang_code = _OIWER_NAME_TO_CODE.get(language_name)
+
+    def _strip_fillers(text):
+        return data_utils.remove_fillers(text, lang_code) if lang_code else text
 
     total_ins = total_del = total_sub = 0
     total_ref_words = 0
@@ -48,9 +60,17 @@ def score_oiwer(manifest: list, language_name: str):
                 # Plain string reference: trivial lattice, one slot per word.
                 reference_lists = [[word] for word in str(text).split()]
 
+        # Strip fillers from each lattice variant, then drop any slots left empty
+        # (a slot whose every variant was a filler word).
+        stripped_reference_lists = []
+        for slot in reference_lists:
+            stripped_slot = [s for variant in slot if (s := _strip_fillers(variant))]
+            if stripped_slot:
+                stripped_reference_lists.append(stripped_slot)
+
         _score, _h, _r, _ops, (ins, dele, sub), ref_words, _meta, _std = oiwer(
-            hypothesis=datum["pred_text"],
-            reference_lists=reference_lists,
+            hypothesis=_strip_fillers(datum["pred_text"]),
+            reference_lists=stripped_reference_lists,
             input_language=language_name,
         )
         total_ins += ins
