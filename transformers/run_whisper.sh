@@ -83,6 +83,24 @@ do
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
 
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="cifkao/open-asr-leaderboard" \
+        --dataset="urgent2024_nonblind" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
+    python run_eval.py \
+        --model_id=${MODEL_ID} \
+        --dataset_path="cifkao/open-asr-leaderboard" \
+        --dataset="urgent2024_nonblind_clean" \
+        --split="test" \
+        --device=0 \
+        --batch_size=${BATCH_SIZE} \
+        --max_eval_samples=-1
+
     # Evaluate results
     RUNDIR=`pwd` && \
     cd ../normalizer && \
