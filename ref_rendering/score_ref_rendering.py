@@ -25,10 +25,11 @@ two renderings score identically under WER. Where a model's normalized output
 reproduces a flagged span's words, this script asks whether its raw output
 reproduces the reference's exact rendering.
 
-Two rates are reported per model. **V1** pools every retained class and is
-dominated by casing and punctuation, i.e. the transcript's house style. **V2**
-pools the four classes the audio does not determine and house style does not
-either: spelling, abbreviation, acronym, number.
+One rate per model per dataset, taken over the classes the audio does not
+determine and house style does not either: spelling, abbreviation, acronym,
+number. Casing and punctuation are excluded from it, being transcript-wide
+conventions rather than per-token choices; their per-class counts are written to
+the CSV for inspection only.
 
 Nothing is inferred and no audio is read: references and hypotheses both come
 from the prediction manifests already published in the results bucket, scored
@@ -162,7 +163,7 @@ def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None) -> Non
 
 
 def score_dataset(manifests: dict[str, str]) -> list[dict]:
-    """One row per model, sorted by descending V2 rate."""
+    """One row per model, sorted by descending agreement rate."""
     rows = []
     for model in sorted(manifests):
         pairs = []
@@ -171,27 +172,25 @@ def score_dataset(manifests: dict[str, str]) -> list[dict]:
                 continue
             pairs.append((row["text"], row["pred_text"]))
         agg = score_pairs(pairs)
-        v1, v2 = agg["v1"], agg["v2"]
-        lo, hi = wilson(v2[0], v2[1])
+        scored = agg["scored"]
+        lo, hi = wilson(scored[0], scored[1])
         out = {
             "model": model,
-            "v1_rate": v1[0] / v1[1] if v1[1] else 0.0,
-            "v1_n": v1[1],
-            "v2_rate": v2[0] / v2[1] if v2[1] else 0.0,
-            "v2_lo": lo,
-            "v2_hi": hi,
-            "v2_n": v2[1],
+            "rate": scored[0] / scored[1] if scored[1] else 0.0,
+            "n": scored[1],
+            "lo": lo,
+            "hi": hi,
         }
         for cls in REPORTED_CLASSES:
             k, n = agg["by_class"][cls]
             out[f"{cls}_rate"] = k / n if n else 0.0
             out[f"{cls}_n"] = n
         rows.append(out)
-    rows.sort(key=lambda r: -r["v2_rate"])
+    rows.sort(key=lambda r: -r["rate"])
     return rows
 
 
-FIELDNAMES = ["model", "v1_rate", "v1_n", "v2_rate", "v2_lo", "v2_hi", "v2_n"] + [
+FIELDNAMES = ["model", "rate", "lo", "hi", "n"] + [
     f"{cls}_{suffix}" for cls in REPORTED_CLASSES for suffix in ("rate", "n")
 ]
 
@@ -257,8 +256,8 @@ def main() -> None:
         rows = score_dataset(manifests)
         for i, row in enumerate(rows[:10], 1):
             print(
-                f"{i:3} {row['model'][:48]:48} V2={row['v2_rate']:.3f} "
-                f"[{row['v2_lo']:.2f},{row['v2_hi']:.2f}] n={row['v2_n']:<6} V1={row['v1_rate']:.3f}"
+                f"{i:3} {row['model'][:48]:48} {row['rate']:.3f} "
+                f"[{row['lo']:.2f},{row['hi']:.2f}] n={row['n']}"
             )
         path = os.path.join(args.out_dir, f"ref_rendering_{dataset}.csv")
         write_csv(path, rows)

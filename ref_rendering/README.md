@@ -3,59 +3,83 @@
 Models have varying degrees of exposure to the public benchmarks. Increased exposure can lead models to produce better transcripts on that benchmark, but may limit their generalizability. We cannot necessarily tell if a drop in WER comes from general competence or benchmark optimization.
 One signal that a model has been heavily exposed to the benchmark's distribution is whether it reproduces the benchmark's verbatim formatting when multiple variants of the same span are available. These cases, when the same audio affords multiple textual renderings (e.g. "honour" vs "honor", "1" vs "one", "LCD" vs "L. C. D." etc.), are known as orthographic switches.
 
-This directory adds per dataset scores for how often it produces exact matches in these cases. 
+This directory adds per dataset scores for how often a model produces exact matches in these cases.
 
 ## Procedure
-We use the normalizer as a starting point to flag orthographic switches:
+We use the normalizer as a starting point to flag spans containing an orthographic variant:
 
-1. **Locate the switches.** Normalize the raw reference, then align its raw
-   whitespace tokens against the normalized words: each raw token is normalized
-   on its own and that sequence is aligned against the full-string
-   normalization. This gives a raw-span to normalized-span map. Tokens a single
-   rule rewrites jointly (`1 000` to `1000`) are merged, since they have no
-   per-token alignment.
-2. **A span whose raw and normalized forms differ is a flagged span.** Nothing else
-   is consulted at this step, so casing and punctuation come out of the same pass
-   as spelling: `So` to `so` and `yeah,` to `yeah` are rewrites like any other.
-3. **Label each flagged span** by the rewrite that produced it (table below). The
-   en-GB/en-US map is used only here, as a labeller — the spans were already found
-   in step 2.
-4. **Drop the flagged spans where the reference had no real choice**, by the two
-   tests in *Which flagged spans count*.
-5. **Score each model at each remaining flagged span.** Align the normalized
-   reference against the model's normalized output. It is **eligible** only if its
-   normalized span falls inside a block that alignment marks equal — the model
-   produced those words in that position, so only the rendering is in question.
-   The model **agrees** if the raw output aligned to that span equals the
-   reference's raw span exactly.
+1. **Locate the spans.** Normalize the raw reference. We also align the
+   transcript mapping by normalizing individual tokens, to determine which raw
+   token mapped to which normalized token.
+2. **A span whose raw and normalized forms differ is a flagged span.** This
+   includes casing and punctuation.
+3. **Label each flagged span** by the rewrite that produced it (table below).
+4. **Filter for valid switch cases**, when variants are acoustically identical.
+5. **Score each model at each remaining flagged span.** Per model, drop cases
+   where the normalized span is absent from the model's normalized output. Then
+   compare the raw (unnormalized) reference span with the raw model prediction.
+   If the raw spans exactly match, increment the agreement count.
 
 ```
 agreement rate = (flagged spans agreed) / (flagged spans the model was eligible at)
 ```
 
-Agreement is exact string equality at the aligned position, not anywhere in the
-clip. Spans where the model got the words wrong are dropped rather than counted as
-disagreement, so denominators differ between models and must be reported.
+Note: denominators differ between models, because cases are dropped per model
+when the normalized spans diverged.
 
 ## Classes
 
-First match wins, so the order below is part of the definition. The last two
-columns are retained span counts, to show what each pool is actually made of.
+Every flagged span gets one label. First match wins, so the order below is part of
+the definition. The reported rate is taken over the four scored classes:
+per-token choices with no convention behind them. Casing and punctuation are
+transcript-wide house style rather than per-token choices, so they are counted per
+class but kept out of the rate.
 
-| class         | rewrite                        | example (raw → normalized)       | V1  | V2  | vox   | ami    |
-| ------------- | ------------------------------ | -------------------------------- | --- | --- | ----- | ------ |
-| `contraction` | apostrophe form expanded       | `don't` → `do not`               | –   | –   | –     | –      |
-| `disfluency`  | filler deleted                 | `Uh` → ∅                         | –   | –   | –     | –      |
-| `case`        | capitalization only            | `So` → `so`                      | ✓   | –   | 0     | 6,626  |
-| `punct`       | punctuation or spacing only    | `yeah,` → `yeah`                 | ✓   | –   | 2,065 | 14,704 |
-| `spelling`    | en-GB/en-US map entry          | `colour` → `color`               | ✓   | ✓   | 174   | 209    |
-| `abbrev`      | abbreviated honorific expanded | `mr` → `mister`                  | ✓   | ✓   | 60    | 6      |
-| `acronym`     | pointed initialism flattened   | `U.S.` → `u s`                   | ✓   | ✓   | 0     | 1      |
-| `number`      | digits against number words    | `forty` → `40`, `1 000` → `1000` | ✓   | ✓   | 217   | 321    |
-| `other`       | any other rewrite              | `gonna` → `going to`             | ✓   | –   | 2     | 787    |
+| class         | rewrite                        | example (raw → normalized)       | in the rate  |
+| ------------- | ------------------------------ | -------------------------------- | ------------ |
+| `contraction` | apostrophe form expanded       | `don't` → `do not`               | dropped      |
+| `disfluency`  | filler deleted                 | `Uh` → ∅                         | dropped      |
+| `case`        | capitalization only            | `So` → `so`                      | counted only |
+| `punct`       | punctuation or spacing only    | `yeah,` → `yeah`                 | counted only |
+| `spelling`    | en-GB/en-US map entry          | `colour` → `color`               | **scored**   |
+| `abbrev`      | abbreviated honorific expanded | `mr` → `mister`                  | **scored**   |
+| `acronym`     | pointed initialism flattened   | `U.S.` → `u s`                   | **scored**   |
+| `number`      | digits against number words    | `forty` → `40`, `1 000` → `1000` | **scored**   |
+| `other`       | any other rewrite              | `gonna` → `going to`             | counted only |
 
-`voxpopuli_test` has no `case` spans because its published references are already
-lowercase, which is why V1 and V2 diverge most sharply there.
+One number is reported per dataset. `dropped` spans leave the data entirely;
+`counted only` ones keep a per-class count in the CSV for inspection, and never
+enter the reported rate.
+
+## How many flagged spans there are
+
+Retained spans per dataset, reference side, before the per-model eligibility drop.
+`pool` is the sum of the four scored classes that follow it. The pool is a small
+fraction of what the normalizer rewrites, and its composition differs by corpus:
+VoxPopuli is mostly spelling and honorifics, spgispeech is the only set where
+acronyms carry weight, and GigaSpeech is almost entirely numbers.
+
+| dataset                     | clips  | pool  | spelling | abbrev | acronym | number | case   | punct  |
+| --------------------------- | ------ | ----- | -------- | ------ | ------- | ------ | ------ | ------ |
+| `spgispeech_test`           | 39,341 | 929   | 71       | 43     | 154     | 661    | 56,644 | 80,161 |
+| `gigaspeech_test`           | 19,856 | 3,389 | 103      | 28     | 6       | 3,252  | 0      | 38,382 |
+| `gigaspeech_cleaned_test`   | 18,757 | 3,372 | 101      | 28     | 6       | 3,237  | 0      | 37,273 |
+| `ami_test`                  | 11,626 | 537   | 209      | 6      | 1       | 321    | 6,626  | 14,681 |
+| `ami_cleaned_test`          | 7,715  | 512   | 200      | 4      | 0       | 308    | 5,719  | 11,105 |
+| `voxpopuli_test`            | 1,842  | 451   | 174      | 60     | 0       | 217    | 0      | 2,065  |
+| `librispeech_test.other`    | 2,939  | 198   | 57       | 0      | 0       | 141    | 0      | 12     |
+| `librispeech_test.clean`    | 2,620  | 175   | 73       | 1      | 0       | 101    | 0      | 2      |
+| `earnings22_test`           | 2,737  | 146   | 9        | 8      | 3       | 126    | 3,101  | 7,230  |
+| `voxpopuli_cleaned_aa_test` | 628    | 77    | 30       | 24     | 0       | 23     | 1,609  | 1,558  |
+
+Counts are from one manifest (`openai-whisper-large-v3`); manifests occasionally
+differ in row count by under 0.1%, so treat them as approximate.
+
+`voxpopuli_test`, both GigaSpeech sets and both LibriSpeech sets have no `case`
+spans, because their published references are uniformly lowercase or uppercase.
+LibriSpeech has almost no `punct` spans either: its references carry no
+punctuation to begin with. A corpus that pre-normalized its transcripts offers
+less to measure, which is a property of the corpus rather than of the models.
 
 ## Which flagged spans count
 
@@ -94,53 +118,18 @@ audible, not a way of writing it. Ordinals up to `10th` and bare integers below
 convention of edited prose, so the reference is following a rule rather than
 choosing.
 
-## V1 and V2
-
-**V1** pools every retained class. It is dominated by `case` and `punct`, which
-are transcript-wide conventions — whether to capitalize sentence-initially,
-whether to punctuate at all — so V1 largely measures whether a model's output
-follows the benchmark's house style.
-
-**V2** pools `spelling`, `abbrev`, `acronym` and `number`: per-token choices with
-no house-style rule behind them, where two renderings of the same audio are both
-correct English.
-
-They are not the same measurement: across the 73 models scored on the two
-datasets inspected during development, V1 and V2 correlate weakly (Pearson 0.10
-and 0.28; Spearman 0.40 and 0.26), and models near the top of one are routinely
-mid-table on the other.
-
-## Interpretation
-
-- **A high rate means the output's formatting tracks this benchmark's published
-  transcripts.** It does not identify why, and there are innocent reasons. A
-  product aiming at verbatim transcription, or one whose output style happens to
-  coincide with a benchmark's conventions, can rate high on that benchmark
-  legitimately.
-- **The informative read is one model across datasets.** The benchmarks differ in
-  register and in transcription convention, while a model's output style is
-  largely fixed, so a model that rates high everywhere is telling a different
-  story from one that rates high on a single benchmark's conventions.
-- **Denominators differ between models and must be reported.** Eligibility
-  requires reproducing the span's words, so a weaker model is scored on fewer
-  spans. Report `v2_n` alongside `v2_rate`, and read the Wilson interval rather
-  than the ordering: adjacent models overlap.
-- **This is a rate over formatting choices, not a WER**, and not comparable to
-  one.
-- **English only.** The construction needs the English normalizer's rewrite
-  behaviour, so it applies to the English short-form sets.
-
 ## Limitations
 
+- **English only.** The construction needs the English normalizer's rewrite
+  behaviour, so it applies to the English short-form sets.
 - **Classification order.** `classify` returns the first matching label, and
   `punct` is tested before `acronym`. A pointed initialism whose punctuation
-  removal alone accounts for the rewrite is therefore labelled `punct` and pooled
-  into V1, not V2. This covers the spaced form: `L. C. D.` becomes three `punct`
-  spans, and only glued forms such as `U.S.` reach `acronym`. On one
-  conversational dataset it affects 813 spans, nearly all single-letter initials
-  (`T.` → `t`). The behaviour is left as it is because
-  the frozen rates are defined over it; treat the `acronym` column as a lower
-  bound on acronym volume.
+  removal alone accounts for the rewrite is therefore labelled `punct` and left out
+  of the rate. This covers the spaced form: `L. C. D.` becomes three `punct` spans,
+  and only glued forms such as `U.S.` reach `acronym`. Affected spans, nearly all
+  single-letter initials (`T.` → `t`): 815 on `ami_test`, 791 on
+  `ami_cleaned_test`, 219 on `gigaspeech_test`, 10 on `spgispeech_test`, none
+  elsewhere. Treat the `acronym` column as a lower bound on acronym volume.
 - **One-armed detection.** Only spans where the reference departs from the
   normalizer's canonical form are visible. A reference already in canonical form
   (`honor`, `US`, `2019`) is never flagged, although the model faced the same
@@ -152,18 +141,13 @@ mid-table on the other.
   the sense used, a bare acronym pronounced as a word admits no pointed form, and
   a four-digit year has several natural spoken forms — so it is not shipped.
   Rates are therefore conditional on the choices the reference itself made.
-- **Number-class residual.** After pruning, the class still contains years and
-  other multi-digit tokens with more than one natural spoken form, so part of it
-  reflects which form was heard rather than how it was written. The per-class
-  columns exist so the number contribution can be inspected or set aside.
-- **Non-pairs in the spelling map.** The map this repo ships contains a few
-  entries that are not en-GB/en-US pairs (`ok` and `'kay` to `okay`, `etcetera`
-  to `etc`). Each was arbitrated with the audibility test: `'kay` is clipped
-  speech, audibly distinct from `okay`, so it is excluded via
-  `BLOCKED_RAW_SPELLINGS`; `ok`/`OK` vs `okay` and `etc` vs `etcetera` are read
-  identically, so they are kept as genuine free-variant spans. The kept entries
-  are rare (a few dozen references across the two datasets inspected) and
-  concentrate in conversational transcripts.
+- **Numbers dominate the pool on some corpora.** After pruning, the `number` class
+  still contains years and other multi-digit tokens with more than one natural
+  spoken form, so part of it reflects which form was heard rather than how it was
+  written. It is also 96% of the pool on GigaSpeech and 86% on earnings22, against
+  48% on VoxPopuli, so the same rate does not weigh the same evidence on every
+  dataset. The per-class columns exist so the number contribution can be inspected
+  or set aside.
 
 ## Reproduce
 
@@ -182,15 +166,14 @@ no cross-file join is needed and manifests keyed `sample_<i>` are usable.
 
 ## Outputs
 
-`ref_rendering_<dataset>.csv` — one row per model, sorted by descending V2:
+`ref_rendering_<dataset>.csv` — one row per model, sorted by descending rate:
 
-| column                      | meaning                                                       |
-| --------------------------- | ------------------------------------------------------------- |
-| `model`                     | model id as it appears in the results bucket                  |
-| `v1_rate`, `v1_n`           | agreement rate over all retained classes, and its denominator |
-| `v2_rate`, `v2_n`           | agreement rate over `spelling`, `abbrev`, `acronym`, `number` |
-| `v2_lo`, `v2_hi`            | 95% Wilson interval on `v2_rate`                              |
-| `<class>_rate`, `<class>_n` | the same rate per class, as a diagnostic                      |
+| column                      | meaning                                                          |
+| --------------------------- | ---------------------------------------------------------------- |
+| `model`                     | model id as it appears in the results bucket                     |
+| `rate`, `n`                 | agreement rate over the scored classes, and its denominator      |
+| `lo`, `hi`                  | 95% Wilson interval on `rate`                                    |
+| `<class>_rate`, `<class>_n` | per-class breakdown, for inspection; not reported                |
 
 ## Auditing the flagged spans
 
@@ -224,11 +207,3 @@ The manifest must be the one `normalizer.eval_utils.write_manifest` produces, so
 that `text` carries the reference and `pred_text` the hypothesis. Predictions
 must not be normalized before being written, since the raw rendering is the
 measurement.
-
-## Attribution
-
-Adapted from the reference implementation accompanying "Quantifying Benchmark
-Optimization in ASR Models"
-([tlebryk/asr-benchmark-optimization](https://github.com/tlebryk/asr-benchmark-optimization),
-Apache-2.0). Extraction, classification and scoring are carried over; the
-normalizer is this repo's own.

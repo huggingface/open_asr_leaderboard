@@ -30,10 +30,10 @@ only the rendering is in question), and it **agrees** when its raw text there is
 character-for-character the reference's raw span. The agreement rate is the share
 of eligible flagged spans at which a model agrees.
 
-Two pools are reported. ``V1`` is every retained class, which is dominated by
-casing and punctuation, i.e. the transcript's house style. ``V2`` is the four
-classes where the choice is not recoverable from the audio and not a
-house-style convention either: spelling, abbreviation, acronym and number.
+A single rate is reported, taken over :data:`SCORED_CLASSES` — the classes where
+the choice is recoverable from neither the audio nor a transcript-wide convention.
+Casing and punctuation are labelled and counted but excluded from it, since they
+are house style rather than per-token choices.
 
 Public entry points: :func:`extract_flagged_spans` and :func:`keep_flagged_span`
 build a clip's list, :func:`score_clip` scores one hypothesis against it, and
@@ -319,13 +319,62 @@ BLOCKED_SPELLINGS = frozenset(
     }
 )
 
-# Numbers with more than one natural spoken form, or too small for the
-# digits-versus-words choice to be a formatting convention: "oh" for zero,
-# ordinals up to tenth, and bare integers below eleven.
-SMALL_NUMBERS = frozenset(
-    {str(i) for i in range(11)}
-    | {f"{i}{s}" for i, s in [(1, "st"), (2, "nd"), (3, "rd")] + [(i, "th") for i in range(4, 11)]}
+# A number span is kept only in the magnitude band with exactly one natural
+# spoken form, so the reference's choice was how to write it rather than what was
+# said. Below eleven, spelling the number out is the near-uniform convention of
+# edited prose, so the reference is following a rule; at four digits and above,
+# "1984" is read either "nineteen eighty-four" or "one thousand nine hundred
+# eighty-four", and three-digit forms split the same way ("999" as "nine
+# ninety-nine" or "nine hundred ninety-nine").
+NUMBER_BAND = range(11, 100)
+
+# Words a kept number span may be built from. Anything else in the raw span means
+# the normalizer merged across a boundary rather than rewriting one number:
+# "six o'clock" to "60 clock", "one third" to "13rd", "eleven one" to "111".
+NUMBER_WORDS = frozenset(
+    """zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen
+    sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety
+    first second third fourth fifth sixth seventh eighth ninth tenth eleventh twelfth thirteenth
+    fourteenth fifteenth sixteenth seventeenth eighteenth nineteenth twentieth thirtieth fortieth
+    fiftieth sixtieth seventieth eightieth ninetieth""".split()
 )
+
+_BARE_INT_RE = re.compile(r"^\d+$")
+_ORDINAL_RE = re.compile(r"^(\d+)(st|nd|rd|th)$")
+
+
+def _ordinal_suffix(value: int) -> str:
+    if value % 100 in (11, 12, 13):
+        return "th"
+    return {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
+
+
+def _in_number_band(norm: str) -> bool:
+    """Whether the normalized form is a bare integer or ordinal inside the band.
+
+    An ordinal whose suffix disagrees with its digits (``13rd``) is a merge of two
+    separate numbers rather than one ordinal, so it is rejected.
+    """
+    n = norm.strip()
+    if _BARE_INT_RE.match(n):
+        return int(n) in NUMBER_BAND
+    m = _ORDINAL_RE.match(n)
+    if not m:
+        return False
+    value = int(m.group(1))
+    return value in NUMBER_BAND and m.group(2) == _ordinal_suffix(value)
+
+
+def _all_number_words(raw: str) -> bool:
+    """Whether the raw span is number words only, with no punctuation or digits.
+
+    Punctuation inside or trailing the span (``"forty,"``) makes the rendering a
+    joint punctuation-and-number choice, which the number class should not carry.
+    """
+    for token in raw.replace("-", " ").split():
+        if token.lower() not in NUMBER_WORDS:
+            return False
+    return bool(raw.strip())
 
 # Spelling spans blocked by their RAW (reference-side) form. These fail the
 # audibility test rather than the sense test: the raw form is pronounced
@@ -335,8 +384,8 @@ SMALL_NUMBERS = frozenset(
 BLOCKED_RAW_SPELLINGS = frozenset({"kay"})
 
 # Classes whose rendering the audio does not determine and which are not a
-# transcript-wide house-style convention either.
-V2_CLASSES = frozenset({"spelling", "abbrev", "acronym", "number"})
+# transcript-wide house-style convention either. The reported rate is over these.
+SCORED_CLASSES = frozenset({"spelling", "abbrev", "acronym", "number"})
 
 # Reported per class, in this order.
 REPORTED_CLASSES = ("case", "punct", "spelling", "abbrev", "acronym", "number", "other")
@@ -353,9 +402,7 @@ def keep_flagged_span(fspan) -> bool:
         if raw.lower().strip(".,!?;:'\"\u2019") in BLOCKED_RAW_SPELLINGS:
             return False
     if cls == "number":
-        rl = raw.lower().strip(".,!?;:'\"")
-        if rl in ("oh", "o") or norm.lower() in SMALL_NUMBERS:
-            return False
+        return _in_number_band(norm) and _all_number_words(raw)
     return True
 
 
@@ -437,27 +484,28 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 def score_pairs(pairs) -> dict:
     """Aggregate rendering agreement over ``(reference, hypothesis)`` pairs.
 
-    Returns ``v1``/``v2`` as ``[agreed, eligible]`` plus the same pair per
-    class. Clips with no retained flagged span contribute nothing.
+    Returns ``scored`` (the reported pool) as ``[agreed, eligible]``, ``all``
+    (every retained class) and the same pair per class, both for inspection only.
+    Clips with no retained flagged span contribute nothing.
     """
-    v1 = [0, 0]
-    v2 = [0, 0]
+    every = [0, 0]
+    scored = [0, 0]
     by_class = {cls: [0, 0] for cls in REPORTED_CLASSES}
     for ref, hyp in pairs:
         flagged_spans, ref_full = flagged_spans_for(" ".join(ref.split()))
         if not flagged_spans:
             continue
-        scored = score_clip(list(flagged_spans), list(ref_full), hyp)
-        for (_, eligible, agreed, _), fspan in zip(scored, flagged_spans):
+        per_span = score_clip(list(flagged_spans), list(ref_full), hyp)
+        for (_, eligible, agreed, _), fspan in zip(per_span, flagged_spans):
             if not eligible:
                 continue
-            v1[1] += 1
-            v1[0] += agreed
+            every[1] += 1
+            every[0] += agreed
             cls = fspan[2]
             if cls in by_class:
                 by_class[cls][1] += 1
                 by_class[cls][0] += agreed
-            if cls in V2_CLASSES:
-                v2[1] += 1
-                v2[0] += agreed
-    return {"v1": v1, "v2": v2, "by_class": by_class}
+            if cls in SCORED_CLASSES:
+                scored[1] += 1
+                scored[0] += agreed
+    return {"scored": scored, "all": every, "by_class": by_class}
