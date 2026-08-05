@@ -12,7 +12,7 @@ MODEL_IDs=(
 BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
 
 # Multilingual datasets and languages
-DATASETS="nithinraok/asr-leaderboard-datasets"
+DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
 DATASET_NAMES=("fleurs" "mcv" "mls")
 DATASET_LANGS_fleurs="de fr it es pt"

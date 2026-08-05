@@ -15,8 +15,8 @@ MODEL_CONFIGS=(
     "usefulsensors/moonshine-streaming-tiny   1024"
     "usefulsensors/moonshine-streaming-small  512"
     "usefulsensors/moonshine-streaming-medium 512"
-    "usefulsensors/moonshine-base             1024"
     "usefulsensors/moonshine-tiny              1024"
+    # "usefulsensors/moonshine-base             1024"
 )
 
 # ── Datasets: "name split" ───────────────────────────────────────────────────

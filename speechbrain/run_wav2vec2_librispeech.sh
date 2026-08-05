@@ -6,7 +6,7 @@ BATCH_SIZE=32
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 SOURCES=(
-    "speechbrain/asr-wav2vec2-librispeech"
+    # "speechbrain/asr-wav2vec2-librispeech"
 )
 
 # ── Datasets: "name split" (comment / uncomment to select) ──────────────────

@@ -1,5 +1,4 @@
 datasets==2.19.0
-evaluate
 jiwer
 num2words
 regex

@@ -207,8 +207,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        default="nithinraok/asr-leaderboard-datasets",
-        help="Dataset path. Default is 'nithinraok/asr-leaderboard-datasets'",
+        default="hf-audio/open-asr-leaderboard-multilingual-datasets",
+        help="Dataset path. Default is 'hf-audio/open-asr-leaderboard-multilingual-datasets'",
     )
     parser.add_argument(
         "--config_name",

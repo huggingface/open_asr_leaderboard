@@ -27,15 +27,15 @@ class RunEvalResumeTests(unittest.TestCase):
         self.previous_directory = os.getcwd()
         os.chdir(self.temporary_directory.name)
         self.dataset = FakeDataset([sample("first"), sample("second")])
-        self.metric = mock.Mock()
-        self.metric.compute.return_value = 0.0
         self.patches = [
             mock.patch.object(
                 run_eval_ml.datasets, "load_dataset", return_value=self.dataset
             ),
             mock.patch.object(run_eval_ml, "Audio", return_value=object()),
             mock.patch.object(run_eval_ml.sf, "write"),
-            mock.patch.object(run_eval_ml.evaluate, "load", return_value=self.metric),
+            mock.patch.object(
+                run_eval_ml, "batch_error_rate", return_value={"err_rate": 0.0}
+            ),
             mock.patch.object(
                 run_eval_ml.data_utils, "is_target_text_in_range", return_value=True
             ),

@@ -1,8 +1,10 @@
 import argparse
+import json
 import os
+import re
 import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, CompileConfig
+from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoModelForRNNT, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, MODEL_FOR_RNNT_MAPPING, CompileConfig
 import evaluate
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs
@@ -13,6 +15,20 @@ import numpy as np
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
+
+
+def remove_brackets(text):
+    """
+    Remove parentheses from text, replacing them with spaces.
+
+    Some models (e.g. Cohere ASR) output parentheses that would cause the
+    normalizer to delete the enclosed text entirely, leading to false
+    deletion errors in the predictions.
+    """
+    text = text.replace("(", " ").replace(")", " ")
+    # replace spans of multiple spaces as a single space
+    text = re.sub(r"\s+", " ", text)
+    return text
 
 
 def main(args):
@@ -27,27 +43,52 @@ def main(args):
 
     torch_dtype = getattr(torch, args.dtype)
 
-    config = AutoConfig.from_pretrained(args.model_id)
+    config = AutoConfig.from_pretrained(args.model_id, revision=args.revision)
     if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING:
         cls_model = AutoModelForSpeechSeq2Seq
     elif type(config) in MODEL_FOR_MULTIMODAL_LM_MAPPING:
         cls_model = AutoModelForMultimodalLM
     elif type(config) in MODEL_FOR_CTC_MAPPING:
         cls_model = AutoModelForCTC
+    elif type(config) in MODEL_FOR_RNNT_MAPPING:
+        cls_model = AutoModelForRNNT
     else:
         raise ValueError(f"Model config of type {type(config)} not recognized in Transformers mappings.")
     is_ctc = cls_model == AutoModelForCTC
 
-    model = cls_model.from_pretrained(
-        args.model_id,
-        dtype=torch_dtype,
-        attn_implementation=args.attn_implementation,
-    )
+    if "vibevoice" in args.model_id.lower():
+        model = cls_model.from_pretrained(
+            args.model_id,
+            dtype=torch_dtype,
+            attn_implementation={
+                "acoustic_tokenizer_encoder_config": "eager",
+                "semantic_tokenizer_encoder_config": "eager",
+                "text_config": "sdpa",
+            },
+        )
+    else:
+        model = cls_model.from_pretrained(
+            args.model_id,
+            dtype=torch_dtype,
+            revision=args.revision,
+            attn_implementation=args.attn_implementation,
+        )
     model.to(args.device)
     model.eval()
+
+    # set small chunk size to avoid OOM
+    if "vibevoice" in args.model_id.lower():
+        model.config.acoustic_tokenizer_chunk_size = args.vibevoice_tokenizer_chunk_size
+
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
-    processor = AutoProcessor.from_pretrained(args.model_id)
+    processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
+    is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
+    is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
+    is_vibevoice = "vibevoice" in args.model_id.lower()
+    is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
+    # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
+    is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
 
     # Extract sampling rate from processor
     if hasattr(processor, "feature_extractor") and processor.feature_extractor is not None:
@@ -71,18 +112,18 @@ def main(args):
     elif args.max_new_tokens:
         raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
-    CONFIG_NAME = args.config_name
+    CONFIG_NAME = args.config_name  # None for single-config dataset repos (e.g. VoiceArena/Monsoon_hi_test)
     SPLIT_NAME = args.split
 
-    # Determine language for normalization: use --language if provided, otherwise extract from config_name
+    # Determine language for normalization: use --language if provided, otherwise
+    # extract from config_name (e.g. "fleurs_de") or from the dataset name
     if args.language is not None:
         norm_language = args.language
     else:
-        try:
-            norm_language = CONFIG_NAME.split("_", 1)[1]
-        except IndexError:
-            norm_language = "en"
-        print(f"Language not specified, extracted '{norm_language}' from config_name '{CONFIG_NAME}'")
+        source = CONFIG_NAME if CONFIG_NAME else os.path.basename(args.dataset)
+        lang_match = re.search(r"_([a-z]{2})(?:_test)?$", source)
+        norm_language = lang_match.group(1) if lang_match else "en"
+        print(f"Language not specified, extracted '{norm_language}' from '{source}'")
 
     if args.torch_compile is not None:
         if model.can_generate():
@@ -135,15 +176,45 @@ def main(args):
             padding_audios = [audios[-1] for _ in range(padding_size)]
             audios.extend(padding_audios)
 
-        if has_transcription_processor:
+        if is_nemotron:
+            # Cap very long clips at 30s: with padding="longest", a single long
+            # clip can push the padded conv input past torch's 32-bit indexing
+            # limit (canUse32BitIndexMath -> RuntimeError)
+            max_samples = int(30 * sampling_rate)
+            audios = [a[:max_samples] for a in audios]
+            rnnt_processor_kwargs = dict(
+                sampling_rate=sampling_rate,
+                padding=True,
+                return_tensors="pt",
+            )
+            # Multilingual RNNT models accept a language prompt;
+            # English-only models (e.g. nemotron-speech-streaming-en) do not.
+            if "-en" not in args.model_id.lower():
+                rnnt_processor_kwargs["language"] = norm_language
+            inputs = processor(audios, **rnnt_processor_kwargs)
+        elif is_cohere:
+            # Cohere ASR requires an explicit language and does not use apply_transcription_request
+            inputs = processor(
+                audios,
+                sampling_rate=sampling_rate,
+                return_tensors="pt",
+                language=norm_language,
+                punctuation=norm_language != "en",
+            )
+        elif is_voxtral_realtime:
+            # Realtime model uses a plain processor call — no prompt, no apply_transcription_request
+            inputs = processor(audios, return_tensors="pt")
+        elif has_transcription_processor:
             if "voxtral" in args.model_id.lower():
                 inputs = processor.apply_transcription_request(
-                    language=args.language,  # None = auto-detect
+                    language=args.language,
                     audio=audios,
                     model_id=args.model_id,
                     sampling_rate=sampling_rate,
                     format=["wav"] * len(audios),
                 )
+            elif is_qwen3_asr:
+                inputs = processor.apply_transcription_request(audios, language=args.language)
             else:
                 inputs = processor.apply_transcription_request(audios)
             prompt_len = inputs["input_ids"].shape[1]
@@ -163,7 +234,7 @@ def main(args):
                 audios,
                 sampling_rate=sampling_rate,
                 return_tensors="pt",
-                padding="longest",
+                padding="max_length",
                 return_attention_mask=True,
                 device=args.device,
             )
@@ -176,7 +247,11 @@ def main(args):
         else:
             sdpa_backends = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
         with sdpa_kernel(sdpa_backends):
-            if model.can_generate():
+            if is_nemotron:
+                # RNNT generation (cache-aware FastConformer-RNNT)
+                rnnt_output = model.generate(**inputs, **gen_kwargs, return_dict_in_generate=True)
+                pred_ids = rnnt_output.sequences
+            elif model.can_generate():
                 pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
             else:
                 # Single forward pass for CTC
@@ -190,7 +265,39 @@ def main(args):
             pred_ids = pred_ids[:-padding_size, ...]
 
         # Convert token ids to text transcription
-        if has_transcription_processor:
+        if is_nemotron:
+            pred_text = processor.decode(pred_ids, skip_special_tokens=True)
+        elif is_vibevoice:
+            # VibeVoice: strip the input prompt tokens then use the model's own decode API
+            generated_ids = pred_ids[:, prompt_len:]
+            try:
+                pred_text = processor.decode(generated_ids, return_format="transcription_only")
+            except Exception as e:
+                print(f"Batch decoding failed with error: {e}. Falling back to individual sample decoding.")
+                pred_text = []
+                for i, sample_ids in enumerate(generated_ids):
+                    try:
+                        decoded = processor.decode(sample_ids.unsqueeze(0), return_format="transcription_only")
+                        pred_text.append(decoded[0] if isinstance(decoded, list) else decoded)
+                    except Exception as sample_error:
+                        print(f"Sample {i} decoding failed with error: {sample_error}. Setting to empty transcript.")
+                        pred_text.append("")
+        elif is_cohere:
+            audio_chunk_index = inputs.get("audio_chunk_index")
+            pred_text = processor.decode(
+                pred_ids,
+                skip_special_tokens=True,
+                audio_chunk_index=audio_chunk_index,
+                language=norm_language,
+            )
+            pred_text = [remove_brackets(t) for t in pred_text]
+        elif is_voxtral_realtime:
+            # No prompt tokens to strip — decode directly
+            pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        elif is_qwen3_asr:
+            # Structured decode strips the "language <NAME><asr_text>" prefix.
+            pred_text = processor.decode(pred_ids[:, prompt_len:], return_format="transcription_only")
+        elif has_transcription_processor:
             pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_ctc:
             # don't use skip_special_tokens as it collapses double letters
@@ -277,7 +384,7 @@ def main(args):
         all_results["predictions"],
         args.model_id,
         args.dataset,
-        CONFIG_NAME,
+        CONFIG_NAME or "",
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
@@ -304,16 +411,23 @@ if __name__ == "__main__":
         help="Model identifier. Should be loadable with Transformers",
     )
     parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Model revision to use (e.g. 'refs/pr/11' for a PR branch). Defaults to the main branch.",
+    )
+    parser.add_argument(
         "--dataset",
         type=str,
         required=True,
-        help="Dataset name. E.g. 'nithinraok/asr-leaderboard-datasets'",
+        help="Dataset name. E.g. 'hf-audio/open-asr-leaderboard-multilingual-datasets'",
     )
     parser.add_argument(
         "--config_name",
         type=str,
-        required=True,
-        help="Config name for the dataset. E.g. 'fleurs_de' for German FLEURS.",
+        default=None,
+        help="Config name for the dataset. E.g. 'fleurs_de' for German FLEURS. "
+             "Omit for single-config dataset repos.",
     )
     parser.add_argument(
         "--language",
@@ -355,6 +469,15 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Maximum number of tokens to generate.",
+    )
+    parser.add_argument(
+        "--vibevoice_tokenizer_chunk_size",
+        type=int,
+        default=64000,
+        help="VibeVoice acoustic-tokenizer chunk size, set on the model config "
+             "(config.acoustic_tokenizer_chunk_size). The model default is 1440000 "
+             "(60s @ 24kHz); a smaller value (multiple of the acoustic tokenizer "
+             "hop length) avoids the 32-bit conv indexing overflow on long clips.",
     )
     parser.add_argument(
         "--torch_compile",

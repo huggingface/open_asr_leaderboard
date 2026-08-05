@@ -28,6 +28,7 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-05-2026  4"
     # "modulate/vfast                25"
     # "gladia/solaria-3             20"
+    # "soniox/stt-async-v5           20"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
@@ -81,6 +82,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+            -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
             -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
@@ -90,6 +92,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
@@ -124,10 +127,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         "
 
     if [[ -n "${RESULTS_BUCKET}" ]]; then
-        # Only upload the specific files for the datasets in EVAL_DATASETS to
-        # avoid accidentally pushing private dataset results to the public bucket.
-        # hf buckets sync is directory-based, so we use --include to whitelist
-        # only the exact filenames we want to upload.
+        # Only upload the specific files for the datasets in EVAL_DATASETS
         DATASET_PATH_SLUG="${DATASET_PATH//\//-}"
         INCLUDE_ARGS=()
         for entry in "${EVAL_DATASETS[@]}"; do

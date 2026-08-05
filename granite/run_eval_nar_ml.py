@@ -1,7 +1,10 @@
 import argparse
 import os
+
+# Disable strict type validation in huggingface_hub (model config has int where float expected)
+os.environ["HF_HUB_DISABLE_STRICT_FIELD_VALIDATION"] = "1"
+
 import torch
-from qwen_asr import Qwen3ASRModel
 import evaluate
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs
@@ -9,45 +12,37 @@ import time
 from tqdm import tqdm
 from datasets import load_dataset, Audio
 
-wer_metric = evaluate.load("wer")
+from transformers import AutoModel, AutoProcessor
 
-# Qwen3-ASR toolkit expects language *names*, not 2-letter codes.
-LANGUAGE_NAMES = {
-    "en": "English",
-    "de": "German",
-    "fr": "French",
-    "it": "Italian",
-    "es": "Spanish",
-    "pt": "Portuguese",
-}
+wer_metric = evaluate.load("wer")
+torch.set_float32_matmul_precision('high')
+
 
 def main(args):
     CONFIG_NAME = args.config_name
     SPLIT_NAME = args.split
 
-    # Determine language for normalization: use --language if provided, otherwise
-    # extract from config_name (e.g. "fleurs_de") or, for single-config repos
+    # Extract language from config_name if not provided
     if args.language:
         LANGUAGE = args.language
     else:
-        import re
-        source = CONFIG_NAME if CONFIG_NAME else os.path.basename(args.dataset)
-        lang_match = re.search(r"_([a-z]{2})(?:_test)?$", source)
-        LANGUAGE = lang_match.group(1) if lang_match else "en"
+        try:
+            LANGUAGE = CONFIG_NAME.split("_", 1)[1]
+        except IndexError:
+            LANGUAGE = "en"
 
-    # Load Qwen3-ASR model
-    model = Qwen3ASRModel.from_pretrained(
-        args.model_id,
-        dtype=torch.bfloat16,
-        device_map=f"cuda:{args.device}" if args.device >= 0 else "cpu",
-        max_inference_batch_size=args.batch_size,
-        max_new_tokens=args.max_new_tokens,
-    )
-    print(f"Model size: {sum(p.numel() for p in model.model.parameters()) / 1e9:.2f}B parameters")
+    # Load model (NLENARDecoder requires flash_attention_2, no fallback possible)
+    device = f"cuda:{args.device}" if args.device != -1 else "cpu"
+    model = AutoModel.from_pretrained(args.model_id, trust_remote_code=True,
+                                      revision=args.revision,
+                                      attn_implementation="flash_attention_2",
+                                      device_map=device, dtype=torch.bfloat16).eval()
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
+    processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True,
+                                              revision=args.revision)
 
-    # Load dataset using the HuggingFace dataset repository
+    # Load dataset
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
-
     dataset = load_dataset(
         args.dataset,
         CONFIG_NAME,
@@ -55,8 +50,6 @@ def main(args):
         streaming=args.streaming,
         token=True,
     )
-
-    # Resample to 16kHz
     dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
 
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
@@ -68,46 +61,39 @@ def main(args):
 
     def benchmark(batch):
         # Load audio inputs
-        audios = [audio["array"] for audio in batch["audio"]]
-        batch["audio_length_s"] = [len(audio) / batch["audio"][0]["sampling_rate"] for audio in audios]
+        audios = [torch.tensor(audio["array"], device=device).squeeze(0) for audio in batch["audio"]]
         minibatch_size = len(audios)
+        batch["audio_length_s"] = [len(audio["array"]) / audio["sampling_rate"] for audio in batch["audio"]]
 
         # START TIMING
         start_time = time.time()
-
-        # INFERENCE
-        # Qwen3-ASR expects audio as file paths or numpy arrays with sample rate
-        audio_inputs = [(audio, 16000) for audio in audios]
-
-        results = model.transcribe(
-            audio=audio_inputs,
-            language=LANGUAGE_NAMES.get(LANGUAGE),  # force target language (name, e.g. "German")
-        )
-
-
-        # Extract text predictions
-        pred_text = [r.text for r in results]
-
+        inputs = processor(audios, device=device)
+        # Model Inference
+        with torch.inference_mode():
+            output = model.transcribe(**inputs)
+            output_text = processor.batch_decode(output.preds)
         # END TIMING
         runtime = time.time() - start_time
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
-
-        batch["predictions"] = pred_text  # raw; normalization applied at scoring time
+        batch["predictions"] = output_text  # raw; normalization applied at scoring time
         batch["references"] = batch["text"]  # raw; normalization applied at scoring time
-
         return batch
 
     if args.warmup_steps is not None and args.warmup_steps > 0:
         print(f"Running {args.warmup_steps} warmup steps...")
-        warmup_dataset = dataset.select(range(min(args.warmup_steps * args.batch_size, len(dataset)))) if not args.streaming else dataset.take(args.warmup_steps * args.batch_size)
+        num_warmup_samples = args.warmup_steps * args.batch_size
+        if args.streaming:
+            warmup_dataset = dataset.take(num_warmup_samples)
+        else:
+            warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
         warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"]))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
 
-    # Reset dataset for actual evaluation
+    # Reload dataset for actual evaluation
     dataset = load_dataset(
         args.dataset,
         CONFIG_NAME,
@@ -133,7 +119,6 @@ def main(args):
         "predictions": [],
         "references": [],
     }
-
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
@@ -144,7 +129,7 @@ def main(args):
         (ref, pred, dur, time_s)
         for ref, pred, dur, time_s in zip(
             all_results["references"], all_results["predictions"],
-            all_results["audio_length_s"], all_results["transcription_time_s"]
+            all_results["audio_length_s"], all_results["transcription_time_s"],
         )
         if data_utils.is_target_text_in_range(ref)
     ]
@@ -158,7 +143,7 @@ def main(args):
         all_results["predictions"],
         args.model_id,
         args.dataset,
-        CONFIG_NAME or "",
+        CONFIG_NAME,
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
@@ -180,21 +165,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_id",
         type=str,
-        required=True,
-        help="Model identifier. Should be loadable with qwen_asr",
+        default="ibm-granite/granite-speech-4.1-2b-nar",
+        help="Model identifier. Should be loadable with Transformers",
+    )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Model revision (commit SHA or tag) for trust_remote_code safety.",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
-        help="Dataset name. *E.g.* `'hf-audio/open-asr-leaderboard-multilingual-datasets'`",
+        help="Dataset name. E.g. 'hf-audio/open-asr-leaderboard-multilingual-datasets'",
     )
     parser.add_argument(
         "--config_name",
         type=str,
-        default=None,
-        help="Config name for the dataset. *E.g.* `'fleurs_en'` for English FLEURS. "
-             "Omit for single-config dataset repos.",
+        required=True,
+        help="Config name for the dataset. E.g. 'fleurs_de' for German FLEURS.",
     )
     parser.add_argument(
         "--language",
@@ -206,7 +196,7 @@ if __name__ == "__main__":
         "--split",
         type=str,
         default="test",
-        help="Split of the dataset. *E.g.* `'test'` for the test split.",
+        help="Split of the dataset.",
     )
     parser.add_argument(
         "--device",
@@ -217,7 +207,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=16,
+        default=128,
         help="Number of samples to go through each batch.",
     )
     parser.add_argument(
@@ -230,12 +220,6 @@ if __name__ == "__main__":
         "--streaming",
         action="store_true",
         help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
-    )
-    parser.add_argument(
-        "--max_new_tokens",
-        type=int,
-        default=256,
-        help="Maximum number of tokens to generate.",
     )
     parser.add_argument(
         "--warmup_steps",

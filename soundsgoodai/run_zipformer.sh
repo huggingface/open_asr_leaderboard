@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-MODEL_ID="soundsgoodai/Zipformer-transducer-XL-290M"
+MODEL_ID="soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M"
 BATCH_SIZE=64
 DEVICE_ID=0
 ICEFALL_PATH="./icefall"

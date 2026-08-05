@@ -13,7 +13,7 @@ Please include a summary of your pull request and how to run/use it.
 
 - [ ] If your model is hosted on the Hugging Face Hub, please report your results (WER on each split, average WER, and RTFx) on the HF Hub by adding a `.eval_results/open_asr_leaderboard.yaml` file like [this](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026/blob/main/.eval_results/open_asr_leaderboard.yaml) in the model repo.
 
-### HF Jobs evaluation (recommended)
+### HF Jobs evaluation (open-source models)
 
 Using [HF Jobs](https://huggingface.co/docs/hub/en/jobs-overview) makes it straightforward for maintainers to reproduce and verify your results. There are configurations for multiple model libraries available [here](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
 
@@ -23,6 +23,8 @@ Using [HF Jobs](https://huggingface.co/docs/hub/en/jobs-overview) makes it strai
     - [ ] For models that use `trust_remote_code=True`, please default to a `revision` tag and specify it in your bash script. 
 - [ ] In this repo, create a folder for your model library and a `submit_jobs.sh` script (use any existing one in this repo as a template) pointing to your Space and a results bucket.
 
+A similar checklist applies for multilingual evaluation (with `run_eval_ml.py` and `submit_jobs_ml.sh`).
+
 ####  Key guidelines
 - [ ] Use the **same decoding hyper-parameters** across all datasets for a given model.
 - [ ] (If writing a new) `run_eval.py`, it must support **batch processing** and use `normalizer/data_utils.py` for data loading, normalization, and manifest writing.
@@ -30,29 +32,32 @@ Using [HF Jobs](https://huggingface.co/docs/hub/en/jobs-overview) makes it strai
 - [ ] Use `torch.compile` and/or relevant optimizations including warmup to maximize RTFx.
 - [ ] Even if you're not using HF Jobs, prepare an HF space like the [existing models](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations), such that the maintainers can reproduce your results on HF Jobs.
 - [ ] Please report your results on the relevant public sets, as well as the RTFx.
-- [ ] Please provide the following model metadata (see [here](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-results/blob/main/english_short_latest.csv) for existing models).
-
-License | Size (B) | # Languages | Encoder | Decoder
--- | -- | -- | -- | -- 
- x | x | x | x | x 
-
-For LLM-based models, be sure to count the **total number** of parameters. You can get the exact number by adding the following line in your `run_eval.py` script:
+- [ ] Be sure to count the **total number** of parameters. You can get the exact number by adding the following line in your `run_eval.py` script:
 ```python
 print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
 ```
+- [ ] Please provide the following model metadata (see [here](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-results/blob/main/english_short_latest.csv) for existing models).
+
+License | Size (B) | # Languages | Encoder | Decoder | (Recommended) Link to training data disclosure on model card ([example](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3#training-dataset))
+-- | -- | -- | -- | -- | --
+ x | x | x | x | x | x
+
+- [ ] Does the license appear on your model card? 
 
 ### API models
 
-- [ ] Please contact the maintainers to provide an API key.
+- [ ] Please contact the maintainers (Eric Bezzam or Steven Zheng) to provide an API key.
 - [ ] Add an `<API>_provider.py` file [here](https://github.com/huggingface/open_asr_leaderboard/tree/main/api/providers).
 - [ ] Import your `<API>_provider.py` file [here](https://github.com/huggingface/open_asr_leaderboard/blob/4e4880b9fb203d60830ed2920c521e067026f269/api/providers/__init__.py#L48).
 - [ ] In [api/run_api.sh](https://github.com/huggingface/open_asr_leaderboard/blob/main/api/run_api.sh) add:
     - a line in `MODEL_CONFIGS`
     - a line when calling `docker run` to pass the API key 
 - [ ] Provide a link to your model's documentation that we can link on the leaderboard.
-- [ ] Please provide the following information:
-    - Link to API documentation that we can cross-link on the leaderboard.
-    - How many languages the API supports
+- [ ] Please provide the following information. Note that the cost should represent the "entry-level" costs, e.g. when one first signs up to your platform.
+
+ # Languages | Cost ($/hour) | Link to model announcement or API
+ -- | -- | -- 
+ x | x | x 
 
 See [here](https://github.com/huggingface/open_asr_leaderboard/blob/main/api/README.md) for tips on evaluating API models.
 

@@ -47,14 +47,6 @@ def main(args):
     assistant = "<|assistant|>"
     prompt_suffix = "<|end|>"
 
-    prompt = f"{user}<|audio_1|>{args.user_prompt}{prompt_suffix}{assistant}"
-
-    gen_kwargs = {"max_new_tokens": args.max_new_tokens, "num_beams": args.num_beams}
-
-    stop_tokens = [prompt_suffix, processor.tokenizer.eos_token]
-    stop_tokens_ids = processor.tokenizer(stop_tokens, add_special_tokens=False, padding="longest", return_tensors="pt")["input_ids"]
-    stop_tokens_ids = stop_tokens_ids.to(model.device)
-
     CONFIG_NAME = args.config_name
     SPLIT_NAME = args.split
 
@@ -66,6 +58,23 @@ def main(args):
             LANGUAGE = CONFIG_NAME.split("_", 1)[1]
         except IndexError:
             LANGUAGE = "en"
+
+    # Force the target language by naming it in the prompt (Phi-4 conditions on
+    # the text instruction; there is no separate language argument). This is
+    # consistent with the API models, which always pass the language.
+    LANGUAGE_NAMES = {
+        "en": "English", "de": "German", "fr": "French", "it": "Italian",
+        "es": "Spanish", "pt": "Portuguese",
+    }
+    lang_name = LANGUAGE_NAMES.get(LANGUAGE)
+    user_prompt = f"Transcribe the {lang_name} audio clip into text." if lang_name else args.user_prompt
+    prompt = f"{user}<|audio_1|>{user_prompt}{prompt_suffix}{assistant}"
+
+    gen_kwargs = {"max_new_tokens": args.max_new_tokens, "num_beams": args.num_beams}
+
+    stop_tokens = [prompt_suffix, processor.tokenizer.eos_token]
+    stop_tokens_ids = processor.tokenizer(stop_tokens, add_special_tokens=False, padding="longest", return_tensors="pt")["input_ids"]
+    stop_tokens_ids = stop_tokens_ids.to(model.device)
 
     # Load dataset
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
@@ -229,7 +238,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        help="Dataset name. E.g. 'nithinraok/asr-leaderboard-datasets'",
+        help="Dataset name. E.g. 'hf-audio/open-asr-leaderboard-multilingual-datasets'",
     )
     parser.add_argument(
         "--config_name",

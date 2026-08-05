@@ -12,6 +12,7 @@ ORG_NAME="${ORG_NAME:-}"
 # ── Models: "model_id batch_size" ────────────────────────────────────────────
 MODEL_CONFIGS=(
     "soundsgoodai/Zipformer-transducer-XL-290M 64"
+    "soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M 64"
 )
 
 # ── Datasets: "name split" ────────────────────────────────────────────────────
