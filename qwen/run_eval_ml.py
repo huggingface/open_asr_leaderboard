@@ -11,18 +11,29 @@ from datasets import load_dataset, Audio
 
 wer_metric = evaluate.load("wer")
 
+# Qwen3-ASR toolkit expects language *names*, not 2-letter codes.
+LANGUAGE_NAMES = {
+    "en": "English",
+    "de": "German",
+    "fr": "French",
+    "it": "Italian",
+    "es": "Spanish",
+    "pt": "Portuguese",
+}
+
 def main(args):
     CONFIG_NAME = args.config_name
     SPLIT_NAME = args.split
 
-    # Extract language from config_name if not provided
+    # Determine language for normalization: use --language if provided, otherwise
+    # extract from config_name (e.g. "fleurs_de") or, for single-config repos
     if args.language:
         LANGUAGE = args.language
     else:
-        try:
-            LANGUAGE = CONFIG_NAME.split("_", 1)[1]
-        except IndexError:
-            LANGUAGE = "en"
+        import re
+        source = CONFIG_NAME if CONFIG_NAME else os.path.basename(args.dataset)
+        lang_match = re.search(r"_([a-z]{2})(?:_test)?$", source)
+        LANGUAGE = lang_match.group(1) if lang_match else "en"
 
     # Load Qwen3-ASR model
     model = Qwen3ASRModel.from_pretrained(
@@ -70,7 +81,7 @@ def main(args):
 
         results = model.transcribe(
             audio=audio_inputs,
-            language=None,  # Auto-detect language
+            language=LANGUAGE_NAMES.get(LANGUAGE),  # force target language (name, e.g. "German")
         )
 
 
@@ -147,7 +158,7 @@ def main(args):
         all_results["predictions"],
         args.model_id,
         args.dataset,
-        CONFIG_NAME,
+        CONFIG_NAME or "",
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
@@ -181,8 +192,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_name",
         type=str,
-        required=True,
-        help="Config name for the dataset. *E.g.* `'fleurs_en'` for English FLEURS.",
+        default=None,
+        help="Config name for the dataset. *E.g.* `'fleurs_en'` for English FLEURS. "
+             "Omit for single-config dataset repos.",
     )
     parser.add_argument(
         "--language",

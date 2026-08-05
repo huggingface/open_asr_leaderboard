@@ -13,14 +13,25 @@ FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MAX_NEW_TOKENS=500
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 # Set USE_LOCAL_SCRIPT=1 to run your local run_eval_ml.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
 USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_SCRIPT_INJECT=""
 if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
     LOCAL_SCRIPT_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_ml.py")
     LOCAL_SCRIPT_INJECT="echo '${LOCAL_SCRIPT_B64}' | base64 -d > /app/run_eval_ml.py &&"
+fi
+
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
+USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
+LOCAL_NORMALIZER_INJECT=""
+if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
+    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
+    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
 fi
 
 # ── Models: "model_id batch_size" ───────────────────────────────────────────
@@ -57,6 +68,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
+        # --language is forced for every dataset so the model transcribes in the
+        # known target language (consistent with the API models, which always
+        # pass the language to the provider).
         CONFIG_NAME="${DATASET}_${LANGUAGE}"
         echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
@@ -73,11 +87,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
+                ${LOCAL_NORMALIZER_INJECT}
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
                     --dataset=${DATASET_PATH} \
                     --config_name=${CONFIG_NAME} \
+                    --language=${LANGUAGE} \
                     --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
