@@ -31,36 +31,6 @@ FILLER_WORDS = {
 }
 
 
-# Raw (un-normalized) filler patterns, matched on whitespace boundaries. Used to
-# strip fillers before OIWER scoring, where voi_oiwer applies its own internal
-# normalization and the MultilingualNormalizer is not run. Longest-first so
-# multi-word variants match before their prefixes. Whitespace boundaries
-# ((?<!\S)/(?!\S)) are used instead of \b, which is unreliable next to
-# Devanagari combining marks (e.g. the virama in "उम्").
-_RAW_FILLER_PATTERNS = {
-    lang: re.compile(
-        r"(?<!\S)(?:"
-        + "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True))
-        + r")(?!\S)"
-    )
-    for lang, words in FILLER_WORDS.items()
-}
-
-
-def remove_fillers(text, lang):
-    """Remove language-specific filler words from raw text on whitespace boundaries.
-
-    Unlike ``MultilingualNormalizer._remove_fillers`` (which matches against
-    base-normalized text), this operates on raw text and is intended for use
-    ahead of OIWER scoring. Returns ``text`` unchanged when ``lang`` has no
-    configured fillers.
-    """
-    pattern = _RAW_FILLER_PATTERNS.get(lang)
-    if pattern is None:
-        return text
-    return re.sub(r"\s+", " ", pattern.sub("", text)).strip()
-
-
 class MultilingualNormalizer(BasicMultilingualTextNormalizer):
     """BasicMultilingualTextNormalizer with optional number normalization.
 
