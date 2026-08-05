@@ -77,7 +77,8 @@ def parse_hyp(answer: torch.Tensor, eos_tokens):
 
 def main(args):
 
-    DATA_CACHE_DIR = os.path.join(os.getcwd(), "audio_cache")
+    data_cache_root = args.data_cache_root if args.data_cache_root is not None else os.getcwd()
+    DATA_CACHE_DIR = os.path.join(data_cache_root, "audio_cache")
     DATASET_NAME = args.dataset
     SPLIT_NAME = args.split
 
@@ -89,6 +90,7 @@ def main(args):
 
     device = torch.device(f"cuda:{args.device}")
     model = SALM.from_pretrained(args.model_id).eval().to(torch.bfloat16).to(device)
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
 
     dataset = data_utils.load_data(args)
 
@@ -96,40 +98,47 @@ def main(args):
 
         # download audio files and write the paths, transcriptions and durations to a manifest file
         audio_paths = []
+        original_audio_paths = []
         durations = []
+        file_names = batch.get("file_name", [None] * len(batch["audio"]))
 
-        for id, sample in zip(batch["id"], batch["audio"]):
+        # Use 'id' column if available, otherwise generate sequential IDs
+        if "id" in batch:
+            ids = batch["id"]
+        else:
+            # Generate IDs based on index
+            start_idx = len([f for f in os.listdir(CACHE_DIR) if f.endswith('.wav')]) if os.path.exists(CACHE_DIR) else 0
+            ids = [f"sample_{start_idx + i}" for i in range(len(batch["audio"]))]
+
+        for id, file_name, sample in zip(ids, file_names, batch["audio"]):
 
             # first step added here to make ID and wav filenames unique
             # several datasets like earnings22 have a hierarchical structure
             # for eg. earnings22/test/4432298/281.wav, earnings22/test/4450488/281.wav
             # lhotse uses the filename (281.wav) here as unique ID to create and name cuts
             # ref: https://github.com/lhotse-speech/lhotse/blob/master/lhotse/dataset/collation.py#L186
+            original_id = id  # preserve before sanitization for use as audio_filepath
             id = id.replace('/', '_').removesuffix('.wav')
 
             audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
-
-            if "array" in sample:
-                audio_array = np.float32(sample["array"])
-                sample_rate = 16000
-
-            elif "bytes" in sample: # added to be compatible with latest datasets library (3.x.x) that produces byte stream
-                with io.BytesIO(sample["bytes"]) as audio_file:
-                    audio_array, sample_rate = soundfile.read(audio_file, dtype="float32")
-
-            else:
-                raise ValueError("Sample must have either 'array' or 'bytes' key")
+            audio_array = np.float32(sample["array"])
+            sample_rate = sample["sampling_rate"]
 
             if not os.path.exists(audio_path):
                 os.makedirs(os.path.dirname(audio_path), exist_ok=True)
                 soundfile.write(audio_path, audio_array, sample_rate)
 
             audio_paths.append(audio_path)
+            if file_name is not None:
+                original_audio_paths.append(os.path.basename(str(file_name)))
+            else:
+                original_audio_paths.append(original_id)
             durations.append(len(audio_array) / sample_rate)
 
 
-        batch["references"] = batch["norm_text"]
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         batch["audio_filepaths"] = audio_paths
+        batch["original_audio_filepaths"] = original_audio_paths
         batch["durations"] = durations
 
         return batch
@@ -148,6 +157,7 @@ def main(args):
 
     all_data = {
         "audio_filepaths": [],
+        "original_audio_filepaths": [],
         "durations": [],
         "references": [],
     }
@@ -160,6 +170,7 @@ def main(args):
     # Sort audio_filepaths and references based on durations values
     sorted_indices = sorted(range(len(all_data["durations"])), key=lambda k: all_data["durations"][k], reverse=True)
     all_data["audio_filepaths"] = [all_data["audio_filepaths"][i] for i in sorted_indices]
+    all_data["original_audio_filepaths"] = [all_data["original_audio_filepaths"][i] for i in sorted_indices]
     all_data["references"] = [all_data["references"][i] for i in sorted_indices]
     all_data["durations"] = [all_data["durations"][i] for i in sorted_indices]
 
@@ -179,10 +190,9 @@ def main(args):
             total_time += end_time - start_time
     total_time = total_time
 
-    # normalize transcriptions with English normalizer
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
-    predictions = [data_utils.normalizer(pred) for pred in transcriptions]
+    predictions = [pred for pred in transcriptions]  # raw; normalization applied at scoring time
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
@@ -196,11 +206,14 @@ def main(args):
         args.split,
         audio_length=all_data["durations"],
         transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
+        audio_filepaths=all_data["original_audio_filepaths"],
     )
 
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(references=all_data['references'], predictions=predictions)
+    norm_refs = [data_utils.normalizer(r) for r in all_data['references']]
+    norm_preds = [data_utils.normalizer(p) for p in predictions]
+    wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
     wer = round(100 * wer, 2)
 
     audio_length = sum(all_data["durations"])
@@ -218,14 +231,14 @@ if __name__ == "__main__":
         "--model_id", type=str, required=True, help="Model identifier. Should be loadable with NVIDIA NeMo.",
     )
     parser.add_argument(
-        '--dataset_path', type=str, default='esb/datasets', help='Dataset path. By default, it is `esb/datasets`'
+        '--dataset_path', type=str, default='hf-audio/open-asr-leaderboard', help='Dataset path. By default, it is `hf-audio/open-asr-leaderboard`'
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--split",
@@ -249,12 +262,16 @@ if __name__ == "__main__":
         help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
     )
     parser.add_argument(
-        "--no-streaming",
-        dest='streaming',
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
+    )
+    parser.add_argument(
+        "--data_cache_root",
+        type=str,
+        default=None,
+        help="Root directory for caching audio files. Defaults to 'audio_cache' in current directory.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
 
     main(args)

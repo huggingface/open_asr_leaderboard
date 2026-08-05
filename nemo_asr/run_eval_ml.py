@@ -1,16 +1,20 @@
 # This script is used to evaluate NeMo ASR models on the Multi-Lingual datasets
 
 import argparse
-import io
 import os
+# Force soundfile audio decoding before datasets is imported/used,
+# to avoid the torchcodec AudioDecoder object being returned.
+os.environ.setdefault("HF_AUDIO_DECODER_BACKEND", "soundfile")
 import torch
 import evaluate
 import soundfile
 import numpy as np
 from tqdm import tqdm
-from datasets import load_dataset
+from datasets import load_dataset, Audio
 from normalizer import data_utils
+from normalizer.eval_utils import normalize_compound_pairs
 from nemo.collections.asr.models import ASRModel
+from omegaconf import OmegaConf
 import time
 
 
@@ -53,12 +57,18 @@ def main(args):
     
     asr_model.to(compute_dtype)
     asr_model.eval()
+    print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     # Load dataset using the HuggingFace dataset repository
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
 
     dataset = load_dataset(args.dataset, CONFIG_NAME, split=SPLIT_NAME, streaming=args.streaming)
-    
+
+    # Re-sample and cast audio to a consistent dict format ({"array", "sampling_rate"}),
+    # matching run_eval.py's data_utils.prepare_data(). Without this, some `datasets`
+    # versions/backends decode audio into a non-subscriptable AudioDecoder object.
+    dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
+
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
         dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
@@ -66,6 +76,8 @@ def main(args):
     # Configure decoding strategy
     if asr_model.cfg.decoding.strategy != "beam":
         asr_model.cfg.decoding.strategy = "greedy_batch"
+        if hasattr(asr_model.cfg.decoding, "greedy"):
+            OmegaConf.update(asr_model.cfg.decoding, "greedy.use_cuda_graph_decoder", False, force_add=True)
         asr_model.change_decoding_strategy(asr_model.cfg.decoding)
 
     def download_audio_files(batch):
@@ -80,14 +92,8 @@ def main(args):
             unique_id = f"{CONFIG_NAME}_{i}_{os.path.basename(file_name).replace('.wav', '')}"
             audio_path = os.path.join(CACHE_DIR, f"{unique_id}.wav")
 
-            if "array" in sample:
-                audio_array = np.float32(sample["array"])
-                sample_rate = sample.get("sampling_rate", 16000)
-            elif "bytes" in sample:
-                with io.BytesIO(sample["bytes"]) as audio_file:
-                    audio_array, sample_rate = soundfile.read(audio_file, dtype="float32")
-            else:
-                raise ValueError("Sample must have either 'array' or 'bytes' key")
+            audio_array = np.float32(sample["array"])
+            sample_rate = sample["sampling_rate"]
 
             if not os.path.exists(audio_path):
                 os.makedirs(os.path.dirname(audio_path), exist_ok=True)
@@ -166,13 +172,19 @@ def main(args):
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
     
-    references = all_data["references"] 
-    if LANGUAGE == "en": # English is handled by the English normalizer
-        references = [data_utils.normalizer(ref) for ref in references]
-        predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
-    else:
-        references = [data_utils.ml_normalizer(ref) for ref in references]
-        predictions = [data_utils.ml_normalizer(pred.text) for pred in transcriptions]
+    references = all_data["references"]  # raw
+    predictions = [pred.text for pred in transcriptions]  # raw; normalization applied at scoring time
+
+    # Filter empty references (consistent with English pipeline)
+    filtered = [
+        (ref, pred, dur)
+        for ref, pred, dur in zip(references, predictions, all_data["durations"])
+        if data_utils.is_target_text_in_range(ref)
+    ]
+    if filtered:
+        references, predictions, all_data["durations"] = zip(*filtered)
+        references, predictions = list(references), list(predictions)
+        all_data["durations"] = list(all_data["durations"])
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
@@ -191,7 +203,14 @@ def main(args):
     print("Results saved at path:", os.path.abspath(manifest_path))
 
     # Calculate metrics
-    wer = wer_metric.compute(references=references, predictions=predictions)
+    if LANGUAGE == "en":
+        norm_refs = [data_utils.normalizer(r) for r in references]
+        norm_preds = [data_utils.normalizer(p) for p in predictions]
+    else:
+        norm_refs = [data_utils.ml_normalizer(r, lang=LANGUAGE) for r in references]
+        norm_preds = [data_utils.ml_normalizer(p, lang=LANGUAGE) for p in predictions]
+    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
+    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
     wer = round(100 * wer, 2)
 
     audio_length = sum(all_data["durations"])
@@ -215,8 +234,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        default="nithinraok/asr-leaderboard-datasets",
-        help="Dataset name. Default is 'nithinraok/asr-leaderboard-datasets'"
+        default="hf-audio/open-asr-leaderboard-multilingual-datasets",
+        help="Dataset name. Default is 'hf-audio/open-asr-leaderboard-multilingual-datasets'"
     )
     parser.add_argument(
         "--config_name",
@@ -253,12 +272,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no-streaming",
-        dest='streaming',
-        action="store_false",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
     )
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
 
     main(args) 
