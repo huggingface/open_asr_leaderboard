@@ -6,7 +6,11 @@ import requests
 from . import APIProvider, PermanentError, register
 
 MODEL_VARIANT_TO_ENDPOINT = {
-    "vfast": "https://platform.modulate.ai/api/velma-2-stt-batch-english-vfast",
+    # The English vfast system now runs under the multilingual endpoint. Both
+    # endpoints currently serve it and return identical results;
+    # velma-2-stt-batch-english-vfast will be retired at a future date, so both
+    # variants point at the endpoint that will remain available.
+    "vfast": "https://platform.modulate.ai/api/velma-2-stt-batch-multilingual-vfast",
     "multilingual": "https://platform.modulate.ai/api/velma-2-stt-batch-multilingual-vfast",
 }
 
@@ -53,13 +57,12 @@ class ModulateProvider(APIProvider):
 
         headers = {"X-API-Key": api_key}
 
-        # Multilingual endpoint takes an optional `language` form field (short
-        # ISO code, e.g. de/es/fr/it/pt); providing it selects the declared-
-        # language path so the file routes straight to the language-best
-        # transcriber. The English endpoint ignores the field.
-        data = None
-        if model_variant == "multilingual" and language:
-            data = {"language": language.strip().lower()}
+        # The endpoint takes an optional `language` form field (short ISO code,
+        # e.g. en/de/es/fr/it/pt). Providing it selects the declared-language
+        # path, so the file routes straight to the language-best transcriber;
+        # omitting it falls back to per-segment language ID. Both variants now
+        # target the same endpoint, so both declare the language.
+        data = {"language": language.strip().lower()} if language else None
 
         with open(audio_file_path, "rb") as fh:
             files = {"upload_file": (os.path.basename(audio_file_path), fh)}
