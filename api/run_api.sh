@@ -56,6 +56,11 @@ LEXICAL_DATASETS="librispeech gigaspeech"
 
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
+# The API image pins datasets==2.19.0, which cannot read a dataset_info.json
+# written by a newer datasets (e.g. "_type": "List", added in 4.x). Give it its
+# own arrow cache so it never reads one the host wrote; it rebuilds there on the
+# first run of each dataset.
+DATASETS_CACHE_DIR="/hf_cache/datasets_api"
 
 echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
 docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
@@ -77,7 +82,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
             -e HF_HOME=/tmp/hf_home \
-            -e HF_DATASETS_CACHE=/hf_cache/datasets \
+            -e HF_DATASETS_CACHE="${DATASETS_CACHE_DIR}" \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \

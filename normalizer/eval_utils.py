@@ -210,9 +210,10 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                   When not 'en', ml_normalizer is used instead of the English normalizer.
                   Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
                   voi_oiwer over a reference lattice instead of plain WER.
-        families: Optional list of family keys ("appen", "dataocean", "public", "extra",
-                  "ml_de", "ml_fr", "ml_it", "ml_es", "ml_pt") restricting which CSV
-                  summary blocks are printed. None prints all detected families.
+        families: Optional list of family keys ("appen", "dataocean", "joshtalks_private",
+                  "private_hi", "public", "extra", "ml_de", "ml_fr", "ml_it", "ml_es",
+                  "ml_pt") restricting which CSV summary blocks are printed.
+                  None prints all detected families.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -283,6 +284,15 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                 "dataocean_scripted_filtered__en_GB":                  ("Scripted-GB",       "scripted"),
                 "dataocean_conversational_segmented_filtered__en_US":  ("Conversational-US", "conversational"),
                 "dataocean_conversational_segmented_filtered__en_GB":  ("Conversational-GB", "conversational"),
+            },
+        ),
+        (
+            "joshtalks_private",
+            "HF_English",
+            "model,English Public WER,English Private WER",
+            {
+                "HF_English_Public_Set__train":  ("English Public WER",  None),
+                "HF_English_Private_Set__train": ("English Private WER", None),
             },
         ),
         (
