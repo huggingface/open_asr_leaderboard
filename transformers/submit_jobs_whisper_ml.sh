@@ -99,8 +99,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset=${JOB_DATASET} \
-                    ${CONFIG_ARG} \
+                    --dataset=${DATASET_PATH} \
+                    --config_name=${CONFIG_NAME} \
+                    --language=${LANGUAGE} \
                     --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \

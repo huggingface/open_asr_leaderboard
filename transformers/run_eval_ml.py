@@ -76,12 +76,7 @@ def main(args):
     model.to(args.device)
     model.eval()
 
-    # VibeVoice transcribes up to 60 min by chunking the acoustic tokenizer and
-    # caching conv states between chunks. The default chunk (config
-    # `acoustic_tokenizer_chunk_size` = 1440000 = 60s @ 24kHz) overflows torch's
-    # 32-bit conv indexing (canUse32BitIndexMath -> RuntimeError) on long clips,
-    # so set a smaller chunk on the config. Must be a multiple of the acoustic
-    # tokenizer hop length. (Passing it to `generate()` is deprecated in v5.20.)
+    # set small chunk size to avoid OOM
     if "vibevoice" in args.model_id.lower():
         model.config.acoustic_tokenizer_chunk_size = args.vibevoice_tokenizer_chunk_size
 
@@ -121,8 +116,7 @@ def main(args):
     SPLIT_NAME = args.split
 
     # Determine language for normalization: use --language if provided, otherwise
-    # extract from config_name (e.g. "fleurs_de") or, for single-config repos,
-    # from the dataset name (e.g. "Monsoon_hi_test").
+    # extract from config_name (e.g. "fleurs_de") or from the dataset name
     if args.language is not None:
         norm_language = args.language
     else:
@@ -185,8 +179,7 @@ def main(args):
         if is_nemotron:
             # Cap very long clips at 30s: with padding="longest", a single long
             # clip can push the padded conv input past torch's 32-bit indexing
-            # limit (canUse32BitIndexMath -> RuntimeError). Nemotron is a
-            # streaming model, so truncating over-long audio is reasonable.
+            # limit (canUse32BitIndexMath -> RuntimeError)
             max_samples = int(30 * sampling_rate)
             audios = [a[:max_samples] for a in audios]
             rnnt_processor_kwargs = dict(
@@ -214,16 +207,13 @@ def main(args):
         elif has_transcription_processor:
             if "voxtral" in args.model_id.lower():
                 inputs = processor.apply_transcription_request(
-                    language=args.language,  # None = auto-detect
+                    language=args.language,
                     audio=audios,
                     model_id=args.model_id,
                     sampling_rate=sampling_rate,
                     format=["wav"] * len(audios),
                 )
             elif is_qwen3_asr:
-                # Consistent with the other transformers-native ML scripts:
-                # auto-detect when --language is unset (FLEURS/MCV/MLS), force it
-                # when provided (e.g. Monsoon, which can't derive it from a config).
                 inputs = processor.apply_transcription_request(audios, language=args.language)
             else:
                 inputs = processor.apply_transcription_request(audios)
@@ -454,7 +444,7 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Config name for the dataset. E.g. 'fleurs_de' for German FLEURS. "
-             "Omit for single-config dataset repos (e.g. 'VoiceArena/Monsoon_hi_test').",
+             "Omit for single-config dataset repos.",
     )
     parser.add_argument(
         "--language",

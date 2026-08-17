@@ -11,10 +11,10 @@ ORG_NAME="${ORG_NAME:-}"
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
-    "facebook/wav2vec2-base-960h"
-    "facebook/wav2vec2-large-960h"
     "facebook/wav2vec2-large-960h-lv60-self"
-    "facebook/wav2vec2-large-robust-ft-libri-960h"
+    # "facebook/wav2vec2-base-960h"
+    # "facebook/wav2vec2-large-960h"
+    # "facebook/wav2vec2-large-robust-ft-libri-960h"
 )
 
 # ── Datasets: "name split batch_size" ────────────────────────────────────────

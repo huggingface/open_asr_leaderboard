@@ -75,17 +75,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         # --language is forced for every dataset so the model transcribes in the
         # known target language (consistent with the API models, which always
         # pass the language to the provider).
-        if [[ "$DATASET" == "monsoon" ]]; then
-            # Standalone single-config dataset repo — no --config_name.
-            JOB_DATASET="${MONSOON_DATASET_PATH}"
-            CONFIG_ARG="--language=${LANGUAGE}"
-            CONFIG_NAME="(none)"
-        else
-            JOB_DATASET="${DATASET_PATH}"
-            CONFIG_NAME="${DATASET}_${LANGUAGE}"
-            CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
-        fi
-        echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
+        CONFIG_NAME="${DATASET}_${LANGUAGE}"
+        echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -104,8 +95,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset=${JOB_DATASET} \
-                    ${CONFIG_ARG} \
+                    --dataset=${DATASET_PATH} \
+                    --config_name=${CONFIG_NAME} \
+                    --language=${LANGUAGE} \
                     --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
