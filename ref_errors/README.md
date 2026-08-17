@@ -1,110 +1,102 @@
-# Reference error agreement rate on VoxPopuli
+# VoxPopuli reference error agreement
 
-VoxPopuli's reference transcripts contain errors. The [`ArtificialAnalysis/VoxPopuli-Cleaned-AA`](https://huggingface.co/datasets/ArtificialAnalysis/VoxPopuli-Cleaned-AA)
-subset supplies a human-corrected reference for 628 clips of `voxpopuli_test`,
-and the leaderboard already reports WER against it (`Voxpopuli-Cleaned-AA WER`).
+VoxPopuli's English references come from parliamentary records and sometimes
+disagree with the audio. The leaderboard already reports WER against human
+corrections for 628 clips from
+[`ArtificialAnalysis/VoxPopuli-Cleaned-AA`](https://huggingface.co/datasets/ArtificialAnalysis/VoxPopuli-Cleaned-AA).
 
-Diffing the official reference against the correction, under the same text
-normalization the leaderboard's WER uses, locates 564 spans on which the two
-disagree. For each span a model's output either matches the correction or
-reproduces the official reference. The **reference error agreement rate** is the
-share of spans where a model reproduces the official reference:
+This scorer measures whether a model follows the official reference or the human
+correction at those disagreements. Both references and model outputs are
+normalized with this repository's `normalizer.EnglishTextNormalizer`.
+
+Each disagreement receives one of three model verdicts:
+
+- `ref`: every token in the official disagreement span survives;
+- `consensus`: the official span does not survive and the correction is emitted;
+- excluded: the output supports neither side, or the clip-level output is unusable.
+
+Extra adjacent words do not erase evidence that the model reproduced the complete
+official span. For boundary insertions, the corrected chunk must appear at the
+same aligned boundary; extra words outside that chunk are allowed.
 
 ```
-agreement rate = (spans matching the official reference) / (spans the model was scored on)
+rate = ref verdicts / (ref verdicts + consensus verdicts)
 ```
 
-A model transcribing the audio produces the correction's version. A high rate
-therefore means a model reproduces reference spans that human correction shows
-were never spoken. It is a rate over reference-audio disagreements, not a WER,
-and is not comparable to one.
+A high rate can indicate exposure to the benchmark reference, but it is not WER
+and does not by itself prove training-set contamination.
+
+## Method
+
+The scorer diffs the official and corrected references, then evaluates each model
+only at the resulting spans. Each contiguous span is one event regardless of its
+word count. Replacements are recorded once as deletion runs. Correction
+insertions are kept only at transcript boundaries, where their alignment is
+unambiguous.
+
+A disagreement or model verdict is excluded when:
+
+- the references differ only by a small normalization artifact;
+- the model reproduces fewer than `floor(0.5 × reference words)` tokens;
+- the hypothesis is more than three times the reference length; or
+- the model produces a third reading matching neither reference.
+
+The output reports denominators and eligible clip counts, but not confidence
+intervals, matching the leaderboard's WER and RTFx outputs. Several edits can
+come from one clip, so the counts should not be treated as independent trials.
 
 ## Reproduce
 
 ```bash
 pip install -r requirements/requirements_jobs.txt
 
-# Syncs the public results bucket, then scores every model in it.
+# Sync the public results bucket and score every model.
 python ref_errors/score_ref_errors.py --bucket hf-audio/asr_leaderboard_h200
-```
-To re-score an already-downloaded copy:
 
-```bash
-python ref_errors/score_ref_errors.py --preds-dir results
+# Or score an existing download.
+python ref_errors/score_ref_errors.py --preds_dir results
 ```
+
+The scorer needs prediction manifests for both `voxpopuli_test` and
+`voxpopuli_cleaned_aa_test`. It reads only text manifests; no audio or inference
+is required.
 
 ## Outputs
 
-`ref_error_agreement_voxpopuli.csv` — one row per model:
+`ref_error_agreement_voxpopuli.csv` contains one row per model:
 
-| column       | meaning                                               |
-| ------------ | ----------------------------------------------------- |
-| `model`      | model id as it appears in the results bucket          |
-| `rate`       | agreement rate, `n_ref / n_eligible`                  |
-| `lo`, `hi`   | 95% Wilson interval on `rate`                         |
-| `n_ref`      | spans where the output matched the official reference |
-| `n_eligible` | spans the model was scored on                         |
+| column | meaning |
+| --- | --- |
+| `model` | model id from the results bucket |
+| `rate` | `n_ref / n_eligible` |
+| `n_ref` | spans matching the official reference |
+| `n_eligible` | spans matching either reference |
+| `n_clips` | clips contributing eligible spans |
 
-`edits_voxpopuli.jsonl` — one row per disagreement: clip key, `kind`
-(`delete` where the official reference carries a span the correction removes or
-replaces, `insert` where the correction adds a span the official reference
-omits), `position` (`start` / `middle` / `end` of the reference),
-`official_span`, `corrected_span`, the reference token indices, and the
-character error rate between the two spans.
+`edits_voxpopuli.jsonl` records every disagreement with its clip key, location,
+official and corrected spans, distance, and per-model verdicts so results can be
+audited directly.
 
-## Scoring a new model
-
-Place the model's `voxpopuli_cleaned_aa_test` prediction manifest alongside the
-others and re-run. Either layout is read:
+To score another model, place its raw prediction manifest alongside the existing
+manifests and rerun. Both bucket layouts are supported:
 
 ```
-<preds-dir>/<model>/MODEL_<model>_DATASET_hf-audio-open-asr-leaderboard_voxpopuli_cleaned_aa_test.jsonl
-<preds-dir>/voxpopuli_cleaned_aa_test/<model>.jsonl
+<preds-dir>/<model>/MODEL_<model>_DATASET_hf-audio-open-asr-leaderboard_<dataset>.jsonl
+<preds-dir>/<dataset>/<model>.jsonl
 ```
 
-The manifest must be the one `normalizer.eval_utils.write_manifest` produces, so
-that `text` carries the corrected reference and `pred_text` the hypothesis. A
-`voxpopuli_test` manifest for at least one model must also be present, since the
-official reference is read from there; it need not be the same model.
+## Limitations
 
-## Interpretation notes
-
-- **Denominators vary slightly.** A model is scored on a clip only if its output
-  reproduces at least half the reference tokens (`min_ref_match`), so empty,
-  truncated and off-language outputs are dropped rather than counted as agreement
-  with the correction. In practice this is a small effect — 525 to 564 spans of
-  564, with 67 of 81 current models at the full 564 — and `n_eligible` is written
-  to the CSV.
-- **Spans that survive normalization only.** A `delete` span is kept only if what
-  the correction puts in its place is character-wise far from it
-  (`min_consensus_cer = 0.30`), which removes spacing, accent and spelling
-  differences.
-- **Insertions are boundary-only.** Which side of a matched token an inserted
-  word belongs to is an alignment choice rather than a fact about the audio, so
-  only the two reference boundaries are used. Deletions are counted throughout
-  (`include_middle = True`).
-- **WER is not a substitute.** WER against the official reference rewards
-  reproducing these spans and WER against the correction penalises it, but in
-  both cases the effect is a few tenths of a point diluted across every other
-  token in the clip. Restricting to the disagreements is what makes the
-  quantity readable.
-- **Confidence intervals are wide.** 564 spans over 628 clips; Wilson intervals
-  on adjacent models overlap substantially. Read the interval, not the ordering.
-- **English only, one benchmark.** The construction needs a human-corrected
-  reference for a benchmark whose official reference is known to diverge from the
-  audio. VoxPopuli is the only such case currently on the leaderboard.
-
-## Parameters
-
-Passed unchanged:
-`min_run_len = 1`, `include_middle = True`, `min_ref_match = 0.5`,
-`min_consensus_cer = 0.30` (`ref_error_utils.DEFAULTS`).
+- The rate covers disagreement spans, not the full dataset.
+- Do not interpret small differences as a precise model ranking; spans from the
+  same clip are related and denominators vary by model.
+- It applies only where a trustworthy corrected reference exists. VoxPopuli is
+  currently the only leaderboard dataset with the required pairing.
+- A high rate is evidence of reference agreement, not proof of how that agreement
+  arose.
 
 ## Attribution
 
-Adapted from the reference implementation accompanying "Quantifying Benchmark
-Optimization in ASR Models"
-([tlebryk/asr-benchmark-optimization](https://github.com/tlebryk/asr-benchmark-optimization),
-Apache-2.0), modules `align.py` and `refdis.py`. The alignment helpers are
-carried over verbatim; the edit finder is specialised to a single human-corrected
-reference in place of that implementation's model panel.
+Adapted from *Quantifying Benchmark Optimization in ASR Models*
+([reference implementation](https://github.com/tlebryk/asr-benchmark-optimization),
+Apache-2.0).

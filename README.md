@@ -101,9 +101,11 @@ You can also specify your own model and its performance as such:
 
 ![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
 
-# Reference error agreement rate
+# Reference error agreement
 
-VoxPopuli's English references derive from parliamentary records rather than from the audio, and a human-corrected reference exists for part of the test set. `ref_errors/` scores, per model, the share of the spans on which the two references disagree where the model's output reproduces the official one. It reads only the prediction manifests already in the results bucket. See [`ref_errors/README.md`](ref_errors/README.md).
+`ref_errors/` measures whether models reproduce known errors in VoxPopuli's
+official references instead of human corrections. See
+[`ref_errors/README.md`](ref_errors/README.md).
 
 # Contributing a model or dataset
 

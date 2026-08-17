@@ -1,17 +1,3 @@
-# Copyright 2026 The Open ASR Leaderboard contributors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
 # Adapted from the reference implementation accompanying "Quantifying Benchmark
 # Optimization in ASR Models" (https://github.com/tlebryk/asr-benchmark-optimization,
 # Apache-2.0), modules `align.py` and `refdis.py`. The alignment helpers are
@@ -23,13 +9,12 @@
 Where a benchmark's official reference disagrees with the audio, a model
 transcribing the audio produces the audio's version. This module locates those
 disagreements by diffing the official reference against a human-corrected one,
-then records, for each model and each disagreement, which of the two the model's
-output matches.
+then records whether each model retains the complete official span or follows
+the correction. An output supporting neither is excluded.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
@@ -37,13 +22,13 @@ __all__ = [
     "DEFAULTS",
     "RefEdit",
     "ref_error_agreement",
-    "cer",
+    "char_distance",
     "find_ref_errors",
+    "emitted_insertion",
     "insertions_by_anchor",
     "matched_count",
     "missed_indices",
     "substitution_at",
-    "wilson",
 ]
 
 DEFAULTS = {
@@ -54,10 +39,14 @@ DEFAULTS = {
     # A model must reproduce this share of the reference to be scored on the
     # clip at all. Without it, empty and off-language outputs dominate.
     "min_ref_match": 0.5,
+    # ... and must not run away: a hypothesis this many times the reference
+    # length is looping or hallucinating, and would otherwise reproduce every
+    # span of both references at once.
+    "max_hyp_ratio": 3.0,
     # A deletion edit only counts if what the correction puts in place of the
-    # reference span is character-wise far from it. Below this threshold the
-    # difference is spacing or accents, i.e. a normalization artifact.
-    "min_consensus_cer": 0.30,
+    # reference span is far from it by per-character edit distance. Below this
+    # threshold the difference is spacing or accents: a normalization artifact.
+    "min_span_distance": 0.30,
 }
 
 
@@ -141,13 +130,14 @@ def emitted_insertion(model_insert: list[str], target: list[str], at_start: bool
     return model_insert[-n:] == target if at_start else model_insert[:n] == target
 
 
-def cer(ref: str, hyp: str) -> float:
-    """Character error rate, whitespace-insensitive.
+def char_distance(ref: str, hyp: str) -> float:
+    """Levenshtein distance between two spans, per reference character.
 
-    Stripping whitespace keeps spacing- and accent-only differences near zero,
-    which is what separates a reference error from a normalization artifact.
-    Approximated from ``SequenceMatcher`` coverage rather than a true edit
-    distance; callers only threshold it.
+    Whitespace-insensitive, so spacing-only differences ("anti corruption" for
+    "anticorruption") score zero and are recognised as normalization artifacts
+    rather than reference errors. A true edit distance rather than match
+    coverage: coverage is insertion-blind, and would call "acted" a zero-distance
+    rendering of "act".
     """
     r = "".join(ref.split())
     h = "".join(hyp.split())
@@ -155,9 +145,13 @@ def cer(ref: str, hyp: str) -> float:
         return 0.0
     if not r:
         return 1.0
-    sm = SequenceMatcher(None, r, h, autojunk=False)
-    matched = sum(i2 - i1 for tag, i1, i2, _j1, _j2 in sm.get_opcodes() if tag == "equal")
-    return 1.0 - matched / len(r)
+    prev = list(range(len(h) + 1))
+    for i, rc in enumerate(r, 1):
+        cur = [i]
+        for j, hc in enumerate(h, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (rc != hc)))
+        prev = cur
+    return prev[-1] / len(r)
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +166,9 @@ class RefEdit:
     ``kind`` is ``"delete"`` when the official reference carries tokens the
     correction removes or replaces, and ``"insert"`` when the correction adds
     tokens the official reference omits. ``verdict`` maps model name to
-    ``"ref"`` (output matches the official reference), ``"consensus"`` (output
-    matches the correction) or ``None`` (model not competent on the clip, so not
-    charged for this edit).
+    ``"ref"`` (the complete official span survives), ``"consensus"`` (the
+    official span does not survive and the correction is emitted) or ``None``
+    (the output supports neither side or is unusable).
     """
 
     kind: str
@@ -183,7 +177,7 @@ class RefEdit:
     ref_indices: list[int]
     corrected_text: str = ""
     verdict: dict[str, str | None] = field(default_factory=dict)
-    consensus_cer: float | None = None
+    consensus_distance: float | None = None
     clip_key: str | None = None
 
     @property
@@ -199,7 +193,8 @@ def find_ref_errors(
     min_run_len: int = DEFAULTS["min_run_len"],
     include_middle: bool = DEFAULTS["include_middle"],
     min_ref_match: float = DEFAULTS["min_ref_match"],
-    min_consensus_cer: float = DEFAULTS["min_consensus_cer"],
+    max_hyp_ratio: float = DEFAULTS["max_hyp_ratio"],
+    min_span_distance: float = DEFAULTS["min_span_distance"],
 ) -> list[RefEdit]:
     """Diff one clip's official reference against its correction, and score models.
 
@@ -210,6 +205,7 @@ def find_ref_errors(
     n_ref = len(ref_tokens)
     if not n_ref:
         return []
+    # floor(), so a 3-token reference needs 1 matching token
     min_matched = int(min_ref_match * n_ref)
     # An unalignably distant correction would read as "the reference is wrong
     # everywhere"; skip the clip rather than mine it.
@@ -221,7 +217,11 @@ def find_ref_errors(
     matched = {m: matched_count(ref_tokens, h) for m, h in model_hyps.items()}
 
     def eligible(model: str) -> bool:
-        return matched.get(model, 0) >= min_matched
+        if matched.get(model, 0) < min_matched:
+            return False
+        # A looping or hallucinating output can contain both references at once,
+        # which would otherwise score as agreeing with everything.
+        return len((model_hyps[model] or "").split()) <= max_hyp_ratio * n_ref
 
     edits: list[RefEdit] = []
 
@@ -245,18 +245,28 @@ def find_ref_errors(
         span = set(run)
         ref_chunk = " ".join(ref_tokens[i] for i in run)
         spoken = substitution_at(ref_tokens, corrected, span)
-        edit_cer = cer(ref_chunk, spoken)
-        if edit_cer < min_consensus_cer:
+        edit_distance = char_distance(ref_chunk, spoken)
+        if edit_distance < min_span_distance:
             continue  # normalization artifact, not a reference error
 
         verdict: dict[str, str | None] = {}
-        for model in model_hyps:
+        for model, hyp in model_hyps.items():
             if not eligible(model):
                 verdict[model] = None
-            elif missed[model] & span:
+                continue
+            said = substitution_at(ref_tokens, hyp, span)
+            if not (missed[model] & span):
+                # Every reference position survived in the output: the model
+                # reproduced the official reference's span.
+                verdict[model] = "ref"
+            elif span <= missed[model] and said == spoken:
+                # The entire official span is absent and the model emitted what
+                # the correction puts in its place. Partial retention is a
+                # hybrid reading, not agreement with the correction.
                 verdict[model] = "consensus"
             else:
-                verdict[model] = "ref"
+                # A third reading, neither reference's. Not evidence either way.
+                verdict[model] = None
         edits.append(
             RefEdit(
                 kind="delete",
@@ -265,7 +275,7 @@ def find_ref_errors(
                 ref_indices=run,
                 corrected_text=spoken,
                 verdict=verdict,
-                consensus_cer=round(edit_cer, 3),
+                consensus_distance=round(edit_distance, 3),
             )
         )
 
@@ -281,12 +291,19 @@ def find_ref_errors(
             continue
         verdict = {}
         for model in model_hyps:
+            model_ins = inserted[model].get(anchor, [])
             if not eligible(model):
                 verdict[model] = None
-            elif emitted_insertion(inserted[model].get(anchor, []), chunk, at_start):
+            elif not model_ins:
+                # The official reference has nothing here, so agreeing with it
+                # means emitting nothing.
+                verdict[model] = "ref"
+            elif emitted_insertion(model_ins, chunk, at_start):
                 verdict[model] = "consensus"
             else:
-                verdict[model] = "ref"
+                # Emitted something else at the boundary ("our collective line"
+                # for "our collective life"): a recognition error, not agreement.
+                verdict[model] = None
         edits.append(
             RefEdit(
                 kind="insert",
@@ -304,36 +321,27 @@ def find_ref_errors(
 def ref_error_agreement(edits: list[RefEdit]) -> dict[str, dict]:
     """Aggregate per-model reference-error agreement rates over a collection of edits.
 
-    Returns ``{model: {"rate", "n_ref", "n_eligible", "lo", "hi"}}``, where
-    ``rate = n_ref / n_eligible`` and ``lo``/``hi`` are a 95% Wilson interval.
-    Models are only charged for edits they were eligible for, so denominators
-    differ slightly between models; the count is written alongside the rate.
+    Returns ``{model: {"rate", "n_ref", "n_eligible", "n_clips"}}``, where
+    ``rate = n_ref / n_eligible``. Models are only charged for edits whose verdict
+    is one of the two references, so denominators differ and are reported.
     """
     tally: dict[str, list[int]] = {}
+    clips: dict[str, set] = {}
     for edit in edits:
         for model, verdict in edit.verdict.items():
             if verdict is None:
                 continue
             k, n = tally.setdefault(model, [0, 0])
             tally[model] = [k + (verdict == "ref"), n + 1]
+            clips.setdefault(model, set()).add(edit.clip_key)
 
     out = {}
     for model, (k, n) in tally.items():
-        p, lo, hi = wilson(k, n)
-        out[model] = {"rate": p, "n_ref": k, "n_eligible": n, "lo": lo, "hi": hi}
+        n_clips = len(clips[model]) or 1
+        out[model] = {
+            "rate": k / n if n else 0.0,
+            "n_ref": k,
+            "n_eligible": n,
+            "n_clips": n_clips,
+        }
     return out
-
-
-def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float, float]:
-    """Point estimate and Wilson score interval for ``k`` successes in ``n``.
-
-    Wilson rather than a normal approximation because several models sit near 0,
-    where the normal interval leaves the unit range.
-    """
-    if n == 0:
-        return 0.0, 0.0, 0.0
-    p = k / n
-    d = 1 + z * z / n
-    center = (p + z * z / (2 * n)) / d
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
-    return p, max(0.0, center - half), min(1.0, center + half)
