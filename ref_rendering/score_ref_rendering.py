@@ -1,35 +1,17 @@
 #!/usr/bin/env python3
-# Copyright 2026 The Open ASR Leaderboard contributors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
 # Adapted from the reference implementation accompanying "Quantifying Benchmark
 # Optimization in ASR Models" (https://github.com/tlebryk/asr-benchmark-optimization,
 # Apache-2.0).
 """Score reference rendering agreement on the English short-form benchmarks.
 
 The leaderboard's text normalizer rewrites part of every raw reference
-transcript: casing, punctuation, en-GB/en-US spelling, honorific abbreviations,
-pointed acronyms, digits versus number words. Each such span is *flagged*, and its
-two renderings score identically under WER. Where a model's normalized output
-reproduces a flagged span's words, this script asks whether its raw output
-reproduces the reference's exact rendering.
+transcript. This scorer keeps en-GB/en-US spelling, pointed acronyms, and
+digits-versus-number-words: choices the audio does not determine and English WER
+erases. Where a model's normalized output reproduces the span's words, the script
+asks whether its raw output uses the reference's rendering.
 
-One rate per model per dataset, taken over the classes the audio does not
-determine and house style does not either: spelling, abbreviation, acronym,
-number. Casing and punctuation are excluded from it, being transcript-wide
-conventions rather than per-token choices; their per-class counts are written to
-the CSV for inspection only.
+One rate is written per model per independent English short-form dataset. Casing,
+punctuation, and normalizer abbreviation rewrites are excluded.
 
 Nothing is inferred and no audio is read: references and hypotheses both come
 from the prediction manifests already published in the results bucket, scored
@@ -40,12 +22,12 @@ Usage:
     python ref_rendering/score_ref_rendering.py
 
     # Score an already-downloaded copy of the predictions.
-    python ref_rendering/score_ref_rendering.py --preds-dir results
+    python ref_rendering/score_ref_rendering.py --preds_dir results
 
     # One dataset only.
-    python ref_rendering/score_ref_rendering.py --preds-dir results --datasets voxpopuli_test
+    python ref_rendering/score_ref_rendering.py --preds_dir results --datasets voxpopuli_test
 
-Writes `ref_rendering_<dataset>.csv` (one row per model) into `--out-dir`.
+Writes `ref_rendering_<dataset>.csv` (one row per model) into `--out_dir`.
 """
 
 from __future__ import annotations
@@ -59,7 +41,7 @@ import re
 import subprocess
 import sys
 
-from ref_rendering_utils import REPORTED_CLASSES, score_pairs, wilson
+from ref_rendering_utils import REPORTED_CLASSES, score_pairs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -79,7 +61,6 @@ SHORT_FORM_DATASETS = (
     "spgispeech_test",
     "tedlium_test",
     "voxpopuli_test",
-    "voxpopuli_cleaned_aa_test",
 )
 
 # Manifest names in the results bucket, e.g.
@@ -93,8 +74,24 @@ BUCKET_RE = re.compile(r"^MODEL_(?P<model>.+?)_DATASET_(?P<dataset>.+)\.jsonl$")
 
 
 def read_manifest(path: str) -> list[dict]:
+    out = []
+    malformed = 0
     with open(path, encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                malformed += 1
+                continue
+            if isinstance(row, dict):
+                out.append(row)
+            else:
+                malformed += 1
+    if malformed:
+        print(f"  note: skipped {malformed} malformed rows in {path}")
+    return out
 
 
 def _dataset_tag(name: str, datasets) -> str | None:
@@ -171,24 +168,22 @@ def score_dataset(manifests: dict[str, str]) -> list[dict]:
             pairs.append((row["text"], row["pred_text"]))
         agg = score_pairs(pairs)
         scored = agg["scored"]
-        lo, hi = wilson(scored[0], scored[1])
-        out = {
-            "model": model,
-            "rate": scored[0] / scored[1] if scored[1] else 0.0,
-            "n": scored[1],
-            "lo": lo,
-            "hi": hi,
-        }
+        # A model with no eligible span has no rate; an empty cell keeps it
+        # distinguishable from a model that agreed at none of its spans.
+        if scored[1] == 0:
+            out = {"model": model, "rate": "", "n": 0}
+        else:
+            out = {"model": model, "rate": scored[0] / scored[1], "n": scored[1]}
         for cls in REPORTED_CLASSES:
             k, n = agg["by_class"][cls]
             out[f"{cls}_rate"] = k / n if n else 0.0
             out[f"{cls}_n"] = n
         rows.append(out)
-    rows.sort(key=lambda r: -r["rate"])
+    rows.sort(key=lambda r: (r["rate"] == "", -(r["rate"] or 0.0)))
     return rows
 
 
-FIELDNAMES = ["model", "rate", "lo", "hi", "n"] + [
+FIELDNAMES = ["model", "rate", "n"] + [
     f"{cls}_{suffix}" for cls in REPORTED_CLASSES for suffix in ("rate", "n")
 ]
 
@@ -198,8 +193,12 @@ def write_csv(path: str, rows: list[dict]) -> None:
         writer = csv.writer(f)
         writer.writerow(FIELDNAMES)
         for row in rows:
+            # Counts and the model id stay verbatim; a missing rate stays empty.
             writer.writerow(
-                [row[k] if k == "model" or k.endswith("_n") else f"{row[k]:.6f}" for k in FIELDNAMES]
+                [
+                    row[k] if k == "model" or k == "n" or k.endswith("_n") or row[k] == "" else f"{row[k]:.6f}"
+                    for k in FIELDNAMES
+                ]
             )
 
 
@@ -212,17 +211,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--bucket", default=DEFAULT_BUCKET, help=f"HF results bucket. Default: {DEFAULT_BUCKET}")
     parser.add_argument(
-        "--preds-dir",
+        "--preds_dir",
         default=None,
         help="Read predictions from this directory instead of syncing the bucket.",
     )
     parser.add_argument(
-        "--local-dir",
+        "--local_dir",
         default=os.path.join(REPO_ROOT, "results"),
         help="Directory to sync the bucket into. Default: <repo_root>/results",
     )
-    parser.add_argument("--hf-token", default=os.environ.get("HF_TOKEN"), help="Defaults to $HF_TOKEN.")
-    parser.add_argument("--out-dir", default=HERE, help=f"Where to write the outputs. Default: {HERE}")
+    parser.add_argument("--hf_token", default=os.environ.get("HF_TOKEN"), help="Defaults to $HF_TOKEN.")
+    default_out = os.path.join(REPO_ROOT, "results")
+    parser.add_argument("--out_dir", default=default_out, help=f"Where to write the outputs. Default: {default_out}")
     parser.add_argument(
         "--datasets",
         default=None,
@@ -239,6 +239,11 @@ def main() -> None:
 
     if args.datasets:
         datasets = [d.strip() for d in args.datasets.split(",") if d.strip()]
+        # An unrecognised tag matches no manifest and would be reported as an empty
+        # dataset rather than as the typo it is.
+        unknown = [d for d in datasets if d not in SHORT_FORM_DATASETS]
+        if unknown:
+            sys.exit(f"Unknown dataset tags: {', '.join(unknown)}. Known: {', '.join(SHORT_FORM_DATASETS)}")
     else:
         datasets = discover_datasets(root)
         print(f"datasets found: {', '.join(datasets) or 'none'}")
@@ -254,8 +259,9 @@ def main() -> None:
         rows = score_dataset(manifests)
         for i, row in enumerate(rows[:10], 1):
             print(
-                f"{i:3} {row['model'][:48]:48} {row['rate']:.3f} "
-                f"[{row['lo']:.2f},{row['hi']:.2f}] n={row['n']}"
+                f"{i:3} {row['model'][:48]:48} {row['rate']:.3f} n={row['n']}"
+                if row["rate"] != ""
+                else f"{i:3} {row['model'][:48]:48}     -- no eligible span"
             )
         path = os.path.join(args.out_dir, f"ref_rendering_{dataset}.csv")
         write_csv(path, rows)

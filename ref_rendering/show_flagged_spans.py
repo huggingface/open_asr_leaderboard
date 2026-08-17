@@ -1,32 +1,18 @@
 #!/usr/bin/env python3
-# Copyright 2026 The Open ASR Leaderboard contributors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
 # Adapted from the reference implementation accompanying "Quantifying Benchmark
 # Optimization in ASR Models" (https://github.com/tlebryk/asr-benchmark-optimization,
 # Apache-2.0).
 """Print the individual flagged spans `score_ref_rendering.py` scores, for inspection.
 
-Each is shown one by one: the reference span in context, what the normalizer turns
-it into, and each model's raw output aligned to it.
+Each is shown one by one with the untouched full reference and model predictions,
+the extracted raw spans, and what the normalizer turns the reference span into.
 
 Models are joined on the reference text, so only clips every selected model
 transcribed are shown; manifests keyed `sample_<i>` are therefore usable too.
 
 Usage:
-    python ref_rendering/show_flagged_spans.py --preds-dir results --dataset voxpopuli_test
-    python ref_rendering/show_flagged_spans.py --preds-dir results --dataset ami_test \
+    python ref_rendering/show_flagged_spans.py --preds_dir results --dataset voxpopuli_test
+    python ref_rendering/show_flagged_spans.py --preds_dir results --dataset ami_test \
         --models model-a,model-b --class spelling --limit 20 --html spans.html
 """
 
@@ -43,25 +29,21 @@ from score_ref_rendering import find_manifests, read_manifest
 CONTEXT_WORDS = 6
 
 CLASS_COLOR = {
-    "case": "#8e6cc3",
-    "punct": "#7a869a",
     "spelling": "#d35400",
-    "abbrev": "#c0392b",
     "acronym": "#c0392b",
     "number": "#2471a3",
-    "other": "#7d6608",
 }
 
 
-def load_hypotheses(manifests: dict[str, str], models: list[str]) -> dict[str, dict[str, str]]:
-    """Model to (whitespace-collapsed reference -> hypothesis)."""
+def load_hypotheses(manifests: dict[str, str], models: list[str]) -> dict[str, dict[str, tuple[str, str]]]:
+    """Model to (reference join key -> (untouched reference, untouched hypothesis))."""
     out = {}
     for model in models:
         by_ref = {}
         for row in read_manifest(manifests[model]):
             if "text" not in row or "pred_text" not in row:
                 continue
-            by_ref[" ".join(row["text"].split())] = row["pred_text"]
+            by_ref[" ".join(row["text"].split())] = (row["text"], row["pred_text"])
         out[model] = by_ref
     return out
 
@@ -70,12 +52,13 @@ def collect_flagged_spans(hypotheses: dict[str, dict[str, str]], models: list[st
     """Every scored flagged span on the clips all selected models transcribed."""
     refs = set.intersection(*(set(hypotheses[m]) for m in models))
     out = []
-    for ref in sorted(refs):
-        flagged_spans, ref_full = flagged_spans_for(ref)
+    for ref_key in sorted(refs):
+        raw_ref = hypotheses[models[0]][ref_key][0]
+        flagged_spans, ref_full = flagged_spans_for(" ".join(raw_ref.split()))
         for index, fspan in enumerate(flagged_spans):
             if cls and fspan[2] != cls:
                 continue
-            out.append((ref, tuple(flagged_spans), tuple(ref_full), index))
+            out.append((ref_key, raw_ref, tuple(flagged_spans), tuple(ref_full), index))
     return out
 
 
@@ -91,34 +74,38 @@ def context(ref: str, raw_lo: int, raw_hi: int) -> tuple[str, str, str]:
     return left, " ".join(toks[raw_lo : raw_hi + 1]), right
 
 
-def verdicts(ref: str, flagged_spans, ref_full, index: int, hypotheses, models):
-    """``(model, hyp_raw_span, verdict)`` per model at one flagged span."""
+def verdicts(ref_key: str, flagged_spans, ref_full, index: int, hypotheses, models):
+    """Raw prediction, extracted span, and verdict per model at one flagged span."""
     rows = []
     for model in models:
-        _, eligible, agreed, hyp_raw = score_clip(list(flagged_spans), list(ref_full), hypotheses[model][ref])[index]
+        _, raw_hyp = hypotheses[model][ref_key]
+        _, eligible, agreed, hyp_raw = score_clip(list(flagged_spans), list(ref_full), raw_hyp)[index]
         if not eligible:
-            rows.append((model, "", "not eligible"))
+            rows.append((model, raw_hyp, hyp_raw, "not eligible"))
         else:
-            rows.append((model, hyp_raw, "agree" if agreed else "own"))
+            rows.append((model, raw_hyp, hyp_raw, "agree" if agreed else "own"))
     return rows
 
 
 def render_text(dataset, models, samples, hypotheses, total) -> str:
     width = max(len(m) for m in models)
     lines = [f"{dataset}: {len(samples)} of {total} flagged spans, {len(models)} models"]
-    for n, (ref, flagged_spans, ref_full, index) in enumerate(samples, 1):
+    for n, (ref_key, raw_ref, flagged_spans, ref_full, index) in enumerate(samples, 1):
         raw_span, norm_span, cls, raw_lo, raw_hi = flagged_spans[index][:5]
-        left, span, right = context(ref, raw_lo, raw_hi)
+        left, span, right = context(" ".join(raw_ref.split()), raw_lo, raw_hi)
         lines += [
             "",
             f"[{n}] {cls}",
             f"  context           {left} «{span}» {right}",
+            f"  full raw ref      {raw_ref!r}",
             f"  reference span    {raw_span!r}",
             f"  normalizer        {norm_span!r}",
         ]
-        for model, hyp_raw, verdict in verdicts(ref, flagged_spans, ref_full, index, hypotheses, models):
-            shown = repr(hyp_raw) if verdict != "not eligible" else ""
-            lines.append(f"    {model:{width}}  {verdict:12} {shown}")
+        for model, raw_hyp, hyp_raw, verdict in verdicts(
+            ref_key, flagged_spans, ref_full, index, hypotheses, models
+        ):
+            lines.append(f"    {model:{width}}  {verdict:12} span={hyp_raw!r}")
+            lines.append(f"    {'':{width}}  {'':12} full raw prediction={raw_hyp!r}")
     return "\n".join(lines) + "\n"
 
 
@@ -132,8 +119,9 @@ h1{font-size:20px} p.lede{color:#424949}
 table{border-collapse:collapse;font-size:13px;margin-top:10px;width:100%}
 td,th{border:1px solid #e5e8e8;padding:4px 9px;text-align:left}
 th{background:#fbfcfc;font-weight:600}
-td.agree{background:#fdedec} td.own{background:#eafaf1} td.na{background:#fbfcfc;color:#b3b6b7}
+td.agree{background:#eef2f7} td.own{background:#f7f4ee} td.na{background:#fbfcfc;color:#b3b6b7}
 td.v{white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+td.full,.raw{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
 code{font-size:12px}
 .legend span{margin-right:18px;font-size:13px}
 .legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:4px}
@@ -147,31 +135,36 @@ def render_html(dataset, models, samples, hypotheses, total) -> str:
         "of the raw reference the leaderboard's normalizer rewrites, so both renderings score identically under WER. "
         "Where a model reproduced the flagged span's words, its raw rendering is compared to the reference's.</p>",
         '<p class="legend">'
-        '<span><span class="sw" style="background:#fdedec"></span>matched the reference\'s rendering</span>'
-        '<span><span class="sw" style="background:#eafaf1"></span>same words, own rendering</span>'
+        '<span><span class="sw" style="background:#eef2f7"></span>same rendering as the reference</span>'
+        '<span><span class="sw" style="background:#f7f4ee"></span>same words, different rendering</span>'
         '<span><span class="sw" style="background:#fbfcfc;border:1px solid #e5e8e8"></span>'
         "not eligible (words not reproduced)</span></p>",
     ]
-    for n, (ref, flagged_spans, ref_full, index) in enumerate(samples, 1):
+    for n, (ref_key, raw_ref, flagged_spans, ref_full, index) in enumerate(samples, 1):
         raw_span, norm_span, cls, raw_lo, raw_hi = flagged_spans[index][:5]
-        left, span, right = context(ref, raw_lo, raw_hi)
+        left, span, right = context(" ".join(raw_ref.split()), raw_lo, raw_hi)
         color = CLASS_COLOR.get(cls, "#7a869a")
         rows = []
-        for model, hyp_raw, verdict in verdicts(ref, flagged_spans, ref_full, index, hypotheses, models):
+        for model, raw_hyp, hyp_raw, verdict in verdicts(
+            ref_key, flagged_spans, ref_full, index, hypotheses, models
+        ):
             klass = {"agree": "agree", "own": "own"}.get(verdict, "na")
-            shown = f"<code>{html.escape(hyp_raw)}</code>" if verdict != "not eligible" else "&mdash;"
+            shown = f"<code>{html.escape(hyp_raw)}</code>" if hyp_raw else "&mdash;"
             label = {"agree": "= reference", "own": "own"}.get(verdict, "not eligible")
             rows.append(
                 f'<tr><th>{html.escape(model)}</th><td class="{klass}">{shown}</td>'
-                f'<td class="v {klass}">{label}</td></tr>'
+                f'<td class="v {klass}">{label}</td>'
+                f'<td class="full">{html.escape(raw_hyp)}</td></tr>'
             )
         blocks.append(
             f'<div class="fspan"><span class="cls" style="color:{color}">[{n}] {cls}</span>'
             f'<p class="ctx">{html.escape(left)} <mark style="border-color:{color}">{html.escape(span)}</mark> '
             f"{html.escape(right)}</p>"
+            f'<p><strong>full raw reference</strong></p><div class="raw">{html.escape(raw_ref)}</div>'
             f"<p>reference span <code>{html.escape(raw_span)}</code> &rarr; normalizer "
             f'<code>{html.escape(norm_span) or "&empty;"}</code></p>'
-            f'<table><tr><th>model</th><th>raw output here</th><th></th></tr>{"".join(rows)}</table></div>'
+            f'<table><tr><th>model</th><th>extracted raw span</th><th></th>'
+            f'<th>full raw prediction</th></tr>{"".join(rows)}</table></div>'
         )
     return (
         "<!doctype html><meta charset='utf-8'>"
@@ -182,7 +175,7 @@ def render_html(dataset, models, samples, hypotheses, total) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--preds-dir", required=True, help="Directory of prediction manifests.")
+    parser.add_argument("--preds_dir", required=True, help="Directory of prediction manifests.")
     parser.add_argument("--dataset", required=True, help="Dataset tag, e.g. voxpopuli_test.")
     parser.add_argument("--models", default=None, help="Comma-separated model ids. Default: every model found.")
     parser.add_argument(

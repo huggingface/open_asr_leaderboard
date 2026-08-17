@@ -101,6 +101,12 @@ You can also specify your own model and its performance as such:
 
 ![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
 
+# Reference rendering agreement
+
+`ref_rendering/` measures whether models reproduce benchmark-specific spelling,
+acronym, and number forms that English WER ignores. See
+[`ref_rendering/README.md`](ref_rendering/README.md).
+
 # Contributing a model or dataset
 
 Please follow the [pull request template](./.github/PULL_REQUEST_TEMPLATE.md); it contains a submission checklist and guidelines.

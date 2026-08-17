@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-# Copyright 2026 The Open ASR Leaderboard contributors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
 # Adapted from the reference implementation accompanying "Quantifying Benchmark
 # Optimization in ASR Models" (https://github.com/tlebryk/asr-benchmark-optimization,
 # Apache-2.0).
@@ -20,20 +6,18 @@
 
 A **flagged span** is a span of a raw reference transcript that the leaderboard's
 text normalizer rewrites, so the reference's rendering and the normalizer's
-rendering of the same words score identically under WER. Casing, punctuation,
-en-GB/en-US spelling, honorific abbreviations, pointed acronyms and
-digits-versus-words are all such rewrites.
+rendering of the same words score identically under WER.
 
 At each flagged span a hypothesis is **eligible** when its normalized text
 reproduces the flagged span's normalized words (the model got the words right, so
 only the rendering is in question), and it **agrees** when its raw text there is
-character-for-character the reference's raw span. The agreement rate is the share
-of eligible flagged spans at which a model agrees.
+the same reference rendering after case-folding and removing edge punctuation.
+For number words, optional hyphenation is ignored. The agreement rate is the
+share of eligible flagged spans at which a model agrees.
 
-A single rate is reported, taken over :data:`SCORED_CLASSES` — the classes where
-the choice is recoverable from neither the audio nor a transcript-wide convention.
-Casing and punctuation are labelled and counted but excluded from it, since they
-are house style rather than per-token choices.
+A single rate is reported over spelling, pointed acronyms, and numbers. Casing
+and punctuation are runner-wide style choices. Normalizer abbreviation rewrites
+are excluded because they contain ambiguous homographs and transcript fragments.
 
 Public entry points: :func:`extract_flagged_spans` and :func:`keep_flagged_span`
 build a clip's list, :func:`score_clip` scores one hypothesis against it, and
@@ -42,7 +26,6 @@ build a clip's list, :func:`score_clip` scores one hypothesis against it, and
 
 from __future__ import annotations
 
-import math
 import os
 import re
 import string
@@ -61,16 +44,16 @@ if REPO_ROOT not in sys.path:
 
 
 def _make_normalizer():
-    """The Whisper English normalizer, with this repo's en-GB/en-US spelling map.
+    """This repo's English normalizer, as instantiated by ``normalizer.data_utils``.
 
-    The same normalizer the leaderboard's English WER is computed under, so a
-    span it rewrites is by construction free under WER.
+    The same normalizer the leaderboard's English WER is computed under, so a span
+    it rewrites is by construction free under WER. It is not interchangeable with
+    the upstream Whisper normalizer, which lacks the acronym, name and compound
+    stages: ``U.S.`` normalizes to ``us`` here and to ``u s`` there.
     """
-    from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
+    from normalizer import EnglishTextNormalizer
 
-    from normalizer.english_abbreviations import english_spelling_normalizer
-
-    return EnglishTextNormalizer(english_spelling_mapping=english_spelling_normalizer)
+    return EnglishTextNormalizer()
 
 
 @lru_cache(maxsize=1)
@@ -118,33 +101,36 @@ def nfull(text: str) -> list[str]:
 # Flagged-span extraction
 # ---------------------------------------------------------------------------
 
-# Honorifics and units the normalizer's abbreviation table expands.
-ABBREVS = {
-    "mr",
-    "mrs",
-    "ms",
-    "dr",
-    "st",
-    "jr",
-    "sr",
-    "prof",
-    "capt",
-    "gov",
-    "gen",
-    "sen",
-    "rep",
-    "rev",
-    "hon",
-    "esq",
-    "ltd",
-    "col",
-    "ft",
-}
-# Filler tokens the normalizer deletes outright.
-DISFL = {"uh", "um", "hmm", "mm", "mhm", "mmm", "huh", "ah", "er"}
+_BARE_WORD_PATTERN = re.compile(r"^\\b(\w+)\\b$")
+
+
+@lru_cache(maxsize=1)
+def abbrevs() -> frozenset[str]:
+    """Titles the normalizer expands to a single word, read off its own table.
+
+    Derived rather than hand-listed so the two cannot drift apart. A replacement
+    of more than one word (``wanna`` to ``want to``) is a contraction, not a title.
+    """
+    out = set()
+    for pattern, replacement in _normalizer().replacers.items():
+        m = _BARE_WORD_PATTERN.match(pattern)
+        if m and len(replacement.split()) == 1:
+            out.add(m.group(1))
+    return frozenset(out)
+
+
+@lru_cache(maxsize=1)
+def disfluencies() -> frozenset[str]:
+    """Fillers the normalizer deletes, read off its own ``ignore_patterns``."""
+    inner = _normalizer().ignore_patterns.strip("\\b()")
+    return frozenset(inner.split("|"))
+
+
 ACRONYM_RE = re.compile(r"^(?:[A-Za-z]\.\s*)+[A-Za-z]?\.?$")
+EDGE_PUNCT = string.punctuation + "‘’“”–—…"
 PUNCT_TBL = str.maketrans("", "", string.punctuation + "‘’“”–—…")
 _DIGIT_RE = re.compile(r"\d")
+_HYPHEN_RE = re.compile(r"[-‐‑‒–—]+")
 
 
 def group_tokens(text: str):
@@ -234,15 +220,14 @@ def group_tokens(text: str):
 def classify(raw_span: str, norm_span: str) -> str:
     """Label the rewrite that turns ``raw_span`` into ``norm_span``.
 
-    First match wins, so the order is part of the definition; see the ordering
-    note in ``README.md``.
+    First match wins, so the order is part of the definition.
     """
     rl = raw_span.lower()
     if "'" in raw_span or "’" in raw_span:
         if len(norm_span.split()) > len(raw_span.split()):
             return "contraction"
     stripped = rl.translate(PUNCT_TBL).strip()
-    if stripped in DISFL and norm_span == "":
+    if stripped in disfluencies() and norm_span == "":
         return "disfluency"
     if rl == norm_span:
         return "case"
@@ -251,7 +236,7 @@ def classify(raw_span: str, norm_span: str) -> str:
     spelling = spelling_map()
     if spelling.get(rl) == norm_span or spelling.get(stripped) == norm_span:
         return "spelling"
-    if re.fullmatch(r"(" + "|".join(sorted(ABBREVS)) + r")\.?", rl):
+    if re.fullmatch(r"(" + "|".join(sorted(abbrevs())) + r")\.?", rl):
         return "abbrev"
     if ACRONYM_RE.match(raw_span):
         return "acronym"
@@ -283,10 +268,12 @@ def extract_flagged_spans(ref: str) -> list[tuple[str, str, str, int, int, int, 
 # Frozen filters
 # ---------------------------------------------------------------------------
 
-# The audio determines these, so reproducing the reference's rendering is not a
-# formatting choice: whether a contraction was spoken contracted, and whether a
-# filler was uttered at all.
-EXCLUDED_CLASSES = frozenset({"contraction", "disfluency"})
+# Only the three interpretable, acoustically equivalent rendering choices reach
+# scoring. The remaining classes either reflect what was spoken, runner-wide
+# formatting, ambiguous normalizer expansions, or heterogeneous rewrites.
+EXCLUDED_CLASSES = frozenset(
+    {"contraction", "disfluency", "case", "punct", "abbrev", "other"}
+)
 
 # en-GB/en-US pairs whose American form is also an ordinary English word with a
 # different sense, so the reference's spelling is forced by meaning rather than
@@ -312,8 +299,6 @@ BLOCKED_SPELLINGS = frozenset(
         "filter",  # philtre: a philtre is a love potion, an unrelated word
         "filters",
         "biased",  # biassed: "biassed" is vanishingly rare in either dialect
-        "curb",  # kerb: not in this repo's map, blocked defensively
-        "curbs",
         "tire",  # tyre: the verb "to tire" is spelled the same in en-GB
         "tires",
     }
@@ -365,16 +350,32 @@ def _in_number_band(norm: str) -> bool:
     return value in NUMBER_BAND and m.group(2) == _ordinal_suffix(value)
 
 
-def _all_number_words(raw: str) -> bool:
-    """Whether the raw span is number words only, with no punctuation or digits.
+# Words that may open and close a two-word reading, so that "forty seven" is one
+# number while "one one" (which the normalizer glues into "11") is two.
+TENS_WORDS = frozenset("twenty thirty forty fifty sixty seventy eighty ninety".split())
+UNIT_WORDS = frozenset("one two three four five six seven eight nine".split())
+UNIT_ORDINALS = frozenset("first second third fourth fifth sixth seventh eighth ninth".split())
 
-    Punctuation inside or trailing the span (``"forty,"``) makes the rendering a
-    joint punctuation-and-number choice, which the number class should not carry.
+
+def _one_number_reading(raw: str) -> bool:
+    """Whether the raw span is exactly one spoken number, in words.
+
+    A single number word, or a tens word followed by a unit ("forty seven",
+    "twenty first"). Anything else in the class is the normalizer gluing two
+    separately spoken numbers together — "one one" to "11", "seven five" to "75" —
+    which is not one number rendered two ways. Punctuation inside or trailing the
+    span ("forty,") makes the rendering a joint punctuation-and-number choice, so
+    it is excluded too.
     """
-    for token in raw.replace("-", " ").split():
-        if token.lower() not in NUMBER_WORDS:
-            return False
-    return bool(raw.strip())
+    tokens = _HYPHEN_RE.sub(" ", raw).split()
+    if not tokens or any(tok.lower() not in NUMBER_WORDS for tok in tokens):
+        return False
+    if len(tokens) == 1:
+        return True
+    if len(tokens) == 2:
+        first, second = tokens[0].lower(), tokens[1].lower()
+        return first in TENS_WORDS and (second in UNIT_WORDS or second in UNIT_ORDINALS)
+    return False
 
 # Spelling spans blocked by their RAW (reference-side) form. These fail the
 # audibility test rather than the sense test: the raw form is pronounced
@@ -385,10 +386,11 @@ BLOCKED_RAW_SPELLINGS = frozenset({"kay"})
 
 # Classes whose rendering the audio does not determine and which are not a
 # transcript-wide house-style convention either. The reported rate is over these.
-SCORED_CLASSES = frozenset({"spelling", "abbrev", "acronym", "number"})
+SCORED_CLASSES = frozenset({"spelling", "acronym", "number"})
 
-# Reported per class, in this order.
-REPORTED_CLASSES = ("case", "punct", "spelling", "abbrev", "acronym", "number", "other")
+# Reported per class, in this order. Case/punctuation measure runner settings;
+# abbreviations contain normalizer homographs such as "gen" -> "general".
+REPORTED_CLASSES = ("spelling", "acronym", "number")
 
 
 def keep_flagged_span(fspan) -> bool:
@@ -402,7 +404,7 @@ def keep_flagged_span(fspan) -> bool:
         if raw.lower().strip(".,!?;:'\"\u2019") in BLOCKED_RAW_SPELLINGS:
             return False
     if cls == "number":
-        return _in_number_band(norm) and _all_number_words(raw)
+        return _in_number_band(norm) and _one_number_reading(raw)
     return True
 
 
@@ -422,14 +424,33 @@ def flagged_spans_for(ref: str) -> tuple[tuple, tuple[str, ...]]:
 # ---------------------------------------------------------------------------
 
 
+def comparable(span: str, cls: str | None = None) -> str:
+    """The form two raw spans are compared in.
+
+    Case and edge punctuation are transcript-wide conventions, not the per-token
+    choice being measured, so ``COLOUR``, ``colour`` and ``colour,`` count as the
+    same rendering of ``colour``. Without this an all-uppercase or unpunctuated
+    model scores zero on every span for a reason the rate does not claim to
+    measure.
+    """
+    out = span.casefold().strip(EDGE_PUNCT)
+    if cls == "number":
+        # The measured choice is words versus digits, not optional hyphenation:
+        # "fifty-two" and "fifty two" are the same words-side rendering.
+        out = _HYPHEN_RE.sub(" ", out)
+        out = re.sub(r"\s+", " ", out).strip()
+    return out
+
+
 def score_clip(flagged_spans, ref_full, hyp: str) -> list[tuple[int, bool, bool, str]]:
     """Score one hypothesis at every flagged span of one clip.
 
     Returns ``(span_index, eligible, agreed, hyp_raw_span)`` per span. A span is
     eligible when its normalized reference span falls inside a block the
-    reference-to-hypothesis normalized alignment marks equal, i.e. the model
-    produced those words; the raw hypothesis span aligned to it is then compared
-    to the reference's raw span for exact string equality.
+    reference-to-hypothesis normalized alignment marks equal, and the aligned raw
+    hypothesis text normalizes to exactly that span — the model produced those
+    words and nothing extra. Agreement then compares the two raw spans under
+    :func:`comparable`.
     """
     hraw, hfull, hgroups = group_tokens(hyp)
     # normalized hypothesis word index -> raw hypothesis token span
@@ -462,36 +483,36 @@ def score_clip(flagged_spans, ref_full, hyp: str) -> list[tuple[int, bool, bool,
         hj1, hj2 = j1 + (fa - i1), j1 + (fb - i1)
         spans = [hmap[j] for j in range(hj1, hj2) if j in hmap]
         if not spans:
-            res.append((si, True, False, ""))
+            # No raw hypothesis token maps to those normalized words, so there is
+            # nothing to compare; not eligible rather than an automatic miss.
+            res.append((si, False, False, ""))
             continue
         a, b = min(s[0] for s in spans), max(s[1] for s in spans)
         hyp_raw = " ".join(hraw[a : b + 1])
-        res.append((si, True, hyp_raw == raw_span, hyp_raw))
+        # The aligned raw hypothesis may cover more than the span's words, as when
+        # "twenty" aligns inside "G20" or "eighteen" inside "18-year-old". Those
+        # two renderings are not comparable, so the span is not eligible.
+        if normalize(hyp_raw) != norm_span:
+            res.append((si, False, False, hyp_raw))
+            continue
+        res.append((si, True, comparable(hyp_raw, cls) == comparable(raw_span, cls), hyp_raw))
     return res
-
-
-def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """95% Wilson score interval on ``k / n``."""
-    if n == 0:
-        return 0.0, 0.0
-    p = k / n
-    d = 1 + z * z / n
-    c = p + z * z / (2 * n)
-    m = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
-    return (c - m) / d, (c + m) / d
 
 
 def score_pairs(pairs) -> dict:
     """Aggregate rendering agreement over ``(reference, hypothesis)`` pairs.
 
-    Returns ``scored`` (the reported pool) as ``[agreed, eligible]``, ``all``
-    (every retained class) and the same pair per class, both for inspection only.
-    Clips with no retained flagged span contribute nothing.
+    Returns ``scored`` (the reported pool) as ``[agreed, eligible]`` plus the same
+    pair per class, for inspection. Clips with no retained flagged span contribute
+    nothing.
     """
-    every = [0, 0]
     scored = [0, 0]
     by_class = {cls: [0, 0] for cls in REPORTED_CLASSES}
     for ref, hyp in pairs:
+        # One malformed row must not abort a dataset: 82 contributed manifests are
+        # not uniformly well-formed.
+        if not isinstance(ref, str) or not isinstance(hyp, str):
+            continue
         flagged_spans, ref_full = flagged_spans_for(" ".join(ref.split()))
         if not flagged_spans:
             continue
@@ -499,8 +520,6 @@ def score_pairs(pairs) -> dict:
         for (_, eligible, agreed, _), fspan in zip(per_span, flagged_spans):
             if not eligible:
                 continue
-            every[1] += 1
-            every[0] += agreed
             cls = fspan[2]
             if cls in by_class:
                 by_class[cls][1] += 1
@@ -508,4 +527,4 @@ def score_pairs(pairs) -> dict:
             if cls in SCORED_CLASSES:
                 scored[1] += 1
                 scored[0] += agreed
-    return {"scored": scored, "all": every, "by_class": by_class}
+    return {"scored": scored, "by_class": by_class}
