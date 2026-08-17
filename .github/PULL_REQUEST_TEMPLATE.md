@@ -55,7 +55,7 @@ License | Size (B) | # Languages | Encoder | Decoder | (Recommended) Link to tra
 - [ ] Provide a link to your model's documentation that we can link on the leaderboard.
 - [ ] Please provide the following information. Note that the cost should represent the "entry-level" costs, e.g. when one first signs up to your platform.
 
- # Languages | Cost ($/hour) | Link to model announcement or API
+Cost ($/hour) |  # Languages | Link to model announcement or API
  -- | -- | -- 
  x | x | x 
 
