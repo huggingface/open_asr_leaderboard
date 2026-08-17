@@ -29,6 +29,7 @@ MODEL_CONFIGS=(
     # "modulate/vfast                25"
     # "gladia/solaria-3             20"
     # "soniox/stt-async-v5           20"
+    # "sophea/asr-k1                 16"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
 
@@ -75,7 +76,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
         docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e HF_TOKEN="${HF_TOKEN:-}"
+            -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
             -e HF_HOME=/tmp/hf_home \
             -e HF_DATASETS_CACHE=/hf_cache/datasets \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
