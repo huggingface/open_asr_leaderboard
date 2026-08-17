@@ -1,0 +1,381 @@
+name: Multilingual API benchmark
+run-name: Multilingual API · ${{ inputs.model_id }} · max ${{ inputs.max_samples }}
+
+# Paid API benchmarks must be started explicitly. In particular, do not add a
+# pull_request_target trigger: fork code must never receive repository secrets.
+on:
+  workflow_dispatch:
+    inputs:
+      model_id:
+        description: "Registered provider/model ID (for example assembly/universal-3-pro)"
+        required: true
+        type: string
+      api_key_secret:
+        description: "Repository or environment secret containing the provider API key"
+        required: true
+        default: "PROVIDER_API_KEY"
+        type: string
+      api_key_env:
+        description: "Environment variable expected by the provider adapter"
+        required: true
+        default: "PROVIDER_API_KEY"
+        type: string
+      max_workers:
+        description: "Concurrent requests inside each dataset job"
+        required: true
+        default: 4
+        type: number
+      max_parallel:
+        description: "Datasets evaluated in parallel (multiplies provider concurrency)"
+        required: true
+        default: 1
+        type: number
+      max_samples:
+        description: "Samples per dataset; 1 is a smoke test and 0 is the paid full run"
+        required: true
+        default: 1
+        type: number
+      use_url:
+        description: "Pass Hub audio URLs instead of uploading decoded WAV files"
+        required: true
+        default: false
+        type: boolean
+      prompt:
+        description: "Optional prompt passed to every provider request"
+        required: false
+        type: string
+      reuse_run_id:
+        description: "Prior run whose manifests/checkpoints should be reused"
+        required: false
+        type: string
+      result_run_id:
+        description: "Prior complete run to score without making API calls"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      model_id:
+        required: true
+        type: string
+      api_key_secret:
+        required: false
+        default: "PROVIDER_API_KEY"
+        type: string
+      api_key_env:
+        required: true
+        type: string
+      max_workers:
+        required: false
+        default: 4
+        type: number
+      max_parallel:
+        required: false
+        default: 1
+        type: number
+      max_samples:
+        required: false
+        default: 1
+        type: number
+      use_url:
+        required: false
+        default: false
+        type: boolean
+      prompt:
+        required: false
+        default: ""
+        type: string
+      reuse_run_id:
+        required: false
+        default: ""
+        type: string
+      result_run_id:
+        required: false
+        default: ""
+        type: string
+    secrets:
+      provider_api_key:
+        required: false
+      hf_token:
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: multilingual-api-${{ github.repository }}-${{ inputs.api_key_secret }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate benchmark request
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.prepare.outputs.matrix }}
+      model_slug: ${{ steps.prepare.outputs.model_slug }}
+    steps:
+      - name: Check out benchmark code
+        uses: actions/checkout@v4
+
+      - name: Validate inputs and create matrix
+        id: prepare
+        shell: bash
+        env:
+          MODEL_ID: ${{ inputs.model_id }}
+          API_KEY_ENV: ${{ inputs.api_key_env }}
+          API_KEY_SECRET: ${{ inputs.api_key_secret }}
+          MAX_WORKERS: ${{ inputs.max_workers }}
+          MAX_PARALLEL: ${{ inputs.max_parallel }}
+          MAX_SAMPLES: ${{ inputs.max_samples }}
+          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
+          RESULT_RUN_ID: ${{ inputs.result_run_id }}
+        run: |
+          python api/multilingual_benchmark.py prepare \
+            --model-id "$MODEL_ID" \
+            --api-key-env "$API_KEY_ENV" \
+            --api-key-secret "$API_KEY_SECRET" \
+            --max-workers "$MAX_WORKERS" \
+            --max-parallel "$MAX_PARALLEL" \
+            --max-samples "$MAX_SAMPLES" \
+            --reuse-run-id "$REUSE_RUN_ID" \
+            --result-run-id "$RESULT_RUN_ID" \
+            --github-output "$GITHUB_OUTPUT"
+
+  preflight:
+    name: Validate provider adapter and secret
+    needs: prepare
+    if: inputs.result_run_id == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out benchmark code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/action-requirements.txt
+
+      - name: Install evaluation dependencies
+        run: python -m pip install --disable-pip-version-check -r api/action-requirements.txt
+
+      - name: Resolve provider
+        working-directory: api
+        shell: bash
+        env:
+          MODEL_ID: ${{ inputs.model_id }}
+          API_KEY_ENV: ${{ inputs.api_key_env }}
+          PROVIDER_API_KEY: ${{ secrets.provider_api_key || secrets[inputs.api_key_secret] }}
+        run: |
+          [[ -n "$PROVIDER_API_KEY" ]] || {
+            echo "The selected provider API-key secret is not configured." >&2
+            exit 1
+          }
+          export "$API_KEY_ENV=$PROVIDER_API_KEY"
+          python -c 'import os; from providers import get_provider; get_provider(os.environ["MODEL_ID"])'
+
+  transcribe:
+    name: ${{ matrix.config }}
+    needs: [prepare, preflight]
+    if: inputs.result_run_id == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.max_parallel }}
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      HF_AUDIO_DECODER_BACKEND: soundfile
+    steps:
+      - name: Check out benchmark code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/action-requirements.txt
+
+      - name: Install system audio dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libsndfile1 ffmpeg
+
+      - name: Install evaluation dependencies
+        run: python -m pip install --disable-pip-version-check -r api/action-requirements.txt
+
+      - name: Download reusable results and checkpoints
+        if: inputs.reuse_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: multilingual-*-${{ needs.prepare.outputs.model_slug }}-${{ matrix.config }}
+          path: api/reuse-artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.reuse_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Select newest reusable artifacts
+        if: inputs.reuse_run_id != ''
+        working-directory: api
+        shell: bash
+        env:
+          MODEL_SLUG: ${{ needs.prepare.outputs.model_slug }}
+          CONFIG_NAME: ${{ matrix.config }}
+        run: |
+          mkdir -p reuse-artifacts seed-results results/.checkpoints
+          result_dir=$(find reuse-artifacts -mindepth 1 -maxdepth 1 -type d \
+            -name "multilingual-results-*-${MODEL_SLUG}-${CONFIG_NAME}" \
+            -print | sort -V | tail -n 1)
+          checkpoint_dir=$(find reuse-artifacts -mindepth 1 -maxdepth 1 -type d \
+            -name "multilingual-checkpoint-*-${MODEL_SLUG}-${CONFIG_NAME}" \
+            -print | sort -V | tail -n 1)
+          if [[ -n "$result_dir" ]]; then
+            find "$result_dir" -maxdepth 1 -type f -name '*.jsonl' \
+              -exec cp '{}' seed-results/ \;
+          fi
+          if [[ -n "$checkpoint_dir" ]]; then
+            find "$checkpoint_dir" -maxdepth 1 -type f -name '*.jsonl.partial' \
+              -exec cp '{}' results/.checkpoints/ \;
+          fi
+
+      - name: Evaluate model
+        working-directory: api
+        shell: bash
+        env:
+          MODEL_ID: ${{ inputs.model_id }}
+          MODEL_SLUG: ${{ needs.prepare.outputs.model_slug }}
+          API_KEY_ENV: ${{ inputs.api_key_env }}
+          PROVIDER_API_KEY: ${{ secrets.provider_api_key || secrets[inputs.api_key_secret] }}
+          HF_TOKEN: ${{ secrets.hf_token || secrets.HF_TOKEN }}
+          MAX_WORKERS: ${{ inputs.max_workers }}
+          MAX_SAMPLES: ${{ inputs.max_samples }}
+          USE_URL: ${{ inputs.use_url }}
+          PROMPT: ${{ inputs.prompt }}
+          CONFIG_NAME: ${{ matrix.config }}
+          LANGUAGE: ${{ matrix.language }}
+        run: |
+          [[ -n "$PROVIDER_API_KEY" ]] || {
+            echo "The selected provider API-key secret is not configured." >&2
+            exit 1
+          }
+          export "$API_KEY_ENV=$PROVIDER_API_KEY"
+          args=(
+            --dataset_path nithinraok/asr-leaderboard-datasets
+            --config_name "$CONFIG_NAME"
+            --language "$LANGUAGE"
+            --split test
+            --model_name "$MODEL_ID"
+            --max_workers "$MAX_WORKERS"
+            --resume
+          )
+          if (( MAX_SAMPLES > 0 )); then
+            args+=(--max_samples "$MAX_SAMPLES")
+          fi
+          if [[ "$USE_URL" == "true" ]]; then
+            args+=(--use_url)
+          fi
+          if [[ -n "$PROMPT" ]]; then
+            args+=(--prompt "$PROMPT")
+          fi
+          seed_manifest="seed-results/MODEL_${MODEL_SLUG}_DATASET_nithinraok-asr-leaderboard-datasets_${CONFIG_NAME}_test.jsonl"
+          if [[ -f "$seed_manifest" ]]; then
+            args+=(--seed_manifest "$seed_manifest")
+          fi
+          python run_eval_ml.py "${args[@]}"
+
+      - name: Upload result manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: multilingual-results-${{ github.run_attempt }}-${{ needs.prepare.outputs.model_slug }}-${{ matrix.config }}
+          path: api/results/MODEL_${{ needs.prepare.outputs.model_slug }}_DATASET_nithinraok-asr-leaderboard-datasets_${{ matrix.config }}_test.jsonl
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Preserve checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multilingual-checkpoint-${{ github.run_attempt }}-${{ needs.prepare.outputs.model_slug }}-${{ matrix.config }}
+          path: api/results/.checkpoints/MODEL_${{ needs.prepare.outputs.model_slug }}_DATASET_nithinraok-asr-leaderboard-datasets_${{ matrix.config }}_test.jsonl.partial
+          if-no-files-found: ignore
+          retention-days: 7
+
+  score:
+    name: Score multilingual results
+    needs: [prepare, transcribe]
+    if: >-
+      always() &&
+      needs.prepare.result == 'success' &&
+      (needs.transcribe.result == 'success' || inputs.result_run_id != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out benchmark code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/action-requirements.txt
+
+      - name: Install scoring dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            datasets==2.19.0 jiwer num2words regex kaldialign==0.12.0
+
+      - name: Download current result manifests
+        if: inputs.result_run_id == ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: multilingual-results-*-${{ needs.prepare.outputs.model_slug }}-*
+          path: api/result-artifacts
+
+      - name: Download prior result manifests
+        if: inputs.result_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: multilingual-results-*-${{ needs.prepare.outputs.model_slug }}-*
+          path: api/result-artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.result_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Select newest result from each run attempt
+        working-directory: api
+        env:
+          MODEL_ID: ${{ inputs.model_id }}
+        run: |
+          python multilingual_benchmark.py collect \
+            --artifact-root "$PWD/result-artifacts" \
+            --results-dir "$PWD/results" \
+            --model-id "$MODEL_ID"
+
+      - name: Score and publish summary
+        working-directory: api
+        shell: bash
+        env:
+          MODEL_ID: ${{ inputs.model_id }}
+        run: |
+          python multilingual_benchmark.py score \
+            --results-dir "$PWD/results" \
+            --model-id "$MODEL_ID" \
+            --output "$PWD/multilingual-scores.csv"
+          {
+            echo '## Multilingual API benchmark'
+            echo
+            echo '```csv'
+            cat multilingual-scores.csv
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload score summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: multilingual-summary-${{ github.run_attempt }}-${{ needs.prepare.outputs.model_slug }}
+          path: api/multilingual-scores.csv
+          if-no-files-found: error
+          retention-days: 30
