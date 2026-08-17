@@ -138,6 +138,5 @@ results_bucket/*
 *.wav
 
 # results
-*.csv
 *.jsonl
 *.png
