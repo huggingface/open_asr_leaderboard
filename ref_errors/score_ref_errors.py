@@ -25,6 +25,9 @@ Usage:
     # Score an already-downloaded copy of the predictions.
     python ref_errors/score_ref_errors.py --preds_dir results
 
+    # Score a single model and print its CSV line instead of writing files.
+    python ref_errors/score_ref_errors.py --preds_dir results --model openai/whisper-large-v3
+
 Outputs `ref_error_agreement_voxpopuli.csv` (one row per model) and
 `edits_voxpopuli.jsonl` (one row per disagreement) in `--out_dir`.
 """
@@ -220,6 +223,43 @@ def collect_hypotheses(
     return hypotheses, skipped
 
 
+def canonical_model(name: str) -> str:
+    """A model name in the form the results bucket uses.
+
+    Manifest filenames cannot carry the ``/`` of a Hub id, so the bucket writes
+    ``openai-whisper-large-v3`` for ``openai/whisper-large-v3``. Folding the
+    separator and case here lets either form be given on the command line.
+    """
+    return name.replace("/", "-").lower()
+
+
+def resolve_model(name: str, scored: dict[str, str], skipped: list[tuple[str, str]]) -> str:
+    """Match ``name`` against the models that have usable hypotheses.
+
+    Exact match first, then a unique substring match, both up to
+    :func:`canonical_model`, so a model can be named by its Hub id, its bucket
+    id, or an abbreviation of either. Anything else is an error: silently
+    scoring the wrong model is worse than stopping.
+    """
+    if name in scored:
+        return name
+    query = canonical_model(name)
+    exact = sorted(model for model in scored if canonical_model(model) == query)
+    if exact:
+        return exact[0]
+    matches = sorted(model for model in scored if query in canonical_model(model))
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        listed = "\n  ".join(matches)
+        sys.exit(f"--model {name!r} matches {len(matches)} models:\n  {listed}")
+    for model, why in skipped:
+        if query in canonical_model(model):
+            sys.exit(f"--model {name!r} matches {model}, which has no usable hypotheses: {why}")
+    listed = "\n  ".join(sorted(scored))
+    sys.exit(f"--model {name!r} matches no scored model. Available:\n  {listed}")
+
+
 def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None) -> None:
     """Sync an HF bucket to a local directory using the `hf` CLI."""
     bucket_url = f"hf://buckets/{bucket}"
@@ -255,6 +295,13 @@ def main() -> None:
     parser.add_argument("--out_dir", default=default_out, help=f"Where to write the outputs. Default: {default_out}")
     parser.add_argument("--official_dataset", default=OFFICIAL_DATASET)
     parser.add_argument("--corrected_dataset", default=CORRECTED_DATASET)
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Score only this model and print its CSV line to stdout instead of writing the "
+        "output files. Accepts the Hub id (openai/whisper-large-v3), the bucket id "
+        "(openai-whisper-large-v3), or a unique substring of either.",
+    )
     args = parser.parse_args()
 
     if args.preds_dir:
@@ -280,6 +327,14 @@ def main() -> None:
     print(f"models with usable hypotheses: {len(hypotheses)} / {len(corrected_manifests)}")
     for model, why in skipped:
         print(f"  skipped {model}: {why}")
+
+    if args.model:
+        # Edits come from diffing the two references, and each verdict is
+        # decided from that model's hypothesis alone, so restricting the set
+        # here yields exactly the row a full run would produce for it.
+        selected = resolve_model(args.model, hypotheses, skipped)
+        hypotheses = {selected: hypotheses[selected]}
+        print(f"scoring only {selected}")
 
     edits = []
     for key in keys:
@@ -319,22 +374,33 @@ def main() -> None:
     rates = ref_error_agreement(edits)
     print(f"models scored: {len(rates)}")
 
+    header = ["model", "rate", "n_ref", "n_eligible", "n_clips"]
+    rows = [
+        [
+            model,
+            f"{rates[model]['rate']:.4f}",
+            rates[model]["n_ref"],
+            rates[model]["n_eligible"],
+            rates[model]["n_clips"],
+        ]
+        for model in sorted(rates)
+    ]
+
+    if args.model:
+        # A single-model run would otherwise overwrite a full run's outputs with
+        # a one-row file; print the row instead, ready to paste into the CSV.
+        print()
+        writer = csv.writer(sys.stdout)
+        writer.writerow(header)
+        writer.writerows(rows)
+        return
+
     os.makedirs(args.out_dir, exist_ok=True)
     csv_path = os.path.join(args.out_dir, "ref_error_agreement_voxpopuli.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["model", "rate", "n_ref", "n_eligible", "n_clips"])
-        for model in sorted(rates):
-            row = rates[model]
-            writer.writerow(
-                [
-                    model,
-                    f"{row['rate']:.4f}",
-                    row["n_ref"],
-                    row["n_eligible"],
-                    row["n_clips"],
-                ]
-            )
+        writer.writerow(header)
+        writer.writerows(rows)
     print(f"wrote {csv_path}")
 
     edits_path = os.path.join(args.out_dir, "edits_voxpopuli.jsonl")
