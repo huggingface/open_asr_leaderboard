@@ -103,8 +103,8 @@ You can also specify your own model and its performance as such:
 
 # Reference rendering agreement
 
-`ref_rendering/` measures whether models reproduce benchmark-specific spelling,
-acronym, and number forms that English WER ignores. See
+`ref_rendering/` measures whether models reproduce curated reference spelling,
+initialism, number, title, and compound forms that English WER ignores. See
 [`ref_rendering/README.md`](ref_rendering/README.md).
 
 # Contributing a model or dataset

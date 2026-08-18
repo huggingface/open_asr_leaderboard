@@ -4,8 +4,8 @@
 # Apache-2.0).
 """Print the individual flagged spans `score_ref_rendering.py` scores, for inspection.
 
-Each is shown one by one with the untouched full reference and model predictions,
-the extracted raw spans, and what the normalizer turns the reference span into.
+Each is shown with the untouched reference and predictions, extracted raw spans,
+and agreement verdicts.
 
 Models are joined on the reference text, so only clips every selected model
 transcribed are shown; manifests keyed `sample_<i>` are therefore usable too.
@@ -30,8 +30,9 @@ CONTEXT_WORDS = 6
 
 CLASS_COLOR = {
     "spelling": "#d35400",
-    "acronym": "#c0392b",
+    "initialism": "#c0392b",
     "number": "#2471a3",
+    "lexical": "#6c3483",
 }
 
 
@@ -56,7 +57,7 @@ def collect_flagged_spans(hypotheses: dict[str, dict[str, str]], models: list[st
         raw_ref = hypotheses[models[0]][ref_key][0]
         flagged_spans, ref_full = flagged_spans_for(" ".join(raw_ref.split()))
         for index, fspan in enumerate(flagged_spans):
-            if cls and fspan[2] != cls:
+            if cls and fspan.cls != cls:
                 continue
             out.append((ref_key, raw_ref, tuple(flagged_spans), tuple(ref_full), index))
     return out
@@ -91,7 +92,9 @@ def render_text(dataset, models, samples, hypotheses, total) -> str:
     width = max(len(m) for m in models)
     lines = [f"{dataset}: {len(samples)} of {total} flagged spans, {len(models)} models"]
     for n, (ref_key, raw_ref, flagged_spans, ref_full, index) in enumerate(samples, 1):
-        raw_span, norm_span, cls, raw_lo, raw_hi = flagged_spans[index][:5]
+        candidate = flagged_spans[index]
+        raw_span, norm_span, cls = candidate.raw, candidate.norm, candidate.cls
+        raw_lo, raw_hi = candidate.raw_lo, candidate.raw_hi
         left, span, right = context(" ".join(raw_ref.split()), raw_lo, raw_hi)
         lines += [
             "",
@@ -132,7 +135,7 @@ def render_html(dataset, models, samples, hypotheses, total) -> str:
     blocks = [
         f"<h1>Flagged spans — {html.escape(dataset)}</h1>",
         f'<p class="lede">{len(samples)} of {total} scored flagged spans, {len(models)} models. A flagged span is a span '
-        "of the raw reference the leaderboard's normalizer rewrites, so both renderings score identically under WER. "
+        "of the raw reference belonging to a curated rendering family erased by English WER normalization. "
         "Where a model reproduced the flagged span's words, its raw rendering is compared to the reference's.</p>",
         '<p class="legend">'
         '<span><span class="sw" style="background:#eef2f7"></span>same rendering as the reference</span>'
@@ -141,7 +144,9 @@ def render_html(dataset, models, samples, hypotheses, total) -> str:
         "not eligible (words not reproduced)</span></p>",
     ]
     for n, (ref_key, raw_ref, flagged_spans, ref_full, index) in enumerate(samples, 1):
-        raw_span, norm_span, cls, raw_lo, raw_hi = flagged_spans[index][:5]
+        candidate = flagged_spans[index]
+        raw_span, norm_span, cls = candidate.raw, candidate.norm, candidate.cls
+        raw_lo, raw_hi = candidate.raw_lo, candidate.raw_hi
         left, span, right = context(" ".join(raw_ref.split()), raw_lo, raw_hi)
         color = CLASS_COLOR.get(cls, "#7a869a")
         rows = []

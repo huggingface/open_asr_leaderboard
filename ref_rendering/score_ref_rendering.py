@@ -4,18 +4,13 @@
 # Apache-2.0).
 """Score reference rendering agreement on the English short-form benchmarks.
 
-The leaderboard's text normalizer rewrites part of every raw reference
-transcript. This scorer keeps en-GB/en-US spelling, pointed acronyms, and
-digits-versus-number-words: choices the audio does not determine and English WER
-erases. Where a model's normalized output reproduces the span's words, the script
-asks whether its raw output uses the reference's rendering.
+For curated spelling, initialism, number, title, and compound variants erased by
+English WER normalization, this asks whether a model reproduces the reference's
+form after correctly transcribing the underlying words. One rate is written per
+model and dataset.
 
-One rate is written per model per independent English short-form dataset. Casing,
-punctuation, and normalizer abbreviation rewrites are excluded.
-
-Nothing is inferred and no audio is read: references and hypotheses both come
-from the prediction manifests already published in the results bucket, scored
-row by row within each manifest.
+References and hypotheses come from the published prediction manifests; no audio
+or inference is required.
 
 Usage:
     # Sync the public results bucket, then score every model in it.
