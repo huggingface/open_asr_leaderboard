@@ -179,7 +179,7 @@ WORD_NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 DIGIT_NUMBER_RE = re.compile(
-    r"(?<![\w$€£¥.\-])(\d{1,2})(st|nd|rd|th)?(?![\w%$€£¥.\-])", re.IGNORECASE
+    r"(?<![\w$€£¥.:\-])(\d{1,2})(st|nd|rd|th)?(?![\w%$€£¥.:\-])", re.IGNORECASE
 )
 
 
@@ -320,7 +320,10 @@ def flagged_spans_for(text: str):
 
 def score_clip(candidates, ref_full, hypothesis: str):
     """Return ``(index, eligible, agreed, raw_hypothesis_span)`` per candidate."""
-    hcandidates, hfull = _transform(hypothesis)
+    try:
+        hcandidates, hfull = _transform(hypothesis)
+    except RuntimeError:
+        return [(index, False, False, "") for index in range(len(candidates))]
     hmap = {candidate.full_lo: candidate for candidate in hcandidates}
 
     equal = [
@@ -360,6 +363,8 @@ def score_pairs(pairs) -> dict:
         if not isinstance(reference, str) or not isinstance(hypothesis, str):
             continue
         candidates, ref_full = flagged_spans_for(" ".join(reference.split()))
+        if not candidates:
+            continue
         for (_, eligible, agreed, _), candidate in zip(
             score_clip(candidates, ref_full, hypothesis), candidates
         ):

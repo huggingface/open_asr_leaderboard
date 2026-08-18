@@ -91,6 +91,8 @@ def read_manifest(path: str) -> list[dict]:
 
 def _dataset_tag(name: str, datasets) -> str | None:
     """The dataset tag ``name`` ends with, longest first."""
+    if "longform" in name.casefold():
+        return None
     for tag in sorted(datasets, key=len, reverse=True):
         if name == tag or name.endswith("_" + tag) or name.endswith(tag):
             return tag
