@@ -14,7 +14,9 @@ or ``abr-ai``. The tables below carry the information the filename dropped.
 
 from __future__ import annotations
 
-__all__ = ["HYPHENATED_ORGS", "BUCKET_ID_OVERRIDES", "to_hub_id"]
+import collections
+
+__all__ = ["HYPHENATED_ORGS", "BUCKET_ID_OVERRIDES", "to_hub_id", "to_hub_ids"]
 
 # Orgs whose own name contains a hyphen. Splitting on the first hyphen would put
 # half the org into the model name, so these are matched as a whole prefix.
@@ -61,3 +63,23 @@ def to_hub_id(bucket_id: str) -> str:
             return f"{org}/{bucket_id[len(org) + 1 :]}"
     org, sep, name = bucket_id.partition("-")
     return f"{org}/{name}" if sep else bucket_id
+
+
+def to_hub_ids(models: list[str]) -> dict[str, str]:
+    """Map each bucket model name in ``models`` to the Hub id to report it under.
+
+    :func:`to_hub_id` applied one at a time cannot see that two bucket names
+    landed on the same Hub id, which would silently merge two models' rows into
+    one. Checked here instead: on a collision, report it and fall back to the
+    bucket names for the whole set, since a recognisable wrong name beats a
+    plausible-looking wrong number.
+    """
+    out = {model: to_hub_id(model) for model in models}
+    collisions = collections.Counter(out.values())
+    clashing = sorted(hub for hub, n in collisions.items() if n > 1)
+    if clashing:
+        for hub in clashing:
+            sources = sorted(m for m, h in out.items() if h == hub)
+            print(f"  warning: {' and '.join(sources)} both map to {hub}; reporting bucket names")
+        return {model: model for model in models}
+    return out

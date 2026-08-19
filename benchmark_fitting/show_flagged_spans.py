@@ -11,8 +11,8 @@ Models are joined on the reference text, so only clips every selected model
 transcribed are shown; manifests keyed `sample_<i>` are therefore usable too.
 
 Usage:
-    python ref_rendering/show_flagged_spans.py --preds_dir results --dataset voxpopuli_test
-    python ref_rendering/show_flagged_spans.py --preds_dir results --dataset ami_test \
+    python benchmark_fitting/show_flagged_spans.py --preds_dir results --dataset voxpopuli_test
+    python benchmark_fitting/show_flagged_spans.py --preds_dir results --dataset ami_test \
         --models model-a,model-b --class spelling --limit 20 --html spans.html
 """
 
@@ -20,9 +20,15 @@ from __future__ import annotations
 
 import argparse
 import html
+import os
 import random
 import sys
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from normalizer import to_hub_ids  # noqa: E402  (needs REPO_ROOT on sys.path)
 from ref_rendering_utils import REPORTED_CLASSES, flagged_spans_for, score_clip
 from score_ref_rendering import find_manifests, read_manifest
 
@@ -89,7 +95,8 @@ def verdicts(ref_key: str, flagged_spans, ref_full, index: int, hypotheses, mode
 
 
 def render_text(dataset, models, samples, hypotheses, total) -> str:
-    width = max(len(m) for m in models)
+    hub = to_hub_ids(models)
+    width = max(len(h) for h in hub.values())
     lines = [f"{dataset}: {len(samples)} of {total} flagged spans, {len(models)} models"]
     for n, (ref_key, raw_ref, flagged_spans, ref_full, index) in enumerate(samples, 1):
         candidate = flagged_spans[index]
@@ -107,7 +114,7 @@ def render_text(dataset, models, samples, hypotheses, total) -> str:
         for model, raw_hyp, hyp_raw, verdict in verdicts(
             ref_key, flagged_spans, ref_full, index, hypotheses, models
         ):
-            lines.append(f"    {model:{width}}  {verdict:12} span={hyp_raw!r}")
+            lines.append(f"    {hub[model]:{width}}  {verdict:12} span={hyp_raw!r}")
             lines.append(f"    {'':{width}}  {'':12} full raw prediction={raw_hyp!r}")
     return "\n".join(lines) + "\n"
 
@@ -132,6 +139,7 @@ code{font-size:12px}
 
 
 def render_html(dataset, models, samples, hypotheses, total) -> str:
+    hub = to_hub_ids(models)
     blocks = [
         f"<h1>Flagged spans — {html.escape(dataset)}</h1>",
         f'<p class="lede">{len(samples)} of {total} scored flagged spans, {len(models)} models. A flagged span is a span '
@@ -157,7 +165,7 @@ def render_html(dataset, models, samples, hypotheses, total) -> str:
             shown = f"<code>{html.escape(hyp_raw)}</code>" if hyp_raw else "&mdash;"
             label = {"agree": "= reference", "own": "own"}.get(verdict, "not eligible")
             rows.append(
-                f'<tr><th>{html.escape(model)}</th><td class="{klass}">{shown}</td>'
+                f'<tr><th>{html.escape(hub[model])}</th><td class="{klass}">{shown}</td>'
                 f'<td class="v {klass}">{label}</td>'
                 f'<td class="full">{html.escape(raw_hyp)}</td></tr>'
             )

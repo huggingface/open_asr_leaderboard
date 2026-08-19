@@ -58,7 +58,7 @@ REPO_ROOT = os.path.dirname(HERE)
 # Allow importing the repo's normalizer regardless of where this is called from.
 sys.path.insert(0, REPO_ROOT)
 
-from normalizer import to_hub_id  # noqa: E402  (needs REPO_ROOT on sys.path)
+from normalizer import to_hub_ids  # noqa: E402  (needs REPO_ROOT on sys.path)
 
 DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
 OFFICIAL_DATASET = "voxpopuli_test"
@@ -290,28 +290,9 @@ def canonical_model(name: str) -> str:
     Manifest filenames cannot carry the ``/`` of a Hub id, so the bucket writes
     ``openai-whisper-large-v3`` for ``openai/whisper-large-v3``. Folding the
     separator and case here lets either form be given on the command line.
-    :func:`normalizer.to_hub_id` is the inverse, used when writing the outputs.
+    :func:`normalizer.to_hub_ids` is the inverse, used when writing the outputs.
     """
     return name.replace("/", "-").lower()
-
-
-def hub_ids(models: list[str]) -> dict[str, str]:
-    """Map each bucket model name to the Hub id to report it under.
-
-    The bucket name is written by replacing ``/`` with ``-``, which is lossy, so
-    the inverse leans on a table of hyphenated orgs. A gap in that table could
-    map two bucket names onto one Hub id and silently merge their rows; report
-    that and keep the bucket names rather than emit a corrupted file.
-    """
-    out = {model: to_hub_id(model) for model in models}
-    collisions = collections.Counter(out.values())
-    clashing = sorted(hub for hub, n in collisions.items() if n > 1)
-    if clashing:
-        for hub in clashing:
-            sources = sorted(m for m, h in out.items() if h == hub)
-            print(f"  warning: {' and '.join(sources)} both map to {hub}; reporting bucket names")
-        return {model: model for model in models}
-    return out
 
 
 def resolve_model(name: str, scored: dict[str, str], skipped: list[tuple[str, str]]) -> str:
@@ -471,7 +452,7 @@ def main() -> None:
         "wer_corrected",
         "n_wer_clips",
     ]
-    hub = hub_ids(sorted(rates))
+    hub = to_hub_ids(sorted(rates))
     rows = []
     # Case-insensitive, so `nvidia/...` and `OpenMOSS-Team/...` interleave by name
     # rather than splitting into an upper-case block and a lower-case one.

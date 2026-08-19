@@ -14,16 +14,16 @@ or inference is required.
 
 Usage:
     # Sync the public results bucket, then score every model in it.
-    python ref_rendering/score_ref_rendering.py
+    python benchmark_fitting/score_ref_rendering.py
 
     # Score an already-downloaded copy of the predictions.
-    python ref_rendering/score_ref_rendering.py --preds_dir results
+    python benchmark_fitting/score_ref_rendering.py --preds_dir results
 
     # One dataset only.
-    python ref_rendering/score_ref_rendering.py --preds_dir results --datasets voxpopuli_test
+    python benchmark_fitting/score_ref_rendering.py --preds_dir results --datasets voxpopuli_test
 
     # One model, printing its CSV line per dataset instead of writing files.
-    python ref_rendering/score_ref_rendering.py --preds_dir results --model openai/whisper-large-v3
+    python benchmark_fitting/score_ref_rendering.py --preds_dir results --model openai/whisper-large-v3
 
 Writes `ref_rendering_<dataset>.csv` (one row per model) into `--out_dir`.
 """
@@ -43,6 +43,10 @@ from ref_rendering_utils import REPORTED_CLASSES, score_pairs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from normalizer import to_hub_ids  # noqa: E402  (needs REPO_ROOT on sys.path)
 
 DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
 
@@ -144,6 +148,7 @@ def canonical_model(name: str) -> str:
     Manifest filenames cannot carry the ``/`` of a Hub id, so the bucket writes
     ``openai-whisper-large-v3`` for ``openai/whisper-large-v3``. Folding the
     separator and case here lets either form be given on the command line.
+    :func:`normalizer.to_hub_ids` is the inverse, used when writing the outputs.
     """
     return name.replace("/", "-").lower()
 
@@ -190,7 +195,14 @@ def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None) -> Non
 
 
 def score_dataset(manifests: dict[str, str]) -> list[dict]:
-    """One row per model, sorted by descending agreement rate."""
+    """One row per model, ordered by Hub id, case-insensitively.
+
+    Rows are labelled with the Hub id the manifest was written from; the bucket
+    name is what the files are keyed by, and is only a spelling of it. Ordering
+    by name rather than by rate keeps a dataset's CSV diffable against the next
+    run and against its sibling datasets, and matches the VoxPopuli scorer.
+    """
+    hub = to_hub_ids(sorted(manifests))
     rows = []
     for model in sorted(manifests):
         pairs = []
@@ -203,16 +215,23 @@ def score_dataset(manifests: dict[str, str]) -> list[dict]:
         # A model with no eligible span has no rate; an empty cell keeps it
         # distinguishable from a model that agreed at none of its spans.
         if scored[1] == 0:
-            out = {"model": model, "rate": "", "n": 0}
+            out = {"model": hub[model], "rate": "", "n": 0}
         else:
-            out = {"model": model, "rate": scored[0] / scored[1], "n": scored[1]}
+            out = {"model": hub[model], "rate": scored[0] / scored[1], "n": scored[1]}
         for cls in REPORTED_CLASSES:
             k, n = agg["by_class"][cls]
             out[f"{cls}_rate"] = k / n if n else 0.0
             out[f"{cls}_n"] = n
         rows.append(out)
-    rows.sort(key=lambda r: (r["rate"] == "", -(r["rate"] or 0.0)))
+    # Exact id as a tiebreak, so the order stays deterministic if two Hub ids
+    # ever differ only in case.
+    rows.sort(key=lambda r: (r["model"].lower(), r["model"]))
     return rows
+
+
+def by_rate(rows: list[dict]) -> list[dict]:
+    """``rows`` ranked best-first, with the models that had no eligible span last."""
+    return sorted(rows, key=lambda r: (r["rate"] == "", -(r["rate"] or 0.0)))
 
 
 FIELDNAMES = ["model", "rate", "n"] + [
@@ -323,7 +342,8 @@ def main() -> None:
             writer.writerow(FIELDNAMES)
             writer.writerows(csv_row(row) for row in rows)
             continue
-        for i, row in enumerate(rows[:10], 1):
+        print("  top 10 by rate:")
+        for i, row in enumerate(by_rate(rows)[:10], 1):
             print(
                 f"{i:3} {row['model'][:48]:48} {row['rate']:.3f} n={row['n']}"
                 if row["rate"] != ""
