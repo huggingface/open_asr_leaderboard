@@ -101,6 +101,11 @@ You can also specify your own model and its performance as such:
 
 ![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
 
+# Benchmark fitting
+
+The `benchmark_fitting` folder contains scripts to measure whether a model overfits reference transcripts in the test sets. See
+[`benchmark_fitting/README.md`](benchmark_fitting/README.md) for more information.
+
 # Contributing a model or dataset
 
 Please follow the [pull request template](./.github/PULL_REQUEST_TEMPLATE.md); it contains a submission checklist and guidelines.
