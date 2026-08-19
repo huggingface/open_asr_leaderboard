@@ -1,4 +1,6 @@
-# VoxPopuli reference error agreement
+# Benchmark fitting
+
+## VoxPopuli reference error agreement
 
 VoxPopuli's English references come from parliamentary records and sometimes
 disagree with the audio. The leaderboard already reports WER against human
@@ -51,13 +53,13 @@ come from one clip, so the counts should not be treated as independent trials.
 pip install -r requirements/requirements_jobs.txt
 
 # Sync the public results bucket and score every model.
-python ref_errors/score_ref_errors.py --bucket hf-audio/asr_leaderboard_h200
+python benchmark_fitting/score_voxpopuli_ref_errors.py --bucket hf-audio/asr_leaderboard_h200
 
 # Or score an existing download.
-python ref_errors/score_ref_errors.py --preds_dir results
+python benchmark_fitting/score_voxpopuli_ref_errors.py --preds_dir results
 
 # Score a single model, by Hub id, bucket id, or a unique substring of either.
-python ref_errors/score_ref_errors.py --preds_dir results --model openai/whisper-large-v3
+python benchmark_fitting/score_voxpopuli_ref_errors.py --preds_dir results --model openai/whisper-large-v3
 ```
 
 Manifest filenames cannot carry the `/` of a Hub id, so the bucket writes

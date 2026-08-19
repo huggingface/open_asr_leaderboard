@@ -20,13 +20,13 @@ manifests carries the correction. Hypotheses are read from the
 
 Usage:
     # Sync the public results bucket, then score every model in it.
-    python ref_errors/score_ref_errors.py
+    python benchmark_fitting/score_voxpopuli_ref_errors.py
 
     # Score an already-downloaded copy of the predictions.
-    python ref_errors/score_ref_errors.py --preds_dir results
+    python benchmark_fitting/score_voxpopuli_ref_errors.py --preds_dir results
 
     # Score a single model and print its CSV line instead of writing files.
-    python ref_errors/score_ref_errors.py --preds_dir results --model openai/whisper-large-v3
+    python benchmark_fitting/score_voxpopuli_ref_errors.py --preds_dir results --model openai/whisper-large-v3
 
 Each model is also scored for WER against both references over the same clips, so
 the difference between the two is the WER penalty the official reference's errors

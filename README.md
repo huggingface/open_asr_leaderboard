@@ -101,11 +101,10 @@ You can also specify your own model and its performance as such:
 
 ![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
 
-# Reference error agreement
+# Benchmark fitting
 
-`ref_errors/` measures whether models reproduce known errors in VoxPopuli's
-official references instead of human corrections. See
-[`ref_errors/README.md`](ref_errors/README.md).
+The `benchmark_fitting` folder contains scripts to measure whether a model overfits reference transcripts in the test sets. See
+[`benchmark_fitting/README.md`](benchmark_fitting/README.md) for more information.
 
 # Contributing a model or dataset
 
