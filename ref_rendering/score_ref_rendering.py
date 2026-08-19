@@ -22,6 +22,9 @@ Usage:
     # One dataset only.
     python ref_rendering/score_ref_rendering.py --preds_dir results --datasets voxpopuli_test
 
+    # One model, printing its CSV line per dataset instead of writing files.
+    python ref_rendering/score_ref_rendering.py --preds_dir results --model openai/whisper-large-v3
+
 Writes `ref_rendering_<dataset>.csv` (one row per model) into `--out_dir`.
 """
 
@@ -46,16 +49,14 @@ DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
 # The English short-form sets, whose references the English normalizer applies
 # to. Longest match wins when a manifest name is matched against these.
 SHORT_FORM_DATASETS = (
-    "ami_test",
     "ami_cleaned_test",
     "earnings22_test",
-    "gigaspeech_test",
     "gigaspeech_cleaned_test",
     "librispeech_test.clean",
     "librispeech_test.other",
     "spgispeech_test",
-    "tedlium_test",
     "voxpopuli_test",
+    "voxpopuli_cleaned_aa_test",
 )
 
 # Manifest names in the results bucket, e.g.
@@ -137,6 +138,40 @@ def find_manifests(root: str, dataset: str) -> dict[str, str]:
     return out
 
 
+def canonical_model(name: str) -> str:
+    """A model name in the form the results bucket uses.
+
+    Manifest filenames cannot carry the ``/`` of a Hub id, so the bucket writes
+    ``openai-whisper-large-v3`` for ``openai/whisper-large-v3``. Folding the
+    separator and case here lets either form be given on the command line.
+    """
+    return name.replace("/", "-").lower()
+
+
+def resolve_model(name: str, available: dict[str, str]) -> str:
+    """Match ``name`` against the models that have a manifest.
+
+    Exact match first, then a unique substring match, both up to
+    :func:`canonical_model`, so a model can be named by its Hub id, its bucket
+    id, or an abbreviation of either. Anything else is an error: silently
+    scoring the wrong model is worse than stopping.
+    """
+    if name in available:
+        return name
+    query = canonical_model(name)
+    exact = sorted(model for model in available if canonical_model(model) == query)
+    if exact:
+        return exact[0]
+    matches = sorted(model for model in available if query in canonical_model(model))
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        listed = "\n  ".join(matches)
+        sys.exit(f"--model {name!r} matches {len(matches)} models:\n  {listed}")
+    listed = "\n  ".join(sorted(available))
+    sys.exit(f"--model {name!r} matches no model with a manifest. Available:\n  {listed}")
+
+
 def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None) -> None:
     """Sync an HF bucket to a local directory using the `hf` CLI."""
     bucket_url = f"hf://buckets/{bucket}"
@@ -185,18 +220,20 @@ FIELDNAMES = ["model", "rate", "n"] + [
 ]
 
 
+def csv_row(row: dict) -> list:
+    """One row in output order. Counts and the model id stay verbatim; a missing
+    rate stays empty."""
+    return [
+        row[k] if k == "model" or k == "n" or k.endswith("_n") or row[k] == "" else f"{row[k]:.6f}"
+        for k in FIELDNAMES
+    ]
+
+
 def write_csv(path: str, rows: list[dict]) -> None:
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(FIELDNAMES)
-        for row in rows:
-            # Counts and the model id stay verbatim; a missing rate stays empty.
-            writer.writerow(
-                [
-                    row[k] if k == "model" or k == "n" or k.endswith("_n") or row[k] == "" else f"{row[k]:.6f}"
-                    for k in FIELDNAMES
-                ]
-            )
+        writer.writerows(csv_row(row) for row in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +262,13 @@ def main() -> None:
         default=None,
         help="Comma-separated dataset tags. Default: every English short-form set found.",
     )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Score only this model and print its CSV line per dataset to stdout instead of "
+        "writing the output files. Accepts the Hub id (openai/whisper-large-v3), the bucket id "
+        "(openai-whisper-large-v3), or a unique substring of either.",
+    )
     args = parser.parse_args()
 
     if args.preds_dir:
@@ -247,13 +291,38 @@ def main() -> None:
     if not datasets:
         sys.exit("No short-form dataset manifests found; nothing to score.")
 
-    os.makedirs(args.out_dir, exist_ok=True)
+    by_dataset = {dataset: find_manifests(root, dataset) for dataset in datasets}
+
+    selected = None
+    if args.model:
+        # Every model is scored independently against the reference, so the row
+        # a single-model run prints is the row a full run would write for it.
+        available: dict[str, str] = {}
+        for manifests in by_dataset.values():
+            available.update(manifests)
+        selected = resolve_model(args.model, available)
+        print(f"scoring only {selected}")
+
+    if not selected:
+        os.makedirs(args.out_dir, exist_ok=True)
     for dataset in datasets:
-        manifests = find_manifests(root, dataset)
+        manifests = by_dataset[dataset]
         print(f"\n=== {dataset}: {len(manifests)} manifests")
         if not manifests:
             continue
+        if selected:
+            if selected not in manifests:
+                print(f"  no {selected} manifest for this dataset")
+                continue
+            manifests = {selected: manifests[selected]}
         rows = score_dataset(manifests)
+        if selected:
+            # A single-model run would otherwise overwrite each dataset's CSV
+            # with a one-row file; print the row instead, ready to paste in.
+            writer = csv.writer(sys.stdout)
+            writer.writerow(FIELDNAMES)
+            writer.writerows(csv_row(row) for row in rows)
+            continue
         for i, row in enumerate(rows[:10], 1):
             print(
                 f"{i:3} {row['model'][:48]:48} {row['rate']:.3f} n={row['n']}"
