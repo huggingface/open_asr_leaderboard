@@ -41,17 +41,15 @@ from __future__ import annotations
 import argparse
 import collections
 import csv
-import glob
 import json
 import os
 import re
-import subprocess
 import sys
-from collections import defaultdict
 
 from kaldialign import batch_error_rate
 
 from ref_error_utils import DEFAULTS, find_ref_errors, ref_error_agreement
+from utils import DEFAULT_BUCKET, find_manifests, read_manifest, resolve_model, sync_bucket
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -60,13 +58,8 @@ sys.path.insert(0, REPO_ROOT)
 
 from normalizer import to_hub_ids  # noqa: E402  (needs REPO_ROOT on sys.path)
 
-DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
 OFFICIAL_DATASET = "voxpopuli_test"
 CORRECTED_DATASET = "voxpopuli_cleaned_aa_test"
-
-# Manifest names in the results bucket, e.g.
-# MODEL_<model>_DATASET_hf-audio-open-asr-leaderboard_voxpopuli_test.jsonl
-BUCKET_RE = re.compile(r"^MODEL_(?P<model>.+?)_DATASET_(?P<dataset>.+)\.jsonl$")
 
 # Manifests written without audio file paths key their rows `sample_0`,
 # `sample_1`, ... . Those cannot be joined on the key, only on row order.
@@ -111,55 +104,8 @@ def normalize(text: str) -> str:
 REQUIRED_FIELDS = ("audio_filepath", "text", "pred_text")
 
 
-def read_manifest(path: str) -> list[dict]:
-    """Rows of a manifest, skipping any that lack a field this tool reads.
-
-    Contributed manifests are not uniformly well-formed; one bad row must not
-    abort a dataset that takes minutes to score.
-    """
-    out = []
-    malformed = 0
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                malformed += 1
-                continue
-            if isinstance(row, dict) and all(isinstance(row.get(k), str) for k in REQUIRED_FIELDS):
-                out.append(row)
-            else:
-                malformed += 1
-    if malformed:
-        print(f"  note: skipped {malformed} malformed rows in {path}")
-    return out
 
 
-def find_manifests(root: str, dataset: str) -> dict[str, str]:
-    """Map model name to its manifest for ``dataset``, under ``root``.
-
-    Handles both the results-bucket layout (``<model>/MODEL_<model>_DATASET_<...>_
-    <dataset>.jsonl``) and a flat per-dataset cache (``<dataset>/<model>.jsonl``).
-    """
-    out: dict[str, str] = {}
-    for path in sorted(glob.glob(os.path.join(root, "**", "*.jsonl"), recursive=True)):
-        base = os.path.basename(path)
-        match = BUCKET_RE.match(base)
-        if match:
-            if not match.group("dataset").endswith(dataset):
-                continue
-            model = match.group("model")
-        else:
-            if os.path.basename(os.path.dirname(path)) != dataset:
-                continue
-            model = base[: -len(".jsonl")]
-        if model in out:
-            print(f"  note: ignoring duplicate manifest for {model}: {path}")
-            continue
-        out[model] = path
-    return out
 
 
 def collect_references(manifests: dict[str, str], dataset: str) -> tuple[list[str], dict[str, str]]:
@@ -175,7 +121,7 @@ def collect_references(manifests: dict[str, str], dataset: str) -> tuple[list[st
     seen: set[str] = set()
     votes: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for path in manifests.values():
-        rows = read_manifest(path)
+        rows = read_manifest(path, REQUIRED_FIELDS)
         keys = [row["audio_filepath"] for row in rows]
         if any(key.startswith(OPAQUE_KEY_PREFIX) for key in keys):
             continue
@@ -208,7 +154,7 @@ def collect_hypotheses(
     skipped: list[tuple[str, str]] = []
 
     for model, path in manifests.items():
-        rows = read_manifest(path)
+        rows = read_manifest(path, REQUIRED_FIELDS)
         keys = [row["audio_filepath"] for row in rows]
         if not any(key.startswith(OPAQUE_KEY_PREFIX) for key in keys):
             hypotheses[model] = {row["audio_filepath"]: row["pred_text"] for row in rows}
@@ -218,7 +164,7 @@ def collect_hypotheses(
     for model, path in manifests.items():
         if model in hypotheses:
             continue
-        rows = read_manifest(path)
+        rows = read_manifest(path, REQUIRED_FIELDS)
         if len(rows) != len(keys_in_order):
             skipped.append((model, f"{len(rows)} rows, expected {len(keys_in_order)}"))
             continue
@@ -284,54 +230,10 @@ def score_wer(
     return out
 
 
-def canonical_model(name: str) -> str:
-    """A model name in the form the results bucket uses.
-
-    Manifest filenames cannot carry the ``/`` of a Hub id, so the bucket writes
-    ``openai-whisper-large-v3`` for ``openai/whisper-large-v3``. Folding the
-    separator and case here lets either form be given on the command line.
-    :func:`normalizer.to_hub_ids` is the inverse, used when writing the outputs.
-    """
-    return name.replace("/", "-").lower()
 
 
-def resolve_model(name: str, scored: dict[str, str], skipped: list[tuple[str, str]]) -> str:
-    """Match ``name`` against the models that have usable hypotheses.
-
-    Exact match first, then a unique substring match, both up to
-    :func:`canonical_model`, so a model can be named by its Hub id, its bucket
-    id, or an abbreviation of either. Anything else is an error: silently
-    scoring the wrong model is worse than stopping.
-    """
-    if name in scored:
-        return name
-    query = canonical_model(name)
-    exact = sorted(model for model in scored if canonical_model(model) == query)
-    if exact:
-        return exact[0]
-    matches = sorted(model for model in scored if query in canonical_model(model))
-    if len(matches) == 1:
-        return matches[0]
-    if len(matches) > 1:
-        listed = "\n  ".join(matches)
-        sys.exit(f"--model {name!r} matches {len(matches)} models:\n  {listed}")
-    for model, why in skipped:
-        if query in canonical_model(model):
-            sys.exit(f"--model {name!r} matches {model}, which has no usable hypotheses: {why}")
-    listed = "\n  ".join(sorted(scored))
-    sys.exit(f"--model {name!r} matches no scored model. Available:\n  {listed}")
 
 
-def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None) -> None:
-    """Sync an HF bucket to a local directory using the `hf` CLI."""
-    bucket_url = f"hf://buckets/{bucket}"
-    print(f"Syncing {bucket_url}  →  {local_dir} ...")
-    os.makedirs(local_dir, exist_ok=True)
-    env = os.environ.copy()
-    if hf_token:
-        env["HF_TOKEN"] = hf_token
-    subprocess.run(["hf", "buckets", "sync", bucket_url, local_dir], check=True, env=env)
-    print("Sync complete.\n")
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +296,7 @@ def main() -> None:
         # Edits come from diffing the two references, and each verdict is
         # decided from that model's hypothesis alone, so restricting the set
         # here yields exactly the row a full run would produce for it.
-        selected = resolve_model(args.model, hypotheses, skipped)
+        selected = resolve_model(args.model, hypotheses, skipped, what="scored model")
         hypotheses = {selected: hypotheses[selected]}
         print(f"scoring only {selected}")
 
@@ -428,8 +330,8 @@ def main() -> None:
             edit.clip_key = key
         edits.extend(clip_edits)
 
-    by_kind: dict[str, int] = defaultdict(int)
-    by_position: dict[str, int] = defaultdict(int)
+    by_kind: dict[str, int] = collections.defaultdict(int)
+    by_position: dict[str, int] = collections.defaultdict(int)
     for edit in edits:
         by_kind[edit.kind] += 1
         by_position[edit.position] += 1

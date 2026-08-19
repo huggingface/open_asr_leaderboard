@@ -1,5 +1,16 @@
 # Benchmark fitting
 
+Two scorers for whether a model's output fits a benchmark's reference beyond what
+transcribing the audio explains. Both read the same published prediction
+manifests and need no audio and no inference.
+
+| file | |
+| --- | --- |
+| `score_voxpopuli_ref_errors.py` | section 1, with `ref_error_utils.py` |
+| `score_ref_rendering.py` | section 2, with `ref_rendering_utils.py` |
+| `show_flagged_spans.py` | inspects the individual spans section 2 scores |
+| `utils.py` | shared by both scorers: locating, reading and naming manifests |
+
 ## 1. VoxPopuli reference error agreement
 
 VoxPopuli's English references come from parliamentary records and sometimes
@@ -47,7 +58,7 @@ The output reports denominators and eligible clip counts, but not confidence
 intervals, matching the leaderboard's WER and RTFx outputs. Several edits can
 come from one clip, so the counts should not be treated as independent trials.
 
-#### Reproduce
+#### Usage
 
 ```bash
 pip install -r requirements/requirements_jobs.txt
@@ -155,7 +166,7 @@ words. Results are reported per dataset with the eligible count and class
 breakdown. This is a diagnostic of reference-convention agreement, not proof of
 training-set contamination.
 
-#### Run
+#### Usage
 
 ```bash
 pip install -r requirements/requirements_jobs.txt

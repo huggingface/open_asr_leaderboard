@@ -30,7 +30,10 @@ if REPO_ROOT not in sys.path:
 
 from normalizer import to_hub_ids  # noqa: E402  (needs REPO_ROOT on sys.path)
 from ref_rendering_utils import REPORTED_CLASSES, flagged_spans_for, score_clip
-from score_ref_rendering import find_manifests, read_manifest
+# find_manifests from the rendering scorer, whose dataset resolution this shares;
+# read_manifest is the shared one.
+from score_ref_rendering import find_manifests
+from utils import read_manifest
 
 CONTEXT_WORDS = 6
 

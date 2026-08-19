@@ -335,13 +335,14 @@ def ref_error_agreement(edits: list[RefEdit]) -> dict[str, dict]:
             tally[model] = [k + (verdict == "ref"), n + 1]
             clips.setdefault(model, set()).add(edit.clip_key)
 
-    out = {}
-    for model, (k, n) in tally.items():
-        n_clips = len(clips[model]) or 1
-        out[model] = {
-            "rate": k / n if n else 0.0,
+    # A model enters `tally` and `clips` in the same step, so by the time it is
+    # read back `n` is at least 1 and its clip set is non-empty.
+    return {
+        model: {
+            "rate": k / n,
             "n_ref": k,
             "n_eligible": n,
-            "n_clips": n_clips,
+            "n_clips": len(clips[model]),
         }
-    return out
+        for model, (k, n) in tally.items()
+    }

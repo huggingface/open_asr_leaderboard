@@ -33,13 +33,12 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
-import json
 import os
-import re
-import subprocess
 import sys
 
 from ref_rendering_utils import REPORTED_CLASSES, score_pairs
+from utils import BUCKET_RE, DEFAULT_BUCKET, read_manifest, resolve_model, sync_bucket
+from utils import find_manifests as _find_manifests
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -47,8 +46,6 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from normalizer import to_hub_ids  # noqa: E402  (needs REPO_ROOT on sys.path)
-
-DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
 
 # The English short-form sets, whose references the English normalizer applies
 # to. Longest match wins when a manifest name is matched against these.
@@ -65,7 +62,6 @@ SHORT_FORM_DATASETS = (
 
 # Manifest names in the results bucket, e.g.
 # MODEL_<model>_DATASET_hf-audio-open-asr-leaderboard_voxpopuli_test.jsonl
-BUCKET_RE = re.compile(r"^MODEL_(?P<model>.+?)_DATASET_(?P<dataset>.+)\.jsonl$")
 
 
 # ---------------------------------------------------------------------------
@@ -73,25 +69,6 @@ BUCKET_RE = re.compile(r"^MODEL_(?P<model>.+?)_DATASET_(?P<dataset>.+)\.jsonl$")
 # ---------------------------------------------------------------------------
 
 
-def read_manifest(path: str) -> list[dict]:
-    out = []
-    malformed = 0
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                malformed += 1
-                continue
-            if isinstance(row, dict):
-                out.append(row)
-            else:
-                malformed += 1
-    if malformed:
-        print(f"  note: skipped {malformed} malformed rows in {path}")
-    return out
 
 
 def _dataset_tag(name: str, datasets) -> str | None:
@@ -118,75 +95,21 @@ def discover_datasets(root: str) -> list[str]:
 
 
 def find_manifests(root: str, dataset: str) -> dict[str, str]:
-    """Map model name to its manifest for ``dataset``, under ``root``.
+    """Manifests for one short-form dataset, under ``root``.
 
-    Handles both the results-bucket layout (``<model>/MODEL_<model>_DATASET_<...>_
-    <dataset>.jsonl``) and a flat per-dataset cache (``<dataset>/<model>.jsonl``).
+    :func:`utils.find_manifests` with this scorer's dataset resolution: a name is
+    matched against the known tags longest-first, so ``voxpopuli_cleaned_aa_test``
+    is not read as a ``voxpopuli_test`` manifest, and longform runs are excluded.
     """
-    out: dict[str, str] = {}
-    for path in sorted(glob.glob(os.path.join(root, "**", "*.jsonl"), recursive=True)):
-        base = os.path.basename(path)
-        match = BUCKET_RE.match(base)
-        if match:
-            if _dataset_tag(match.group("dataset"), SHORT_FORM_DATASETS) != dataset:
-                continue
-            model = match.group("model")
-        else:
-            if os.path.basename(os.path.dirname(path)) != dataset:
-                continue
-            model = base[: -len(".jsonl")]
-        if model in out:
-            print(f"  note: ignoring duplicate manifest for {model}: {path}")
-            continue
-        out[model] = path
-    return out
+    return _find_manifests(
+        root, dataset, dataset_of=lambda group: _dataset_tag(group, SHORT_FORM_DATASETS)
+    )
 
 
-def canonical_model(name: str) -> str:
-    """A model name in the form the results bucket uses.
-
-    Manifest filenames cannot carry the ``/`` of a Hub id, so the bucket writes
-    ``openai-whisper-large-v3`` for ``openai/whisper-large-v3``. Folding the
-    separator and case here lets either form be given on the command line.
-    :func:`normalizer.to_hub_ids` is the inverse, used when writing the outputs.
-    """
-    return name.replace("/", "-").lower()
 
 
-def resolve_model(name: str, available: dict[str, str]) -> str:
-    """Match ``name`` against the models that have a manifest.
-
-    Exact match first, then a unique substring match, both up to
-    :func:`canonical_model`, so a model can be named by its Hub id, its bucket
-    id, or an abbreviation of either. Anything else is an error: silently
-    scoring the wrong model is worse than stopping.
-    """
-    if name in available:
-        return name
-    query = canonical_model(name)
-    exact = sorted(model for model in available if canonical_model(model) == query)
-    if exact:
-        return exact[0]
-    matches = sorted(model for model in available if query in canonical_model(model))
-    if len(matches) == 1:
-        return matches[0]
-    if len(matches) > 1:
-        listed = "\n  ".join(matches)
-        sys.exit(f"--model {name!r} matches {len(matches)} models:\n  {listed}")
-    listed = "\n  ".join(sorted(available))
-    sys.exit(f"--model {name!r} matches no model with a manifest. Available:\n  {listed}")
 
 
-def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None) -> None:
-    """Sync an HF bucket to a local directory using the `hf` CLI."""
-    bucket_url = f"hf://buckets/{bucket}"
-    print(f"Syncing {bucket_url}  →  {local_dir} ...")
-    os.makedirs(local_dir, exist_ok=True)
-    env = os.environ.copy()
-    if hf_token:
-        env["HF_TOKEN"] = hf_token
-    subprocess.run(["hf", "buckets", "sync", bucket_url, local_dir], check=True, env=env)
-    print("Sync complete.\n")
 
 
 # ---------------------------------------------------------------------------
