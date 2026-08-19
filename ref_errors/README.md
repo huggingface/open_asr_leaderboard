@@ -78,11 +78,22 @@ The scorer needs prediction manifests for both `voxpopuli_test` and
 
 | column | meaning |
 | --- | --- |
-| `model` | model id from the results bucket |
+| `model` | Hub id, e.g. `microsoft/Phi-4-multimodal-instruct` |
 | `rate` | `n_ref / n_eligible` |
 | `n_ref` | spans matching the original reference |
 | `n_eligible` | spans matching either reference, namely (ref + consensus) above |
 | `n_clips` | clips contributing eligible spans |
+| `wer_official` | WER % against the original reference |
+| `wer_corrected` | WER % against the human correction |
+| `n_wer_clips` | clips both WERs are computed over |
+
+The two WERs are computed over one and the same clip set — every clip the model
+has a hypothesis for and both references cover — with `kaldialign.batch_error_rate`
+and `merge_compounds=True`, the call the leaderboard's own WER is computed with.
+They therefore differ only in which reference they score against, so
+`wer_official - wer_corrected` is the WER penalty the original reference's errors
+impose on that model. It is an aggregate over the 628-clip subset, not comparable
+to the leaderboard's `voxpopuli_test` column, which covers the full split.
 
 `edits_voxpopuli.jsonl` records every disagreement with its clip key, location,
 original and corrected spans, distance, and per-model verdicts so results can be

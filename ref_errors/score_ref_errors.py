@@ -28,6 +28,10 @@ Usage:
     # Score a single model and print its CSV line instead of writing files.
     python ref_errors/score_ref_errors.py --preds_dir results --model openai/whisper-large-v3
 
+Each model is also scored for WER against both references over the same clips, so
+the difference between the two is the WER penalty the official reference's errors
+impose on it.
+
 Outputs `ref_error_agreement_voxpopuli.csv` (one row per model) and
 `edits_voxpopuli.jsonl` (one row per disagreement) in `--out_dir`.
 """
@@ -45,12 +49,16 @@ import subprocess
 import sys
 from collections import defaultdict
 
+from kaldialign import batch_error_rate
+
 from ref_error_utils import DEFAULTS, find_ref_errors, ref_error_agreement
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
 # Allow importing the repo's normalizer regardless of where this is called from.
 sys.path.insert(0, REPO_ROOT)
+
+from normalizer import to_hub_id  # noqa: E402  (needs REPO_ROOT on sys.path)
 
 DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
 OFFICIAL_DATASET = "voxpopuli_test"
@@ -223,14 +231,87 @@ def collect_hypotheses(
     return hypotheses, skipped
 
 
+# ---------------------------------------------------------------------------
+# Word error rate
+# ---------------------------------------------------------------------------
+
+
+def corpus_wer(pairs: list[tuple[str, str]]) -> float | None:
+    """Corpus WER over already-normalized ``(reference, hypothesis)`` pairs.
+
+    ``kaldialign.batch_error_rate`` with ``merge_compounds=True``: the same call
+    ``api/run_eval.py`` makes, so these numbers sit on the leaderboard's scale
+    rather than on a second, subtly different one. Corpus-level — total errors
+    over total reference words — not a mean of per-clip rates.
+    """
+    if not pairs:
+        return None
+    refs = [tuple(ref.split()) for ref, _ in pairs]
+    hyps = [tuple(hyp.split()) for _, hyp in pairs]
+    return 100 * batch_error_rate(refs, hyps, merge_compounds=True)["err_rate"]
+
+
+def score_wer(
+    keys: list[str],
+    official: dict[str, str],
+    corrected: dict[str, str],
+    hypotheses: dict[str, dict[str, str]],
+) -> dict[str, dict]:
+    """Each model's WER against both references, over one shared clip set.
+
+    A model is scored on the clips it has a hypothesis for and both references
+    cover, and both WERs are computed over exactly that set. The two therefore
+    differ only in which reference they score against, so their difference is
+    the cost the official reference's errors impose on that model.
+    """
+    out: dict[str, dict] = {}
+    for model, by_key in hypotheses.items():
+        official_pairs: list[tuple[str, str]] = []
+        corrected_pairs: list[tuple[str, str]] = []
+        for key in keys:
+            hyp = by_key.get(key)
+            # An empty reference contributes no words to the denominator but
+            # would still charge insertions; drop it from both sides alike.
+            if hyp is None or not official[key] or not corrected[key]:
+                continue
+            official_pairs.append((official[key], hyp))
+            corrected_pairs.append((corrected[key], hyp))
+        out[model] = {
+            "wer_official": corpus_wer(official_pairs),
+            "wer_corrected": corpus_wer(corrected_pairs),
+            "n_wer_clips": len(official_pairs),
+        }
+    return out
+
+
 def canonical_model(name: str) -> str:
     """A model name in the form the results bucket uses.
 
     Manifest filenames cannot carry the ``/`` of a Hub id, so the bucket writes
     ``openai-whisper-large-v3`` for ``openai/whisper-large-v3``. Folding the
     separator and case here lets either form be given on the command line.
+    :func:`normalizer.to_hub_id` is the inverse, used when writing the outputs.
     """
     return name.replace("/", "-").lower()
+
+
+def hub_ids(models: list[str]) -> dict[str, str]:
+    """Map each bucket model name to the Hub id to report it under.
+
+    The bucket name is written by replacing ``/`` with ``-``, which is lossy, so
+    the inverse leans on a table of hyphenated orgs. A gap in that table could
+    map two bucket names onto one Hub id and silently merge their rows; report
+    that and keep the bucket names rather than emit a corrupted file.
+    """
+    out = {model: to_hub_id(model) for model in models}
+    collisions = collections.Counter(out.values())
+    clashing = sorted(hub for hub, n in collisions.items() if n > 1)
+    if clashing:
+        for hub in clashing:
+            sources = sorted(m for m, h in out.items() if h == hub)
+            print(f"  warning: {' and '.join(sources)} both map to {hub}; reporting bucket names")
+        return {model: model for model in models}
+    return out
 
 
 def resolve_model(name: str, scored: dict[str, str], skipped: list[tuple[str, str]]) -> str:
@@ -336,22 +417,26 @@ def main() -> None:
         hypotheses = {selected: hypotheses[selected]}
         print(f"scoring only {selected}")
 
+    # Normalize once up front: the edit finder and the WER pass below must see
+    # the same text, and re-normalizing per pass would double the cost of the run.
+    norm_official = {key: normalize(official_ref[key]) for key in keys}
+    norm_corrected = {key: normalize(corrected_ref[key]) for key in keys}
+    norm_hyps = {
+        model: {key: normalize(by_key[key]) for key in keys if key in by_key}
+        for model, by_key in hypotheses.items()
+    }
+
     edits = []
     for key in keys:
-        ref_tokens = normalize(official_ref[key]).split()
+        ref_tokens = norm_official[key].split()
         if not ref_tokens:
             continue
-        model_hyps = {}
-        for model, by_key in hypotheses.items():
-            hyp = by_key.get(key)
-            if hyp is None:
-                continue
-            model_hyps[model] = normalize(hyp)
+        model_hyps = {model: by_key[key] for model, by_key in norm_hyps.items() if key in by_key}
         if not model_hyps:
             continue
         clip_edits = find_ref_errors(
             ref_tokens,
-            normalize(corrected_ref[key]),
+            norm_corrected[key],
             model_hyps,
             min_run_len=DEFAULTS["min_run_len"],
             include_middle=DEFAULTS["include_middle"],
@@ -374,17 +459,38 @@ def main() -> None:
     rates = ref_error_agreement(edits)
     print(f"models scored: {len(rates)}")
 
-    header = ["model", "rate", "n_ref", "n_eligible", "n_clips"]
-    rows = [
-        [
-            model,
-            f"{rates[model]['rate']:.4f}",
-            rates[model]["n_ref"],
-            rates[model]["n_eligible"],
-            rates[model]["n_clips"],
-        ]
-        for model in sorted(rates)
+    wers = score_wer(keys, norm_official, norm_corrected, norm_hyps)
+
+    header = [
+        "model",
+        "rate",
+        "n_ref",
+        "n_eligible",
+        "n_clips",
+        "wer_official",
+        "wer_corrected",
+        "n_wer_clips",
     ]
+    hub = hub_ids(sorted(rates))
+    rows = []
+    # Case-insensitive, so `nvidia/...` and `OpenMOSS-Team/...` interleave by name
+    # rather than splitting into an upper-case block and a lower-case one.
+    for model in sorted(rates, key=lambda m: (hub[m].lower(), hub[m])):
+        wer = wers.get(model, {})
+        rows.append(
+            [
+                hub[model],
+                f"{rates[model]['rate']:.4f}",
+                rates[model]["n_ref"],
+                rates[model]["n_eligible"],
+                rates[model]["n_clips"],
+                # Blank rather than 0 when a model has no scorable clip: an
+                # absent WER is not a perfect one.
+                "" if wer.get("wer_official") is None else f"{wer['wer_official']:.2f}",
+                "" if wer.get("wer_corrected") is None else f"{wer['wer_corrected']:.2f}",
+                wer.get("n_wer_clips", 0),
+            ]
+        )
 
     if args.model:
         # A single-model run would otherwise overwrite a full run's outputs with
@@ -418,7 +524,8 @@ def main() -> None:
                         "corrected_span": edit.corrected_text,
                         "ref_indices": edit.ref_indices,
                         "span_distance": edit.consensus_distance,
-                        "verdict": edit.verdict,
+                        # Keyed by Hub id, to match the CSV's model column.
+                        "verdict": {hub.get(m, m): v for m, v in edit.verdict.items()},
                     },
                     ensure_ascii=False,
                 )
