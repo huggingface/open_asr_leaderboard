@@ -1,8 +1,6 @@
 # Benchmark fitting
 
-Two scorers for whether a model's output fits a benchmark's reference beyond what
-transcribing the audio explains. Both read the same published prediction
-manifests and need no audio and no inference.
+Two scorers for whether a model's output fits a benchmark's reference beyond what transcribing the audio explains. Both read the same published prediction manifests from [this HF Bucket](https://huggingface.co/buckets/hf-audio/asr_leaderboard_h200), and need no audio and no inference.
 
 | file | |
 | --- | --- |
