@@ -3,7 +3,7 @@ set -euo pipefail
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-moss-transcribe-diarize}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MODEL_ID="${MODEL_ID:-OpenMOSS-Team/MOSS-Transcribe-Diarize}"
@@ -15,9 +15,11 @@ WARMUP_STEPS="${WARMUP_STEPS:-1}"
 BATCH_SIZE="${BATCH_SIZE:-256}"
 JOB_TIMEOUT="${JOB_TIMEOUT:-8h}"
 
+# Datasets: "name split [dataset_path]"; dataset_path defaults to
+# $DEFAULT_DATASET_PATH when omitted.
 DATASET_CONFIGS=(
     "ami_cleaned test"
-    "earnings22 test"
+    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test"
     "librispeech test.clean"
     "librispeech test.other"
@@ -59,8 +61,9 @@ fi
 
 pids=()
 for config in "${DATASET_CONFIGS[@]}"; do
-    read -r dataset split <<< "${config}"
-    echo "Submitting model=${MODEL_ID} dataset=${dataset} split=${split} batch_size=${BATCH_SIZE}"
+    read -r dataset split dataset_path <<< "${config}"
+    dataset_path="${dataset_path:-$DEFAULT_DATASET_PATH}"
+    echo "Submitting model=${MODEL_ID} dataset_path=${dataset_path} dataset=${dataset} split=${split} batch_size=${BATCH_SIZE}"
 
     (
         hf jobs run \
@@ -78,7 +81,7 @@ for config in "${DATASET_CONFIGS[@]}"; do
                 PYTHONPATH=/app python run_eval.py \
                     --model_id='${MODEL_ID}' \
                     --model_revision='${MODEL_REVISION}' \
-                    --dataset_path='${DATASET_PATH}' \
+                    --dataset_path='${dataset_path}' \
                     --dataset='${dataset}' \
                     --split='${split}' \
                     --device=0 \

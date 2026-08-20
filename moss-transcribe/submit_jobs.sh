@@ -5,9 +5,30 @@
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-moss-transcribe}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
+# committed to the Space (useful for iterating without pushing to the Space).
+USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+LOCAL_SCRIPT_INJECT=""
+if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
+fi
+
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
+USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
+LOCAL_NORMALIZER_INJECT=""
+if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
+    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
+    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
+fi
 
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
@@ -17,11 +38,12 @@ MODEL_CONFIGS=(
 # Pin the model repo revision for trust_remote_code stability (in case remote code changes).
 MODEL_REVISION="${MODEL_REVISION:-c4b3988677df13c14e79d9db59f356ed761db366}"
 
-# ── Datasets: "name split batch_size" ────────────────────────────────────────
+# ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
+# dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
 DATASET_CONFIGS=(
     "voxpopuli_cleaned_aa test 128"
     "ami_cleaned test 128"
-    "earnings22 test 128"
+    "earnings22_cleaned_aa_chunked test 128 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test 128"
     "librispeech test.clean 128"
     "librispeech test.other 128"
@@ -37,9 +59,10 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT BATCH_SIZE <<< "$cfg"
+        read -r DATASET SPLIT BATCH_SIZE DATASET_PATH <<< "$cfg"
+        DATASET_PATH="${DATASET_PATH:-$DEFAULT_DATASET_PATH}"
 
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -53,6 +76,8 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
+                ${LOCAL_NORMALIZER_INJECT}
+                ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
                     --model_revision=${MODEL_REVISION} \
@@ -89,7 +114,6 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
         echo "All ${ACTUAL} result files present."
     fi
 
-    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
     PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
 score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')

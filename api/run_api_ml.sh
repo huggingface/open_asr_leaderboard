@@ -67,6 +67,10 @@ LEXICAL_DATASETS="mls-it"
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
 
+# Create the bind-mount sources up front: Docker would otherwise create them
+# as root, and the containers run as the current user (see --user below).
+mkdir -p "${RUNDIR}/results" "${HF_CACHE_DIR}"
+
 echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
 docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
 

@@ -1,34 +1,80 @@
 """
-Self-speculative decoding for Speech LLMs.
+Cascade ASR BPE: Self-speculative decoding with dual-head CTC BPE encoder.
+Based on v32 - replaces grapheme CTC draft with BPE CTC draft.
+
+The full Granite Speech encoder already has grapheme out/out_mid heads; only out_llm
+(BPE linear head) needs to be loaded separately from the dual-head encoder safetensors.
+
+Single encoder pass: embeddings from the CTC draft step are reused for verify/fallback.
+Importance for posterior_weighted_pool uses mid-layer (layer num_layers//2) grapheme
+blank probability, captured via a forward hook on the encoder.
 """
 
 import argparse
 import math
 import os
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import evaluate
 from normalizer import data_utils
 import time
 from tqdm import tqdm
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, models
+from safetensors.torch import load_file
+from huggingface_hub import hf_hub_download
 
 assert hasattr(models, "granite_speech")
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
 
+LLM_DOWNSAMPLE_WINDOW = 4
+LLM_OUT_DIM = 100353  # 100352 Granite BPE tokens + 1 CTC blank (label 0)
+
+
+def posterior_weighted_pool(hidden, importance, window_size=4):
+    """Importance-weighted downsampling. importance[b,t] = 1 - blank_prob."""
+    B, T, D = hidden.shape
+    pad_len = (window_size - T % window_size) % window_size
+    if pad_len > 0:
+        hidden = F.pad(hidden, (0, 0, 0, pad_len))
+        importance = F.pad(importance, (0, pad_len))
+    num_windows = hidden.shape[1] // window_size
+    hidden = hidden.view(B, num_windows, window_size, D)
+    importance = importance.view(B, num_windows, window_size)
+    weights = importance / (importance.sum(dim=-1, keepdim=True) + 1e-8)
+    return (hidden * weights.unsqueeze(-1)).sum(dim=2), window_size
+
 
 def main(args):
     device = f"cuda:{args.device}" if args.device >= 0 else "cpu"
 
+    # Full Granite Speech model
     processor = AutoProcessor.from_pretrained(args.model_id)
     tokenizer = processor.tokenizer
     model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16).to(device)
     model.eval()
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
-
     logits_scaling = getattr(model.language_model.config, 'logits_scaling', 1.0)
+
+    # BPE CTC head (loaded separately, plugs on top of model.encoder)
+    out_llm = nn.Linear(model.encoder.config.hidden_dim, LLM_OUT_DIM, bias=True)
+    llm_weights = load_file(hf_hub_download(repo_id=args.model_id, filename="out_llm.safetensors"))
+    out_llm.load_state_dict(llm_weights)
+    out_llm.to(torch.bfloat16).eval().to(device)
+
+    # Forward hook to capture mid-layer hidden state for importance weighting.
+    # The dual-head encoder applies grapheme feedback at layer num_layers//2; we hook
+    # the output of that layer (before feedback addition) to compute blank probability.
+    num_enc_layers = model.encoder.config.num_layers
+    mid_layer_idx = num_enc_layers // 2 - 1  # 0-based index into model.encoder.layers
+    _mid_hidden = {}
+
+    def _save_mid_hidden(module, input, output):
+        _mid_hidden['h'] = output[0] if isinstance(output, tuple) else output
+
+    _hook = model.encoder.layers[mid_layer_idx].register_forward_hook(_save_mid_hidden)
 
     # ========== Chat Template Setup ==========
     text_instruction = "<|audio|>can you transcribe the speech into a written format?"
@@ -54,33 +100,72 @@ def main(args):
     ctc_threshold = args.ctc_threshold
 
     @torch.no_grad()
-    def ctc_decode(audios):
-        """CTC decode with entropy-based confidence."""
+    def ctc_decode_bpe(audios):
+        """BPE CTC draft: single encoder pass, reuse embeddings for verify/fallback."""
         texts = [text_prompt] * len(audios)
         model_inputs = processor(texts, audios, device=device, return_tensors="pt").to(device)
 
         with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16):
             encoder_output = model.encoder(model_inputs["input_features"])
-            embeddings = encoder_output.last_hidden_state if hasattr(encoder_output, 'last_hidden_state') else encoder_output
-            ctc_logits = model.encoder.out(embeddings)
-            ctc_probs = F.softmax(ctc_logits.float(), dim=-1)
+            # Full-resolution encoder hidden states — passed unchanged to model.projector
+            # for LLM verification and fallback; never modified by posterior_weighted_pool.
+            enc_hidden = encoder_output.last_hidden_state if hasattr(encoder_output, 'last_hidden_state') else encoder_output
 
-        _, idx_batch = ctc_probs.max(dim=-1)
-        entropy = -(ctc_probs * torch.log(ctc_probs + 1e-10)).sum(dim=-1)
+            # Mid-layer hidden state captured by hook; compute grapheme logits for importance
+            mid_h = _mid_hidden['h']
+            mid_grapheme_logits = model.encoder.out(mid_h)
+            grapheme_probs_mid = F.softmax(mid_grapheme_logits.float(), dim=-1)
+            importance = 1.0 - grapheme_probs_mid[:, :, 0]  # 1 - blank_prob
 
-        ctc_texts, ctc_entropies, embed_lengths = [], [], []
-        for i, idx in enumerate(idx_batch):
+            # Pool enc_hidden 4x for BPE CTC head only; enc_hidden itself is not subsampled
+            x_pooled, _ = posterior_weighted_pool(enc_hidden, importance, window_size=LLM_DOWNSAMPLE_WINDOW)
+
+            # Compute per-sample valid pooled lengths
+            # After pooling, T_pooled = ceil((T_enc + pad) / window_size)
+            # Valid frames for sample i: ceil(enc_len_i / window_size)
+            pooled_lengths = []
+            for i in range(len(audios)):
+                enc_len = len(audios[i]) // HOP_LENGTH // 2 + 1
+                enc_len = min(enc_len, enc_hidden.shape[1])
+                pooled_len = math.ceil(enc_len / LLM_DOWNSAMPLE_WINDOW)
+                pooled_lengths.append(min(pooled_len, x_pooled.shape[1]))
+
+            # Gather non-padded positions and apply BPE head
+            valid_positions = []
+            for i, plen in enumerate(pooled_lengths):
+                for t in range(plen):
+                    valid_positions.append((i, t))
+
+            batch_idx = torch.tensor([p[0] for p in valid_positions], device=device)
+            time_idx = torch.tensor([p[1] for p in valid_positions], device=device)
+            x_valid = x_pooled[batch_idx, time_idx, :]  # [N_valid, D]
+            bpe_logits_valid = out_llm(x_valid)  # [N_valid, LLM_OUT_DIM]
+            bpe_probs_valid = F.softmax(bpe_logits_valid.float(), dim=-1)  # [N_valid, V]
+
+        # Decode each sample from its slice of valid probs
+        bpe_texts, bpe_entropies, embed_lengths = [], [], []
+        offset = 0
+        for i in range(len(audios)):
+            plen = pooled_lengths[i]
+            probs_i = bpe_probs_valid[offset:offset + plen]  # [plen, V]
+            offset += plen
+
+            _, idx = probs_i.max(dim=-1)
+            entropy_i = -(probs_i * torch.log(probs_i + 1e-10)).sum(dim=-1)
+
             dedup = torch.unique_consecutive(idx, dim=-1)
-            non_blank = dedup[dedup > 0].tolist()
-            ctc_texts.append(''.join(chr(c) for c in non_blank))
-            ctc_entropies.append(entropy[i].max().item() if non_blank else float('inf'))
+            non_blank = dedup[dedup > 0]
+            token_ids = [t.item() - 1 for t in non_blank]  # label i -> Granite token (i-1)
+            text = tokenizer.decode(token_ids) if token_ids else ""
+            bpe_texts.append(text)
+            bpe_entropies.append(entropy_i.max().item() if token_ids else float('inf'))
             embed_lengths.append(len(audios[i]) // HOP_LENGTH // 2 + 1)
 
-        return ctc_texts, ctc_entropies, embeddings, embed_lengths
+        return bpe_texts, bpe_entropies, enc_hidden, embed_lengths
 
     @torch.no_grad()
     def verify(ctc_texts, embeddings, embed_lengths):
-        """Verify CTC outputs with LLM."""
+        """Verify BPE draft tokens with LLM. Identical to v32 except inputs are already BPE text."""
         batch_sz = len(ctc_texts)
 
         ctc_token_ids = []
@@ -190,7 +275,7 @@ def main(args):
             inputs_embeds=padded, attention_mask=attn_mask,
             bos_token_id=tokenizer.bos_token_id, pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id, max_new_tokens=args.max_new_tokens,
-            num_beams=args.num_beams, early_stopping=args.num_beams > 1,
+            num_beams=args.num_beams, early_stopping=True,
             do_sample=False, use_cache=True
         )
 
@@ -205,26 +290,26 @@ def main(args):
 
         start_time = time.time()
 
-        # Step 1: CTC decode
-        ctc_texts, ctc_entropies, embeddings, embed_lengths = ctc_decode(audios)
+        # Step 1: BPE CTC draft (single encoder pass; embeddings reused below)
+        bpe_texts, bpe_entropies, embeddings, embed_lengths = ctc_decode_bpe(audios)
 
-        # Step 2: Gate by CTC entropy
+        # Step 2: Gate by BPE CTC entropy
         predictions = [None] * batch_sz
         verify_idx = []
 
-        for i, (text, ent) in enumerate(zip(ctc_texts, ctc_entropies)):
+        for i, (text, ent) in enumerate(zip(bpe_texts, bpe_entropies)):
             if ent <= ctc_threshold and text.strip():
                 predictions[i] = text.strip()
             else:
                 verify_idx.append(i)
 
-        # Step 3: Verify remaining
+        # Step 3: Verify remaining with LLM (reuses encoder embeddings from step 1)
         if verify_idx:
             verify_emb = embeddings[verify_idx]
-            verify_lens = [embed_lengths[i] for i in verify_idx]
-            verify_texts = [ctc_texts[i] for i in verify_idx]
+            verify_embed_lengths = [embed_lengths[i] for i in verify_idx]
+            verify_bpe_texts = [bpe_texts[i] for i in verify_idx]
 
-            results, audio_embeds, proj_lengths = verify(verify_texts, verify_emb, verify_lens)
+            results, audio_embeds, proj_lengths = verify(verify_bpe_texts, verify_emb, verify_embed_lengths)
 
             fail_idx = []
             for j, (accepted, text) in enumerate(results):
@@ -265,6 +350,8 @@ def main(args):
         for key in all_results:
             all_results[key].append(result[key])
 
+    _hook.remove()  # clean up forward hook
+
     # Write results
     manifest_path = data_utils.write_manifest(
         all_results["references"], all_results["predictions"], args.model_id,
@@ -289,13 +376,14 @@ def main(args):
     norm_preds = [data_utils.normalizer(p) for p in predictions]
     wer = round(100 * wer_metric.compute(references=norm_refs, predictions=norm_preds), 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
-    print(f"WER: {wer}%, RTFx: {rtfx}")
+    print(f"{args.model_id} - WER: {wer}%, RTFx: {rtfx}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_id", type=str, required=True)
-    parser.add_argument("--dataset_path", type=str, default="hf-audio/open-asr-leaderboard")
+    parser.add_argument("--model_id", type=str, required=True,
+                        help="Full Granite Speech model (provides encoder, projector, LLM)")
+    parser.add_argument("--dataset_path", type=str, default="esb/datasets")
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--split", type=str, default="test")
     parser.add_argument("--device", type=int, default=-1)
@@ -303,8 +391,9 @@ if __name__ == "__main__":
     parser.add_argument("--max_eval_samples", type=int, default=None)
     parser.add_argument("--max_new_tokens", type=int, default=200)
     parser.add_argument("--num_beams", type=int, default=1)
-    parser.add_argument("--confidence_threshold", type=float, default=0.01)
-    parser.add_argument("--ctc_threshold", type=float, default=0.5)
-    parser.add_argument("--streaming", action="store_true", help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation.")
+    parser.add_argument("--confidence_threshold", type=float, default=0.2)
+    parser.add_argument("--ctc_threshold", type=float, default=0.7)
+    parser.add_argument("--no-streaming", dest="streaming", action="store_false")
     args = parser.parse_args()
+    args.streaming = False
     main(args)

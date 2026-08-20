@@ -329,10 +329,9 @@ def score_results(
             "public",
             None,  # always printed when public datasets are present
             "model,RTFx,License,Size (B),# Languages,Encoder,Decoder,"
-            "AMI-Cleaned WER,Earnings22 WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli-Cleaned-AA WER",
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli-Cleaned-AA WER",
             {
                 "ami_cleaned_test": ("AMI-Cleaned WER", None),
-                "earnings22_test": ("Earnings22 WER", None),
                 "earnings22_cleaned_aa_chunked_test": (
                     "Earnings22-Cleaned-AA-chunked WER",
                     None,
@@ -347,9 +346,10 @@ def score_results(
         (
             "extra",
             "_cleaned",
-            "model,AMI WER,Gigaspeech WER,Voxpopuli WER",
+            "model,AMI WER,Earnings22 WER,Gigaspeech WER,Voxpopuli WER",
             {
                 "ami_test": ("AMI WER", None),
+                "earnings22_test": ("Earnings22 WER", None),
                 "gigaspeech_test": ("Gigaspeech WER", None),
                 "voxpopuli_test": ("Voxpopuli WER", None),
             },

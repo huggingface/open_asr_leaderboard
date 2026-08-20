@@ -25,16 +25,18 @@ MODEL_CONFIGS=(
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
-    # "microsoft/azure-speech-05-2026  4"
+    # "microsoft/azure-speech-06-2026  4"
     # "modulate/vfast                25"
     # "gladia/solaria-3             20"
     # "soniox/stt-async-v5           20"
 )
-DATASET_PATH="hf-audio/open-asr-leaderboard"
+DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
+# ── Datasets: "name:split[:dataset_path]" ────────────────────────────────────
+# dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
 EVAL_DATASETS=(
     "ami_cleaned:test"
-    "earnings22:test"
+    "earnings22_cleaned_aa_chunked:test:ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned:test"
     "librispeech:test.clean"
     "librispeech:test.other"
@@ -57,6 +59,10 @@ LEXICAL_DATASETS="librispeech gigaspeech"
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
 
+# Create the bind-mount sources up front: Docker would otherwise create them
+# as root, and the containers run as the current user (see --user below).
+mkdir -p "${RUNDIR}/results" "${HF_CACHE_DIR}"
+
 echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
 docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
@@ -65,8 +71,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     for entry in "${EVAL_DATASETS[@]}"; do
-        DATASET="${entry%%:*}"
-        SPLIT="${entry##*:}"
+        IFS=":" read -r DATASET SPLIT DATASET_PATH <<< "$entry"
+        DATASET_PATH="${DATASET_PATH:-$DEFAULT_DATASET_PATH}"
 
         PROMPT_FLAG=""
         if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" $DATASET "* ]]; then
@@ -78,6 +84,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e HF_TOKEN="${HF_TOKEN:-}" \
             -e HF_HOME=/tmp/hf_home \
             -e HF_DATASETS_CACHE=/hf_cache/datasets \
+            -e HF_HUB_CACHE=/hf_cache/hub \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
@@ -128,12 +135,11 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     if [[ -n "${RESULTS_BUCKET}" ]]; then
         # Only upload the specific files for the datasets in EVAL_DATASETS
-        DATASET_PATH_SLUG="${DATASET_PATH//\//-}"
         INCLUDE_ARGS=()
         for entry in "${EVAL_DATASETS[@]}"; do
-            _DS="${entry%%:*}"
-            _SP="${entry##*:}"
-            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${DATASET_PATH_SLUG}_${_DS}_${_SP}.jsonl"
+            IFS=":" read -r _DS _SP _DP <<< "$entry"
+            _DP="${_DP:-$DEFAULT_DATASET_PATH}"
+            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${_DP//\//-}_${_DS}_${_SP}.jsonl"
             if [[ -f "${MODEL_RESULTS_DIR}/${FNAME}" ]]; then
                 INCLUDE_ARGS+=(--include "${FNAME}")
             else
