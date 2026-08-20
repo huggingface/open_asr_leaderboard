@@ -54,3 +54,25 @@ HF_TOKEN=<YOUR_TOKEN> \
 RESULTS_BUCKET=<YOUR_BUCKET> \
 bash api/run_api_ml.sh
 ```
+
+## Long-form
+
+`api/run_api_longform.sh` evaluates Earnings21, Earnings22, TED-LIUM, and all
+eight CORAAL subsets. As above, select a model together with its API concurrency
+limit using `MODEL`. Raw, unnormalized references and predictions can be stored
+in a private Bucket by setting `RESULTS_BUCKET`.
+
+Smoke test:
+```bash
+ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 8" \
+DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
+bash api/run_api_longform.sh
+```
+
+Full run with private-bucket upload:
+```bash
+ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 8" \
+HF_TOKEN=<YOUR_TOKEN> \
+RESULTS_BUCKET=<YOUR_PRIVATE_BUCKET> \
+bash api/run_api_longform.sh
+```

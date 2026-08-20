@@ -157,13 +157,57 @@ def main(args):
             )
             args.warmup_steps = 10
 
-    def benchmark(batch, min_new_tokens=None):
+    def benchmark(
+        batch,
+        min_new_tokens=None,
+        max_audio_length_s=None,
+        warmup_max_new_tokens=None,
+        disable_audio_chunking=False,
+    ):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
-        minibatch_size = len(audios)
+        output_batch_size = len(audios)
         sampling_rate = batch["audio"][0]["sampling_rate"]
+        if max_audio_length_s is not None:
+            max_audio_samples = int(max_audio_length_s * sampling_rate)
+            audios = [audio[:max_audio_samples] for audio in audios]
         batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
-        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, output_batch_size)
+
+        if args.audio_chunk_length_s is not None and not disable_audio_chunking:
+            chunk_size = int(args.audio_chunk_length_s * sampling_rate)
+            merged_predictions = []
+            transcription_times = []
+            for audio in audios:
+                chunks = [audio[start : start + chunk_size] for start in range(0, len(audio), chunk_size)]
+                chunk_predictions = []
+                chunk_time = 0.0
+                for start in range(0, len(chunks), args.audio_chunk_batch_size):
+                    chunk_group = chunks[start : start + args.audio_chunk_batch_size]
+                    chunk_batch = {
+                        "audio": [
+                            {"array": chunk, "sampling_rate": sampling_rate}
+                            for chunk in chunk_group
+                        ],
+                        "original_text": [""] * len(chunk_group),
+                    }
+                    chunk_result = benchmark(
+                        chunk_batch,
+                        min_new_tokens=min_new_tokens,
+                        warmup_max_new_tokens=warmup_max_new_tokens,
+                        disable_audio_chunking=True,
+                    )
+                    chunk_predictions.extend(chunk_result["predictions"])
+                    chunk_time += sum(chunk_result["transcription_time_s"])
+                merged_predictions.append(" ".join(chunk_predictions))
+                transcription_times.append(chunk_time)
+
+            batch["transcription_time_s"] = transcription_times
+            batch["predictions"] = merged_predictions
+            batch["references"] = batch["original_text"]
+            return batch
+
+        minibatch_size = len(audios)
         if text is not None:
             texts = [text] * minibatch_size
         else:
@@ -261,6 +305,12 @@ def main(args):
                 )
 
         inputs = inputs.to(args.device, dtype=torch_dtype)
+        inference_gen_kwargs = gen_kwargs
+        if warmup_max_new_tokens is not None:
+            inference_gen_kwargs = {
+                **gen_kwargs,
+                "max_new_tokens": warmup_max_new_tokens,
+            }
 
         # 2. Model Inference
         if args.torch_compile is not None:
@@ -270,7 +320,7 @@ def main(args):
         with sdpa_kernel(sdpa_backends):
             if is_nemotron:
                 # 2.0 RNNT generation (cache-aware FastConformer-RNNT)
-                rnnt_output = model.generate(**inputs, **gen_kwargs, return_dict_in_generate=True)
+                rnnt_output = model.generate(**inputs, **inference_gen_kwargs, return_dict_in_generate=True)
                 pred_ids = rnnt_output.sequences
             elif model.can_generate():
                 # 2.1 Auto-regressive generation for LM-based models
@@ -283,7 +333,10 @@ def main(args):
                     # sample's individual limit by replacing them with the EOT token.
                     token_limits = [int(len(clip) * 6.5 // 16000 + 2) for clip in audios]
                     per_sample_limits = torch.tensor(token_limits).reshape(-1, 1).to(args.device)
-                    moonshine_gen_kwargs = {**gen_kwargs, "max_new_tokens": per_sample_limits.max().item()}
+                    moonshine_gen_kwargs = {
+                        **inference_gen_kwargs,
+                        "max_new_tokens": per_sample_limits.max().item(),
+                    }
                     pred_ids = model.generate(**inputs, **moonshine_gen_kwargs)
                     output_mask = (
                         torch.arange(pred_ids.shape[-1], device=args.device).unsqueeze(0).expand(pred_ids.shape[0], -1)
@@ -291,9 +344,13 @@ def main(args):
                     )
                     pred_ids = pred_ids.masked_fill(output_mask, model.config.eos_token_id)
                 elif args.longform:
-                    pred_ids = model.generate(**inputs, **gen_kwargs, return_timestamps=True)
+                    pred_ids = model.generate(**inputs, **inference_gen_kwargs, return_timestamps=True)
                 else:
-                    pred_ids = model.generate(**inputs, **gen_kwargs, min_new_tokens=min_new_tokens)
+                    pred_ids = model.generate(
+                        **inputs,
+                        **inference_gen_kwargs,
+                        min_new_tokens=min_new_tokens,
+                    )
             else:
                 # 2.2. Single forward pass for CTC
                 with torch.no_grad():
@@ -353,7 +410,7 @@ def main(args):
         runtime = start_event.elapsed_time(end_event) / 1000.0
 
         # normalize by minibatch size since we want the per-sample time
-        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
+        batch["transcription_time_s"] = output_batch_size * [runtime / output_batch_size]
 
         batch["predictions"] = pred_text  # raw; normalization applied at scoring time
         batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
@@ -363,14 +420,35 @@ def main(args):
         dataset = data_utils.load_data(args)
         dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
 
-        num_warmup_samples = args.warmup_steps * args.batch_size
+        # A normal multi-batch warm-up can amount to another complete pass over
+        # a long-form split. One recording is enough to initialize the kernels
+        # without doubling hours-long evaluations.
+        warmup_batch_size = args.batch_size
+        if args.longform or args.audio_chunk_length_s is not None:
+            num_warmup_samples = 1
+            warmup_batch_size = 1
+        else:
+            num_warmup_samples = args.warmup_steps * args.batch_size
         if args.streaming:
             warmup_dataset = dataset.take(num_warmup_samples)
         else:
             warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
         warmup_dataset = iter(
             warmup_dataset.map(
-                benchmark, batch_size=args.batch_size, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}
+                benchmark,
+                batch_size=warmup_batch_size,
+                batched=True,
+                fn_kwargs={
+                    "min_new_tokens": (
+                        args.warmup_max_new_tokens
+                        if args.warmup_max_new_tokens is not None
+                        else args.max_new_tokens
+                    ),
+                    "max_audio_length_s": (
+                        30 if args.longform or args.audio_chunk_length_s is not None else None
+                    ),
+                    "warmup_max_new_tokens": args.warmup_max_new_tokens,
+                },
             )
         )
 
@@ -444,6 +522,18 @@ if __name__ == "__main__":
         help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
+        "--dataset_revision",
+        type=str,
+        default=None,
+        help="Optional immutable dataset revision used for reproducible evaluations.",
+    )
+    parser.add_argument(
+        "--data_files",
+        type=str,
+        default=None,
+        help="Optional local Parquet glob, typically supplied by an HF Jobs dataset mount.",
+    )
+    parser.add_argument(
         "--dataset",
         type=str,
         required=True,
@@ -491,6 +581,18 @@ if __name__ == "__main__":
         help="Whether to use longform mode.",
     )
     parser.add_argument(
+        "--audio_chunk_length_s",
+        type=float,
+        default=None,
+        help="Optionally split each recording into fixed-size chunks before inference.",
+    )
+    parser.add_argument(
+        "--audio_chunk_batch_size",
+        type=int,
+        default=16,
+        help="Maximum number of fixed-size audio chunks processed together.",
+    )
+    parser.add_argument(
         "--torch_compile",
         type=str,
         default=None,
@@ -520,6 +622,12 @@ if __name__ == "__main__":
         help="Number of warm-up steps to run before launching the timed runs.",
     )
     parser.add_argument(
+        "--warmup_max_new_tokens",
+        type=int,
+        default=None,
+        help="Optional generation limit used only for unmeasured warm-up runs.",
+    )
+    parser.add_argument(
         "--revision",
         type=str,
         default=None,
@@ -533,6 +641,10 @@ if __name__ == "__main__":
              "Supported values for Nemotron 3.5: 'en-US', 'en-GB'.",
     )
     args = parser.parse_args()
+    if args.audio_chunk_length_s is not None and args.audio_chunk_length_s <= 0:
+        parser.error("--audio_chunk_length_s must be positive")
+    if args.audio_chunk_batch_size <= 0:
+        parser.error("--audio_chunk_batch_size must be positive")
 
     print("*" * 100)
     print(f"Evaluating {args.model_id} on {args.dataset_path} / {args.dataset} / {args.split}")
