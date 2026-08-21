@@ -26,7 +26,9 @@ MODEL_IDs=(
     "nvidia/parakeet-tdt_ctc-110m"
 )
 
-# ── Datasets: "name split" (comment / uncomment to select) ──────────────────
+# ── Datasets: "name split [dataset_path]" (comment / uncomment to select) ───
+# dataset_path defaults to hf-audio/open-asr-leaderboard when omitted.
+DEFAULT_DATASET_PATH="hf-audio/open-asr-leaderboard"
 DATASET_CONFIGS=(
     "ami_cleaned test"
     "gigaspeech_cleaned test"
@@ -35,16 +37,18 @@ DATASET_CONFIGS=(
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
+    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
 )
 
 for MODEL_ID in "${MODEL_IDs[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT <<< "$cfg"
+        read -r DATASET SPLIT DATASET_PATH <<< "$cfg"
+        DATASET_PATH="${DATASET_PATH:-$DEFAULT_DATASET_PATH}"
 
         python run_eval.py \
             --model_id=${MODEL_ID} \
-            --dataset_path="hf-audio/open-asr-leaderboard" \
+            --dataset_path="${DATASET_PATH}" \
             --dataset="${DATASET}" \
             --split="${SPLIT}" \
             --device=${DEVICE_ID} \

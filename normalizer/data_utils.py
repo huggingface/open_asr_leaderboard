@@ -1,11 +1,17 @@
-import re
 import os
+import re
 
 import num2words
-from datasets import load_dataset, Audio, IterableDataset
-from normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
+from datasets import Audio, IterableDataset, load_dataset
+from huggingface_hub import snapshot_download
+from normalizer import BasicMultilingualTextNormalizer, EnglishTextNormalizer
 
-from .eval_utils import read_manifest, write_manifest, normalize_compound_pairs
+from .eval_utils import (
+    merge_chunked_manifest,
+    normalize_compound_pairs,
+    read_manifest,
+    write_manifest,
+)
 
 
 def is_target_text_in_range(ref):
@@ -25,12 +31,14 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
     def _normalize_numbers(self, text, lang):
         # Join space-separated thousand groups (e.g. "10 000" -> "10000")
         text = re.sub(r"(\d)\s+(\d{3})\b", r"\1\2", text)
+
         # Convert remaining digit sequences to words
         def _replace(m):
             try:
                 return num2words.num2words(int(m.group()), lang=lang)
             except Exception:
                 return m.group()
+
         return re.sub(r"\d+", _replace, text)
 
     def __call__(self, s, lang=None):
@@ -57,6 +65,7 @@ def get_text(sample):
             ".join{sample.keys()}. Ensure a text column name is present in the dataset."
         )
 
+
 normalizer = EnglishTextNormalizer()
 
 ml_normalizer = MultilingualNormalizer(remove_diacritics=False)
@@ -68,7 +77,65 @@ def normalize(batch):
     return batch
 
 
+# Chunked datasets provide one reference transcript per parent session instead of
+# one per chunk. Maps the chunked dataset repo to the repo holding the transcripts.
+CHUNKED_DATASETS = {
+    "artificialanalysis/earnings22-cleaned-aa-chunked": {
+        "parent_dataset_path": "ArtificialAnalysis/Earnings22-Cleaned-AA",
+        "audio_dir": "audio",
+    },
+}
+
+# Carried into the results manifest so chunks can be reassembled at scoring time.
+CHUNK_METADATA_KEYS = ["parent_id", "chunk_index"]
+
+
+def is_chunked_dataset(dataset_path):
+    return str(dataset_path).lower() in CHUNKED_DATASETS
+
+
+def load_chunked_data(args):
+    """Load a chunked dataset, attaching each chunk's parent transcript as `text`."""
+    config = CHUNKED_DATASETS[str(args.dataset_path).lower()]
+
+    parent_dataset = load_dataset(
+        config["parent_dataset_path"], split=args.split, token=True
+    )
+    parent_text = {sample["id"]: get_text(sample) for sample in parent_dataset}
+
+    dataset = load_dataset(args.dataset_path, split=args.split, token=True)
+
+    # Audio is not referenced by the metadata file, so fetch it separately.
+    audio_root = snapshot_download(
+        repo_id=args.dataset_path,
+        repo_type="dataset",
+        allow_patterns=[f"{config['audio_dir']}/*"],
+    )
+
+    missing = sorted(set(dataset["parent_id"]) - set(parent_text))
+    if missing:
+        raise ValueError(
+            f"No transcript found in {config['parent_dataset_path']} for parent "
+            f"id(s) {missing}. The chunked and parent datasets are out of sync."
+        )
+
+    def attach_audio_and_text(sample):
+        sample["audio"] = os.path.join(
+            audio_root, config["audio_dir"], sample["file_name"]
+        )
+        sample["text"] = parent_text[sample["parent_id"]]
+        return sample
+
+    dataset = dataset.map(attach_audio_and_text, load_from_cache_file=False)
+    dataset = dataset.cast_column("audio", Audio())
+
+    return dataset
+
+
 def load_data(args):
+    if is_chunked_dataset(args.dataset_path):
+        return load_chunked_data(args)
+
     dataset = load_dataset(
         args.dataset_path,
         args.dataset,
@@ -79,12 +146,15 @@ def load_data(args):
 
     return dataset
 
+
 def prepare_data(dataset, sampling_rate=16000):
     # Re-sample and normalize transcriptions
     dataset = dataset.cast_column("audio", Audio(sampling_rate=sampling_rate))
     # NOTE (ebezzam) don't load from cache to account for potential changes in normalization logic
     # IterableDataset (streaming) has no cache, so the kwarg is only needed for Dataset
-    map_kwargs = {} if isinstance(dataset, IterableDataset) else {"load_from_cache_file": False}
+    map_kwargs = (
+        {} if isinstance(dataset, IterableDataset) else {"load_from_cache_file": False}
+    )
     dataset = dataset.map(normalize, **map_kwargs)
     dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
 
@@ -92,9 +162,9 @@ def prepare_data(dataset, sampling_rate=16000):
 
 
 AUDIO_FILEPATH_METADATA_KEYS = [
-    "id",           # Main: https://huggingface.co/datasets/hf-audio/open-asr-leaderboard
-    "file_name",    # Multilingual: https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets
-    "file_name",    # Private
+    "id",  # Main: https://huggingface.co/datasets/hf-audio/open-asr-leaderboard
+    "file_name",  # Multilingual: https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets
+    "file_name",  # Private
 ]
 
 

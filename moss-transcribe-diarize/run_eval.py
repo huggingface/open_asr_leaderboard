@@ -450,6 +450,8 @@ def main(args: argparse.Namespace) -> int:
         remove_columns=["audio"],
     )
 
+    is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+
     results = {
         "audio_length_s": [],
         "transcription_time_s": [],
@@ -457,6 +459,8 @@ def main(args: argparse.Namespace) -> int:
         "predictions": [],
         "references": [],
     }
+    if is_chunked:
+        results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
     for result in tqdm(iter(dataset), desc="Samples"):
         for key in results:
             results[key].append(result[key])
@@ -476,6 +480,9 @@ def main(args: argparse.Namespace) -> int:
         audio_length=results["audio_length_s"],
         transcription_time=results["transcription_time_s"],
         audio_filepaths=results["audio_filepath"],
+        extra_fields={key: results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        if is_chunked
+        else None,
     )
     print("Manifest:", manifest, flush=True)
 
