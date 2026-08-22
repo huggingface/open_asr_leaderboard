@@ -6,9 +6,16 @@ import requests
 from . import APIProvider, PermanentError, register
 
 MODEL_VARIANT_TO_ENDPOINT = {
-    "vfast": "https://platform.modulate.ai/api/velma-2-stt-batch-english-vfast",
+    # The English vfast system now runs under the multilingual endpoint. Both
+    # endpoints currently serve it and return identical results;
+    # velma-2-stt-batch-english-vfast will be retired at a future date, so both
+    # variants point at the endpoint that will remain available.
+    "vfast": "https://platform.modulate.ai/api/velma-2-stt-batch-multilingual-vfast",
     "multilingual": "https://platform.modulate.ai/api/velma-2-stt-batch-multilingual-vfast",
 }
+
+# Declared to the endpoint when the harness supplies no usable language code.
+DEFAULT_LANGUAGE = "en"
 
 
 @register("modulate")
@@ -19,7 +26,7 @@ class ModulateProvider(APIProvider):
         audio_file_path: Optional[str],
         sample: dict,
         use_url: bool = False,
-        language: str = "en",
+        language: str = DEFAULT_LANGUAGE,
         prompt: Optional[str] = None,
     ) -> str:
         if model_variant not in MODEL_VARIANT_TO_ENDPOINT:
@@ -53,13 +60,14 @@ class ModulateProvider(APIProvider):
 
         headers = {"X-API-Key": api_key}
 
-        # Multilingual endpoint takes an optional `language` form field (short
-        # ISO code, e.g. de/es/fr/it/pt); providing it selects the declared-
-        # language path so the file routes straight to the language-best
-        # transcriber. The English endpoint ignores the field.
-        data = None
-        if model_variant == "multilingual" and language:
-            data = {"language": language.strip().lower()}
+        # The endpoint takes a `language` form field as a short ISO code
+        # (en/de/es/fr/it/pt/...). Declaring it selects the direct-routing
+        # path; omitting it falls back to per-segment language ID, which is a
+        # different path and does not reproduce the reported numbers. A
+        # language is therefore always declared: the harness value, narrowed
+        # from any region tag (en-US -> en), or "en" when none is supplied.
+        lang = (language or "").strip().lower().split("-")[0] or DEFAULT_LANGUAGE
+        data = {"language": lang}
 
         with open(audio_file_path, "rb") as fh:
             files = {"upload_file": (os.path.basename(audio_file_path), fh)}
