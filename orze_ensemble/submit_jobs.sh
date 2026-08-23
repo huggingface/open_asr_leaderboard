@@ -1,11 +1,23 @@
 #!/bin/bash
 # Submit one reproducible Orze-ASR-3Way evaluation job per public dataset.
-# Usage: HF_TOKEN=hf_... RESULTS_BUCKET=owner/bucket [SPACE=owner/space|IMAGE=registry/image] bash submit_jobs.sh
+# Usage: HF_TOKEN=hf_... RESULTS_BUCKET=owner/bucket bash submit_jobs.sh
 
 set -euo pipefail
 
-SPACE="${SPACE:-erik-at-boson/open-asr-leaderboard-orze-ensemble}"
-IMAGE="${IMAGE:-hf.co/spaces/${SPACE}}"
+SOURCE_SPACE="${SOURCE_SPACE:-erik-at-boson/open-asr-leaderboard-orze-ensemble}"
+SOURCE_SPACE_REVISION="${SOURCE_SPACE_REVISION:-16479d18d965d9833b314a2725cabb05cf06b6e2}"
+SPACE="${SPACE:-$SOURCE_SPACE}"
+BOOTSTRAP="${BOOTSTRAP:-1}"
+if [[ "$BOOTSTRAP" == "1" ]]; then
+    IMAGE="${IMAGE:-nvidia/cuda:12.9.0-runtime-ubuntu24.04}"
+    SETUP_COMMAND="apt-get update && apt-get install -y --no-install-recommends ca-certificates git && git clone https://huggingface.co/spaces/${SOURCE_SPACE} /app && git -C /app checkout ${SOURCE_SPACE_REVISION} && bash /app/bootstrap.sh && cd /app"
+elif [[ "$BOOTSTRAP" == "0" ]]; then
+    IMAGE="${IMAGE:-hf.co/spaces/${SPACE}}"
+    SETUP_COMMAND="cd /app"
+else
+    echo "BOOTSTRAP must be 0 or 1" >&2
+    exit 2
+fi
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
@@ -42,7 +54,7 @@ for cfg in "${DATASET_CONFIGS[@]}"; do
         --volume "hf://buckets/${RESULTS_BUCKET}:/results-bucket" \
         "$IMAGE" \
         bash -c "
-            cd /app &&
+            ${SETUP_COMMAND} &&
             /opt/venvs/qwen/bin/python run_eval.py \
                 --model_id=${MODEL_ID} \
                 --dataset_path=${DATASET_PATH} \
