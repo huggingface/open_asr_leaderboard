@@ -1,10 +1,11 @@
 #!/bin/bash
 # Submit one reproducible Orze-ASR-3Way evaluation job per public dataset.
-# Usage: HF_TOKEN=hf_... RESULTS_BUCKET=owner/bucket bash submit_jobs.sh
+# Usage: HF_TOKEN=hf_... RESULTS_BUCKET=owner/bucket [SPACE=owner/space|IMAGE=registry/image] bash submit_jobs.sh
 
 set -euo pipefail
 
 SPACE="${SPACE:-erik-at-boson/open-asr-leaderboard-orze-ensemble}"
+IMAGE="${IMAGE:-hf.co/spaces/${SPACE}}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
@@ -39,7 +40,7 @@ for cfg in "${DATASET_CONFIGS[@]}"; do
         --env HF_AUDIO_DECODER_BACKEND=soundfile \
         "${NAMESPACE_ARGS[@]}" \
         --volume "hf://buckets/${RESULTS_BUCKET}:/results-bucket" \
-        "hf.co/spaces/${SPACE}" \
+        "$IMAGE" \
         bash -c "
             cd /app &&
             /opt/venvs/qwen/bin/python run_eval.py \
