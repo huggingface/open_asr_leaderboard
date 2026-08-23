@@ -35,7 +35,7 @@ for cfg in "${DATASET_CONFIGS[@]}"; do
     hf jobs run \
         --flavor "$FLAVOR" \
         --timeout 24h \
-        --env HF_TOKEN="$HF_TOKEN" \
+        --secrets HF_TOKEN \
         --env HF_AUDIO_DECODER_BACKEND=soundfile \
         "${NAMESPACE_ARGS[@]}" \
         --volume "hf://buckets/${RESULTS_BUCKET}:/results-bucket" \
