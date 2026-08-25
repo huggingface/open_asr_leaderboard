@@ -268,12 +268,16 @@ def main(args: argparse.Namespace) -> None:
         fn_kwargs={"backend": backend},
     )
 
+    is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+
     all_results = {
         "audio_length_s": [],
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
     }
+    if is_chunked:
+        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
     for result in tqdm(iter(dataset), desc="Samples..."):
         for key in all_results:
             all_results[key].append(result[key])
@@ -287,11 +291,22 @@ def main(args: argparse.Namespace) -> None:
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        if is_chunked
+        else None,
     )
     print("Results saved at path:", manifest_path)
 
-    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
-    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
+    if is_chunked:
+        sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))
+        references = [session["text"] for session in sessions]
+        predictions = [session["pred_text"] for session in sessions]
+    else:
+        references = all_results["references"]
+        predictions = all_results["predictions"]
+
+    norm_refs = [data_utils.normalizer(r) for r in references]
+    norm_preds = [data_utils.normalizer(p) for p in predictions]
     wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
     wer = round(100 * wer, 2)
     rtfx = round(

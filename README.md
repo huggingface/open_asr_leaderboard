@@ -9,6 +9,9 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
 * **Main Test Sets (English, short-form):**
   The main benchmark datasets used for evaluation (short-form English) are available [here](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard).
 
+* **Chunked sets with session-level references:**
+  [**Earnings22-Cleaned-AA-chunked**](https://huggingface.co/datasets/ArtificialAnalysis/Earnings22-Cleaned-AA-chunked) splits 6 earnings calls into 341 chunks, with one reference transcript per call in the parent [Earnings22-Cleaned-AA](https://huggingface.co/datasets/ArtificialAnalysis/Earnings22-Cleaned-AA) set. Models transcribe each chunk as usual; the scorer concatenates a call's chunk predictions before computing WER against the call-level reference. Run with `--dataset_path ArtificialAnalysis/Earnings22-Cleaned-AA-chunked --dataset earnings22_cleaned_aa_chunked --split test`.
+
 * **English, long-form:**
   The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
@@ -100,6 +103,11 @@ You can also specify your own model and its performance as such:
 ```
 
 ![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
+
+# Benchmark fitting
+
+The `benchmark_fitting` folder contains scripts to measure whether a model overfits reference transcripts in the test sets. See
+[`benchmark_fitting/README.md`](benchmark_fitting/README.md) for more information.
 
 # Contributing a model or dataset
 

@@ -18,6 +18,7 @@ import runpy
 
 import torch
 import evaluate
+from datasets import IterableDataset
 from normalizer import data_utils
 from transformers import AutoModel, AutoTokenizer
 from tqdm import tqdm
@@ -109,7 +110,8 @@ def main(args):
         warmup_dataset = data_utils.prepare_data(warmup_dataset)
 
         num_warmup_samples = args.warmup_steps * args.batch_size
-        if args.streaming:
+        # NOTE (ebezzam) chunked datasets are always map-style, regardless of --streaming
+        if isinstance(warmup_dataset, IterableDataset):
             warmup_dataset = warmup_dataset.take(num_warmup_samples)
         else:
             warmup_dataset = warmup_dataset.select(
@@ -127,7 +129,7 @@ def main(args):
 
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
-        if args.streaming:
+        if isinstance(dataset, IterableDataset):
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(
@@ -139,12 +141,16 @@ def main(args):
         remove_columns=["audio"],
     )
 
+    is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+
     all_results = {
         "audio_length_s": [],
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
     }
+    if is_chunked:
+        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
@@ -160,12 +166,22 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        if is_chunked
+        else None,
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
-    )
+    if is_chunked:
+        sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))
+        references = [session["text"] for session in sessions]
+        predictions = [session["pred_text"] for session in sessions]
+    else:
+        references = all_results["references"]
+        predictions = all_results["predictions"]
+
+    # transcripts are already normalized above
+    wer = wer_metric.compute(references=references, predictions=predictions)
     wer = round(100 * wer, 2)
     rtfx = round(
         sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2

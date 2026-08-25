@@ -15,11 +15,31 @@
 # Global defaults (can be left as-is; per-model `max_workers` will override)
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-apis}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
-MONSOON_EN_IN_DATASET_PATH="${MONSOON_EN_IN_DATASET_PATH:-VoiceArena/Monsoon_en_IN_test}"
+DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 # API jobs are CPU-only (no model weights loaded locally)
 FLAVOR="${FLAVOR:-cpu-basic}"
 ORG_NAME="${ORG_NAME:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
+# committed to the Space (useful for iterating without pushing to the Space).
+USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+LOCAL_SCRIPT_INJECT=""
+if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
+fi
+
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
+USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
+LOCAL_NORMALIZER_INJECT=""
+if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
+    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
+    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
+fi
 
 
 # ── Models: "model_id max_workers" ──────────────────────────────────────────
@@ -38,21 +58,24 @@ MODEL_CONFIGS=(
     # "speechmatics/enhanced         8"    # `cpu-xl` needed for spgispeech
     # "aquavoice/avalon-v1-en        16"
     # "zoom/scribe_v1                32"
-    # "microsoft/azure-speech-05-2026  4"
+    # "microsoft/azure-speech-06-2026  4"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
 )
 
-# ── Datasets ──────────────────────────────────────────────────────────────────
+# ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
+# dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
+# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
+# config name: the first field is only a label for selection and result files.
 DATASET_CONFIGS=(
     "ami_cleaned test"
-    "earnings22 test"
+    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
     "voxpopuli_cleaned_aa test"
-    "monsoon_en_in test"
+    "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
@@ -91,15 +114,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT <<< "$cfg"
-        if [[ "$DATASET" == "monsoon_en_in" ]]; then
-            # Standalone single-config repo: pass an empty --dataset, which
-            # resolves to the repo's default config.
-            JOB_DATASET_PATH="${MONSOON_EN_IN_DATASET_PATH}"
-            DATASET_NAME=""
+        read -r DATASET SPLIT DATASET_PATH <<< "$cfg"
+        if [[ -n "$DATASET_PATH" ]]; then
+            # Entry names its own repo: pass no config. Such repos hold a single
+            # (default) config, and the name here is just a label.
+            DATASET_CONFIG=""
         else
-            JOB_DATASET_PATH="${DATASET_PATH}"
-            DATASET_NAME="${DATASET}"
+            DATASET_PATH="$DEFAULT_DATASET_PATH"
+            DATASET_CONFIG="$DATASET"
         fi
 
         PROMPT_ARG=""
@@ -107,7 +129,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             PROMPT_ARG="--prompt 'Output must be in lexical format.'"
         fi
 
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT}"
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -130,9 +152,11 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
+                ${LOCAL_NORMALIZER_INJECT}
+                ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval.py \
-                    --dataset_path=${JOB_DATASET_PATH} \
-                    --dataset=${DATASET_NAME} \
+                    --dataset_path=${DATASET_PATH} \
+                    --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
                     --max_workers=${MODEL_MAX_WORKERS} \
@@ -164,7 +188,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         echo "All ${ACTUAL} result files present."
     fi
 
-    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
     PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
 score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')

@@ -10,8 +10,7 @@ set -euo pipefail
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-audio8-asr}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
-MONSOON_EN_IN_DATASET_PATH="${MONSOON_EN_IN_DATASET_PATH:-VoiceArena/Monsoon_en_IN_test}"
+DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MODEL_ID="${MODEL_ID:-AutoArk-AI/Audio8-ASR-0.1B}"
@@ -24,15 +23,38 @@ TORCH_COMPILE="${TORCH_COMPILE:-}"
 JOB_TIMEOUT="${JOB_TIMEOUT:-2h}"
 CUDA_ALLOC_CONF="${CUDA_ALLOC_CONF:-expandable_segments:True}"
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
+# committed to the Space (useful for iterating without pushing to the Space).
+USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+LOCAL_SCRIPT_INJECT=""
+if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+  RUN_EVAL_B64=$(base64 -w0 "$script_dir/run_eval.py")
+  LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
+fi
+
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
+USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
+LOCAL_NORMALIZER_INJECT=""
+if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
+  NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "$repo_root" normalizer | base64 -w0)
+  LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
+fi
+
+# Datasets: "name split batch_size [dataset_path]"; dataset_path defaults to
+# $DEFAULT_DATASET_PATH when omitted.
 DATASET_CONFIGS=(
   "ami_cleaned test ${AMI_BATCH_SIZE:-1152}"
-  "earnings22 test ${EARNINGS22_BATCH_SIZE:-1024}"
+  "earnings22_cleaned_aa_chunked test ${EARNINGS22_BATCH_SIZE:-1024} ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
   "gigaspeech_cleaned test ${GIGASPEECH_BATCH_SIZE:-1408}"
   "librispeech test.clean ${LIBRISPEECH_CLEAN_BATCH_SIZE:-1024}"
   "librispeech test.other ${LIBRISPEECH_OTHER_BATCH_SIZE:-1024}"
   "spgispeech test ${SPGISPEECH_BATCH_SIZE:-2048}"
   "voxpopuli_cleaned_aa test ${VOXPOPULI_BATCH_SIZE:-628}"
-  "monsoon_en_in test ${MONSOON_EN_IN_BATCH_SIZE:-1024}"
+  "monsoon_en_in test ${MONSOON_EN_IN_BATCH_SIZE:-1024} VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
@@ -83,17 +105,16 @@ echo "CUDA allocator: $CUDA_ALLOC_CONF"
 
 pids=()
 for config in "${DATASET_CONFIGS[@]}"; do
-  read -r dataset split batch_size <<< "$config"
-  if [[ "$dataset" == "monsoon_en_in" ]]; then
-      # Standalone single-config repo: pass an empty --dataset, which
-      # resolves to the repo's default config.
-      job_dataset_path="${MONSOON_EN_IN_DATASET_PATH}"
-      dataset_name=""
+  read -r dataset split batch_size dataset_path <<< "$config"
+  if [[ -n "$dataset_path" ]]; then
+      # Entry names its own repo: pass no config. Such repos hold a single
+      # (default) config, and the name here is just a label.
+      dataset_config=""
   else
-      job_dataset_path="${DATASET_PATH}"
-      dataset_name="${dataset}"
+      dataset_path="$DEFAULT_DATASET_PATH"
+      dataset_config="$dataset"
   fi
-  echo "Submitting dataset=${dataset} split=${split} batch_size=${batch_size}"
+  echo "Submitting dataset_path=${dataset_path} dataset=${dataset} split=${split} batch_size=${batch_size}"
   (
     hf jobs run \
       --flavor "$FLAVOR" \
@@ -106,13 +127,15 @@ for config in "${DATASET_CONFIGS[@]}"; do
       "hf.co/spaces/${SPACE}" \
       bash -c "
         set -euo pipefail
+        ${LOCAL_NORMALIZER_INJECT}
+        ${LOCAL_SCRIPT_INJECT}
         cd /app
         rm -rf /app/results
         PYTHONPATH=/app python /app/run_eval.py \\
           --model_id=${MODEL_ID} \\
           --model_revision=${MODEL_REVISION} \\
-          --dataset_path=${job_dataset_path} \\
-          --dataset=${dataset_name} \\
+          --dataset_path=${dataset_path} \\
+          --dataset=${dataset} \\
           --split=${split} \\
           --device=0 \\
           --dtype=bfloat16 \\
@@ -153,7 +176,6 @@ fi
 # Allow the completed Jobs' bucket writes to become visible before syncing.
 sleep 10
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 local_results="$repo_root/results/$MODEL_FOLDER"
 mkdir -p "$local_results"
 hf buckets sync \
