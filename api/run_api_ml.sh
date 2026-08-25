@@ -18,6 +18,7 @@ MODEL_CONFIGS=(
     # "openai/gpt-4o-mini-transcribe 16"
     # "openai/whisper-1              16"
     # "assembly/universal-3-pro      4"
+    # "assembly/universal-3-5-pro    4"
     # "elevenlabs/scribe_v2          8"
     # "speechmatics/enhanced         4"
     # "reson8/resonant-1             16"
@@ -51,6 +52,31 @@ DATASET_CONFIGS=(
     "mls pt"
     "monsoon hi"
 )
+
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry (a dataset path here, a dataset name in the
+# public scripts). A repo basename also matches, so both "HF_English_Private_Set"
+# and "hf-audio/HF_English_Private_Set" work, e.g.:
+#   ONLY_DATASETS="HF_English_Private_Set" MODEL="modulate/vfast 25" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" ]]; then
+    _selected=()
+    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+        for _cfg in "${DATASET_CONFIGS[@]}"; do
+            read -r _name _ <<< "$_cfg"
+            for _want in ${ONLY_DATASETS}; do
+                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
+                    _selected+=("$_cfg")
+                fi
+            done
+        done
+    fi
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+fi
+
 
 # Override DATASET_CONFIGS or MODEL_CONFIGS from the environment for quick runs, e.g.:
 #   DATASETS="fleurs:de" MODEL="modulate/multilingual 25" bash run_api_ml.sh

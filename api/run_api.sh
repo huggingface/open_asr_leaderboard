@@ -25,12 +25,13 @@ MODEL_CONFIGS=(
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
-    # "microsoft/azure-speech-05-2026  4"
+    # "microsoft/azure-speech-06-2026  4"
     # "modulate/vfast                25"
     # "gladia/solaria-3             20"
     # "soniox/stt-async-v5           20"
 )
 DATASET_PATH="hf-audio/open-asr-leaderboard"
+MONSOON_EN_IN_DATASET_PATH="${MONSOON_EN_IN_DATASET_PATH:-VoiceArena/Monsoon_en_IN_test}"
 
 EVAL_DATASETS=(
     "ami_cleaned:test"
@@ -40,6 +41,8 @@ EVAL_DATASETS=(
     "librispeech:test.other"
     "spgispeech:test"
     "voxpopuli_cleaned_aa:test"
+    # Standalone single-config repo, not a config of ${DATASET_PATH}
+    "monsoon_en_in:test"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
@@ -53,6 +56,19 @@ fi
 
 # Datasets that require lexical format prompt
 LEXICAL_DATASETS="librispeech gigaspeech"
+
+# Resolve a dataset name to the repo it lives in and its config name.
+# Sets DS_PATH and DATASET_NAME (empty for standalone single-config repos).
+resolve_dataset() {
+    local dataset="$1"
+    if [[ "$dataset" == "monsoon_en_in" ]]; then
+        DS_PATH="${MONSOON_EN_IN_DATASET_PATH}"
+        DATASET_NAME=""
+    else
+        DS_PATH="${DATASET_PATH}"
+        DATASET_NAME="${dataset}"
+    fi
+}
 
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
@@ -72,6 +88,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     for entry in "${EVAL_DATASETS[@]}"; do
         DATASET="${entry%%:*}"
         SPLIT="${entry##*:}"
+        resolve_dataset "$DATASET"
 
         PROMPT_FLAG=""
         if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" $DATASET "* ]]; then
@@ -97,14 +114,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
-            -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
             "${IMAGE_TAG}" -c "
                 cd /app && PYTHONPATH=/app python run_eval.py \
-                    --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET} \
+                    --dataset_path=${DS_PATH} \
+                    --dataset=${DATASET_NAME} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
                     --max_workers=${MAX_WORKERS} \
@@ -133,12 +149,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     if [[ -n "${RESULTS_BUCKET}" ]]; then
         # Only upload the specific files for the datasets in EVAL_DATASETS
-        DATASET_PATH_SLUG="${DATASET_PATH//\//-}"
         INCLUDE_ARGS=()
         for entry in "${EVAL_DATASETS[@]}"; do
             _DS="${entry%%:*}"
             _SP="${entry##*:}"
-            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${DATASET_PATH_SLUG}_${_DS}_${_SP}.jsonl"
+            resolve_dataset "$_DS"
+            # Manifest names are "MODEL_<model>_DATASET_<repo-slug>_<config>_<split>.jsonl";
+            # <config> is empty for standalone repos, leaving a double underscore.
+            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${DS_PATH//\//-}_${DATASET_NAME}_${_SP}.jsonl"
             if [[ -f "${MODEL_RESULTS_DIR}/${FNAME}" ]]; then
                 INCLUDE_ARGS+=(--include "${FNAME}")
             else

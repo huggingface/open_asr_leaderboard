@@ -11,6 +11,7 @@ set -euo pipefail
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-audio8-asr}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+MONSOON_EN_IN_DATASET_PATH="${MONSOON_EN_IN_DATASET_PATH:-VoiceArena/Monsoon_en_IN_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MODEL_ID="${MODEL_ID:-AutoArk-AI/Audio8-ASR-0.1B}"
@@ -31,7 +32,31 @@ DATASET_CONFIGS=(
   "librispeech test.other ${LIBRISPEECH_OTHER_BATCH_SIZE:-1024}"
   "spgispeech test ${SPGISPEECH_BATCH_SIZE:-2048}"
   "voxpopuli_cleaned_aa test ${VOXPOPULI_BATCH_SIZE:-628}"
+  "monsoon_en_in test ${MONSOON_EN_IN_BATCH_SIZE:-1024}"
 )
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_DATASETS="monsoon_en_in" bash <this script>
+#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" ]]; then
+    _selected=()
+    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+        for _cfg in "${DATASET_CONFIGS[@]}"; do
+            read -r _name _ <<< "$_cfg"
+            for _want in ${ONLY_DATASETS}; do
+                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
+                    _selected+=("$_cfg")
+                fi
+            done
+        done
+    fi
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+fi
+
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
   echo "HF_TOKEN is required" >&2
@@ -59,6 +84,15 @@ echo "CUDA allocator: $CUDA_ALLOC_CONF"
 pids=()
 for config in "${DATASET_CONFIGS[@]}"; do
   read -r dataset split batch_size <<< "$config"
+  if [[ "$dataset" == "monsoon_en_in" ]]; then
+      # Standalone single-config repo: pass an empty --dataset, which
+      # resolves to the repo's default config.
+      job_dataset_path="${MONSOON_EN_IN_DATASET_PATH}"
+      dataset_name=""
+  else
+      job_dataset_path="${DATASET_PATH}"
+      dataset_name="${dataset}"
+  fi
   echo "Submitting dataset=${dataset} split=${split} batch_size=${batch_size}"
   (
     hf jobs run \
@@ -77,8 +111,8 @@ for config in "${DATASET_CONFIGS[@]}"; do
         PYTHONPATH=/app python /app/run_eval.py \\
           --model_id=${MODEL_ID} \\
           --model_revision=${MODEL_REVISION} \\
-          --dataset_path=${DATASET_PATH} \\
-          --dataset=${dataset} \\
+          --dataset_path=${job_dataset_path} \\
+          --dataset=${dataset_name} \\
           --split=${split} \\
           --device=0 \\
           --dtype=bfloat16 \\

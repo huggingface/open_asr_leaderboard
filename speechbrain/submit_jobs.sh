@@ -6,6 +6,7 @@
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-speechbrain}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+MONSOON_EN_IN_DATASET_PATH="${MONSOON_EN_IN_DATASET_PATH:-VoiceArena/Monsoon_en_IN_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
@@ -13,8 +14,8 @@ ORG_NAME="${ORG_NAME:-}"
 # EncoderASR: wav2vec2 models
 # EncoderDecoderASR: conformer, crdnn, transformer models
 MODEL_CONFIGS=(
-    "speechbrain/asr-wav2vec2-librispeech EncoderASR 32"
-    "speechbrain/asr-conformer-largescaleasr EncoderDecoderASR 32"
+    # "speechbrain/asr-wav2vec2-librispeech EncoderASR 32"
+    # "speechbrain/asr-conformer-largescaleasr EncoderDecoderASR 32"
 )
 
 # ── Datasets: "name split" ────────────────────────────────────────────────────
@@ -26,7 +27,31 @@ DATASET_CONFIGS=(
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
+    "monsoon_en_in test"
 )
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_DATASETS="monsoon_en_in" bash <this script>
+#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" ]]; then
+    _selected=()
+    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+        for _cfg in "${DATASET_CONFIGS[@]}"; do
+            read -r _name _ <<< "$_cfg"
+            for _want in ${ONLY_DATASETS}; do
+                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
+                    _selected+=("$_cfg")
+                fi
+            done
+        done
+    fi
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+fi
+
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
@@ -39,6 +64,15 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET SPLIT <<< "$cfg"
+        if [[ "$DATASET" == "monsoon_en_in" ]]; then
+            # Standalone single-config repo: pass an empty --dataset, which
+            # resolves to the repo's default config.
+            JOB_DATASET_PATH="${MONSOON_EN_IN_DATASET_PATH}"
+            DATASET_NAME=""
+        else
+            JOB_DATASET_PATH="${DATASET_PATH}"
+            DATASET_NAME="${DATASET}"
+        fi
 
         # Adjust batch size for specific model/dataset combinations
         ACTUAL_BATCH_SIZE=$BATCH_SIZE
@@ -62,8 +96,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 PYTHONPATH=/app python run_eval.py \
                     --source=${SOURCE} \
                     --speechbrain_pretrained_class_name=${CLASS_NAME} \
-                    --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET} \
+                    --dataset_path=${JOB_DATASET_PATH} \
+                    --dataset=${DATASET_NAME} \
                     --split=${SPLIT} \
                     --device=0 \
                     --batch_size=${ACTUAL_BATCH_SIZE} \

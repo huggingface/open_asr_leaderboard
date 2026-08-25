@@ -20,6 +20,10 @@ load_dotenv()
 def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=20):
     API_URL = "https://datasets-server.huggingface.co/rows"
 
+    # Single-config repos are addressed as "default" by the datasets-server,
+    # even though load_dataset takes an empty config name.
+    dataset = dataset or "default"
+
     headers = {}
     if os.environ.get("HF_TOKEN") is not None:
         headers["Authorization"] = f"Bearer {os.environ['HF_TOKEN']}"

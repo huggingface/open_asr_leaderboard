@@ -210,8 +210,8 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                   When not 'en', ml_normalizer is used instead of the English normalizer.
                   Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
                   voi_oiwer over a reference lattice instead of plain WER.
-        families: Optional list of family keys ("appen", "dataocean", "joshtalks_private",
-                  "private_hi", "public", "extra", "ml_de", "ml_fr", "ml_it", "ml_es",
+        families: Optional list of family keys ("appen", "dataocean", "voicearena_private",
+                  "voicearena_private_hi", "public", "extra", "ml_de", "ml_fr", "ml_it", "ml_es",
                   "ml_pt") restricting which CSV summary blocks are printed.
                   None prints all detected families.
 
@@ -287,16 +287,15 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
             },
         ),
         (
-            "joshtalks_private",
+            "voicearena_private",
             "HF_English",
-            "model,English Public WER,English Private WER",
+            "model,English Private WER",
             {
-                "HF_English_Public_Set__train":  ("English Public WER",  None),
-                "HF_English_Private_Set__train": ("English Private WER", None),
+                "HF_English_Private_Set__test": ("English Private WER", None),
             },
         ),
         (
-            "private_hi",
+            "voicearena_private_hi",
             "HF_Hindi_Private_Set",
             "model,Hindi WER",
             {
@@ -307,9 +306,9 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
             "public",
             None,   # always printed when public datasets are present
             "model,RTFx,License,Size (B),# Languages,Encoder,Decoder,"
-            "AMI-Cleaned WER,Earnings22 WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli-Cleaned-AA WER",
+            "AMI-Cleaned WER,Earnings22 WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli-Cleaned-AA WER,Monsoon en-IN WER",
             {
-                
+
                 "ami_cleaned_test":          ("AMI-Cleaned WER",        None),
                 "earnings22_test":           ("Earnings22 WER", None),
                 "gigaspeech_cleaned_test":   ("Gigaspeech-Cleaned WER", None),
@@ -317,6 +316,9 @@ def score_results(directory: str, model_id: str = None, multilingual: bool = Fal
                 "librispeech_test.other":    ("LS Other WER",   None),
                 "spgispeech_test":           ("SPGISpeech WER", None),
                 "voxpopuli_cleaned_aa_test": ("Voxpopuli-Cleaned-AA WER",  None),
+                # VoiceArena/Monsoon_en_IN_test — standalone repo, plain text
+                # references (no lattice), so scored with the English normalizer.
+                "Monsoon_en_IN_test__test":  ("Voice Arena Moonsoon WER", None),
             },
         ),
         (

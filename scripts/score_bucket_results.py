@@ -7,7 +7,7 @@ Usage:
     python scripts/score_bucket_results.py --bucket bezzam/asr_leaderboard --local_dir results
     python scripts/score_bucket_results.py --skip_sync   # re-score already-downloaded results
     python scripts/score_bucket_results.py --family appen --family dataocean   # non-default families
-    python scripts/score_bucket_results.py --family private_hi  # Hindi private set (voi_oiwer)
+    python scripts/score_bucket_results.py --family voicearena_private_hi  # Hindi private set (voi_oiwer)
     python scripts/score_bucket_results.py --family all  # every detected family
 
     # Multilingual (FLEURS/MCV/MLS) results. Defaults to the
@@ -36,8 +36,8 @@ ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "hi"]
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
 # 'hi' routes through voi_oiwer (see OIWER_LANGUAGES in normalizer/eval_utils.py).
-FAMILIES = ["appen", "dataocean", "public", "extra", "private_hi"]
-FAMILY_LANGUAGES = {"private_hi": "hi"}
+FAMILIES = ["appen", "dataocean", "public", "extra", "voicearena_private_hi", "voicearena_private"]
+FAMILY_LANGUAGES = {"voicearena_private_hi": "hi"}
 
 # Columns of the combined multilingual CSV summary: (column label, dataset substring).
 ML_CSV_COLUMNS = [
@@ -148,7 +148,7 @@ def main():
         metavar="FAMILY",
         help="Dataset family to include in the CSV summary (can be repeated). "
              f"Choices: {', '.join(FAMILIES)}, all. Defaults to public. "
-             "Families requiring a non-English normalizer (e.g. private_hi) are "
+             "Families requiring a non-English normalizer (e.g. voicearena_private_hi) are "
              "scored in a separate pass. Ignored when --multilingual is set.",
     )
     parser.add_argument(
