@@ -31,6 +31,8 @@ fi
 MODEL_CONFIGS=(
     "ibm-granite/granite-4.0-1b-speech speculative 256"
     "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
+    "ibm-granite/granite-speech-5.0-470m-turboctc ctc 256"
+    "ibm-granite/granite-speech-5.0-470m-turboctc-nc ctc 256"
 )
 
 # ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
@@ -70,6 +72,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         elif [[ "$MODEL_TYPE" == "nar" ]]; then
             EVAL_SCRIPT="run_eval_nar.py"
             EXTRA_ARGS=""
+        elif [[ "$MODEL_TYPE" == "ctc" ]]; then
+            EVAL_SCRIPT="run_eval_ctc.py"
+            EXTRA_ARGS="--warmup_steps=2"
         else
             echo "ERROR: Unknown model type: ${MODEL_TYPE}" >&2
             exit 1
@@ -77,6 +82,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
         LOCAL_SCRIPT_INJECT=""
         if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+            if [[ ! -f "${SCRIPT_DIR}/${EVAL_SCRIPT}" ]]; then
+                echo "ERROR: ${SCRIPT_DIR}/${EVAL_SCRIPT} not found (needed for type ${MODEL_TYPE})" >&2
+                exit 1
+            fi
             RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/${EVAL_SCRIPT}")
             LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/${EVAL_SCRIPT} &&"
         fi
