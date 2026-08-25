@@ -44,14 +44,17 @@ DATASET_CONFIGS=(
     "fleurs it"
     "fleurs es"
     "fleurs pt"
+    "fleurs nl"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
+    "mcv nl"
     "mls es"
     "mls fr"
     "mls it"
     "mls pt"
+    "mls nl"
 )
 
 for model_cfg in "${MODEL_CONFIGS[@]}"; do

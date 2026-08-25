@@ -64,7 +64,7 @@ def main(args):
     # consistent with the API models, which always pass the language.
     LANGUAGE_NAMES = {
         "en": "English", "de": "German", "fr": "French", "it": "Italian",
-        "es": "Spanish", "pt": "Portuguese",
+        "es": "Spanish", "pt": "Portuguese", "nl": "Dutch",
     }
     lang_name = LANGUAGE_NAMES.get(LANGUAGE)
     user_prompt = f"Transcribe the {lang_name} audio clip into text." if lang_name else args.user_prompt

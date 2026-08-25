@@ -235,8 +235,8 @@ def score_results(
         language: Language code used for normalization (e.g. 'en', 'de', 'fr').
                   When not 'en', ml_normalizer is used instead of the English normalizer.
         families: Optional list of family keys ("appen", "dataocean", "public", "extra",
-                  "ml_de", "ml_fr", "ml_it", "ml_es", "ml_pt") restricting which CSV
-                  summary blocks are printed. None prints all detected families.
+                  "ml_de", "ml_fr", "ml_it", "ml_es", "ml_pt", "ml_nl") restricting which
+                  CSV summary blocks are printed. None prints all detected families.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -364,6 +364,7 @@ def score_results(
         "it": ["fleurs", "mcv", "mls"],
         "es": ["fleurs", "mcv", "mls"],
         "pt": ["fleurs", "mls"],
+        "nl": ["fleurs", "mcv", "mls"],
     }
     ML_DATASET_LABELS = {"fleurs": "FLEURS", "mcv": "MCV", "mls": "MLS"}
     for lang, datasets in ML_LANG_DATASETS.items():

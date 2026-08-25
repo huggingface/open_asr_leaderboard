@@ -39,21 +39,24 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese
+# German, French, Italian, Spanish, Portuguese, Dutch
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
     "fleurs it"
     "fleurs es"
     "fleurs pt"
+    "fleurs nl"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
+    "mcv nl"
     "mls es"
     "mls fr"
     "mls it"
     "mls pt"
+    "mls nl"
 )
 
 # ── Submit one job per model/dataset/language combination ───────────────────

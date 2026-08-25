@@ -30,21 +30,24 @@ MODEL_CONFIGS=(
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese
+# German, French, Italian, Spanish, Portuguese, Dutch
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
     "fleurs it"
     "fleurs es"
     "fleurs pt"
+    "fleurs nl"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
+    "mcv nl"
     "mls es"
     "mls fr"
     "mls it"
     "mls pt"
+    "mls nl"
 )
 
 # Override DATASET_CONFIGS or MODEL_CONFIGS from the environment for quick runs, e.g.:

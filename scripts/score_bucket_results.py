@@ -29,7 +29,7 @@ sys.path.insert(0, REPO_ROOT)
 from normalizer.eval_utils import score_results
 
 # Languages covered by the multilingual (FLEURS/MCV/MLS) benchmarks.
-ML_LANGUAGES = ["de", "fr", "it", "es", "pt"]
+ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl"]
 
 # Columns of the combined multilingual CSV summary: (column label, dataset substring).
 ML_CSV_COLUMNS = [
@@ -46,6 +46,9 @@ ML_CSV_COLUMNS = [
     ("es_fleurs", "fleurs_es_test"),
     ("pt_mls", "mls_pt_test"),
     ("pt_fleurs", "fleurs_pt_test"),
+    ("nl_covost", "mcv_nl_test"),
+    ("nl_mls", "mls_nl_test"),
+    ("nl_fleurs", "fleurs_nl_test"),
 ]
 
 

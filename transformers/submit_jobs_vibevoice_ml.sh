@@ -43,14 +43,17 @@ DATASET_CONFIGS=(
     "fleurs it"
     "fleurs es"
     "fleurs pt"
+    "fleurs nl"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
+    "mcv nl"
     "mls es"
     "mls fr"
     "mls it"
     "mls pt"
+    "mls nl"
 )
 
 # ── Submit one job per model/dataset/language combination ───────────────────
