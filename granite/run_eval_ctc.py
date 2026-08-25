@@ -40,9 +40,9 @@ wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision("high")
 
 
-def load_model(model_id, device):
+def load_model(model_id, device, revision=None):
     """Load the packaged CTC Conformer via AutoModel (trust_remote_code)."""
-    model = AutoModel.from_pretrained(model_id, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_id, trust_remote_code=True, revision=revision)
     return model.eval().to(device)
 
 
@@ -88,9 +88,11 @@ def prefetch_inputs(processor, audios, batch_size, device):
 
 def main(args):
     device = torch.device(f"cuda:{args.device}" if (torch.cuda.is_available() and args.device >= 0) else "cpu")
-    model = load_model(args.model_id, device)
+    model = load_model(args.model_id, device, revision=args.revision)
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
-    processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(
+        args.model_id, trust_remote_code=True, revision=args.revision
+    )
     is_cuda = device.type == "cuda"
 
     # --- Gather the whole corpus up front (decode / I/O OUTSIDE the timer) ---
@@ -185,6 +187,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, default="hf_package/export",
                         help="Packaged model dir or Hub id (built by hf_package/build_package.py).")
+    parser.add_argument("--revision", type=str, default=None,
+                        help="Model repo revision (branch, tag or commit sha). Defaults to the main branch.")
     parser.add_argument("--dataset_path", type=str, default="esb/datasets")
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--split", type=str, default="test")
