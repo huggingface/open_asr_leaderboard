@@ -403,7 +403,7 @@ def score_results(
             "public",
             None,  # always printed when public datasets are present
             "model,RTFx,License,Size (B),# Languages,Encoder,Decoder,"
-            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli-Cleaned-AA WER,Voice Arena Moonsoon WER",
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voice-Arena-Moonsoon WER,Voxpopuli-Cleaned-AA WER",
             {
                 "ami_cleaned_test": ("AMI-Cleaned WER", None),
                 # Datasets in their own repo are run without a config name, so their
@@ -421,10 +421,8 @@ def score_results(
                 "librispeech_test.clean": ("LS Clean WER", None),
                 "librispeech_test.other": ("LS Other WER", None),
                 "spgispeech_test": ("SPGISpeech WER", None),
+                "Monsoon_en_IN_test__test": ("Voice-Arena-Moonsoon WER", None),
                 "voxpopuli_cleaned_aa_test": ("Voxpopuli-Cleaned-AA WER", None),
-                # VoiceArena/Monsoon_en_IN_test — standalone repo, plain text
-                # references (no lattice), so scored with the English normalizer.
-                "Monsoon_en_IN_test__test": ("Voice Arena Moonsoon WER", None),
             },
         ),
         (
@@ -588,19 +586,34 @@ def score_results(
 
     all_dataset_ids = " ".join(results.keys())
 
-    def find_wer_in(model_key, col_label, col_map):
+    def find_metric_in(model_key, col_label, col_map, metric="wer"):
         for ds_substr, (label, _group) in col_map.items():
             if label == col_label:
                 for result_key, result_val in results.items():
                     if model_key.rstrip() in result_key and ds_substr in result_key:
-                        return result_val["wer"]
+                        return result_val[metric]
         return None
 
-    def print_csv_block(header, col_map, family_key=None, family_name=None):
+    def find_wer_in(model_key, col_label, col_map):
+        return find_metric_in(model_key, col_label, col_map, "wer")
+
+    def print_csv_block(
+        header, col_map, family_key=None, family_name=None, per_dataset_rtfx=False
+    ):
         csv_columns = [lbl for lbl, _grp in col_map.values()]
         # deduplicate while preserving order
         seen = set()
         csv_columns = [c for c in csv_columns if not (c in seen or seen.add(c))]
+
+        # Prefix columns (RTFx, License, ...) are whatever the header has before
+        # the per-dataset WER labels; measure it before appending anything.
+        n_prefix = len(header.split(",")) - 1 - len(csv_columns)
+        rtfx_columns = []
+        if per_dataset_rtfx:
+            # Derived from the WER labels rather than spelled out in the header,
+            # so the two halves cannot drift out of order.
+            rtfx_columns = [c.replace(" WER", " RTFx") for c in csv_columns]
+            header = header + "," + ",".join(rtfx_columns)
 
         title = f"CSV Summary ({family_name}):" if family_name else "CSV Summary:"
         print()
@@ -634,6 +647,12 @@ def score_results(
                 str(wer_vals[col]) if wer_vals[col] is not None else ""
                 for col in csv_columns
             ]
+            if rtfx_columns:
+                rtfx_vals = [
+                    find_metric_in(model_key, col, col_map, "rtfx")
+                    for col in csv_columns
+                ]
+                wer_cols += [str(v) if v is not None else "" for v in rtfx_vals]
 
             is_private = any(grp is not None for _lbl, grp in col_map.values())
             if is_private:
@@ -666,7 +685,6 @@ def score_results(
                     + ",".join(wer_cols)
                 )
             else:
-                n_prefix = len(header.split(",")) - 1 - len(csv_columns)
                 if family_key == "public" or (family_key or "").startswith("ml_"):
                     family_audio = sum(
                         results[rk]["audio_length"]
@@ -708,7 +726,9 @@ def score_results(
         if presence_substr is None:
             has_public = any(ds_substr in all_dataset_ids for ds_substr in col_map)
             if has_public:
-                print_csv_block(header, col_map, family_key, family_name)
+                print_csv_block(
+                    header, col_map, family_key, family_name, per_dataset_rtfx=True
+                )
         else:
             if presence_substr in all_dataset_ids:
                 print_csv_block(header, col_map, family_key, family_name)

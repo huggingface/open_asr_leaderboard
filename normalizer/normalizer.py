@@ -116,8 +116,8 @@ class BasicMultilingualTextNormalizer:
         s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
         s = self.clean(s).lower()
 
-        # Remove punctuations and extra spaces (keep combining marks, \p{M})
-        s = regex.sub(r"[^\w\s\p{M}]", "", s)
+        # Remove punctuation and extra spaces
+        s = regex.sub(r"[^\w\s]", "", s)
         s = re.sub(r"\s+", " ", s).strip()
 
         return s
@@ -251,6 +251,15 @@ class EnglishNumberNormalizer:
             except ValueError:
                 return None
 
+        def is_digit_token(token: Optional[str]) -> bool:
+            """True for tokens that continue a digit sequence ("four", "oh", "20")."""
+            return token is not None and bool(
+                re.match(r"^\d+$", token)
+                or token in self.zeros
+                or token in self.ones
+                or token in self.tens
+            )
+
         def output(result: Union[str, int]):
             nonlocal prefix, value
             result = str(result)
@@ -299,16 +308,19 @@ class EnglishNumberNormalizer:
                 yield output(current)
             elif current in self.zeros:
                 # "oh" is far more often the interjection than a spoken zero, so
-                # only read it as a digit when it sits inside a number sequence
-                # ("four oh one", "nineteen oh five"). On its own — including the
-                # doubled "oh oh" — it stays a word. "o" and "zero" are
-                # unchanged.
-                in_number = (
-                    value is not None
-                    or next_is_numeric
-                    or (next in self.words and next not in self.zeros)
+                # read it as a digit only inside a digit sequence: the sequence
+                # has to continue on the right ("four oh one", "nineteen oh
+                # five"), and with nothing pending on the left it takes two more
+                # digit tokens, i.e. a serial/phone-style reading ("oh seven nine
+                # eight"). On its own — including the doubled "oh oh" — it stays
+                # a word. "o" and "zero" are unchanged.
+                next2 = words[i + 2] if i + 2 < len(words) else None
+                in_number = is_digit_token(next) and (
+                    value is not None or is_digit_token(next2)
                 )
                 if current == "oh" and not in_number:
+                    if value is not None:
+                        yield output(value)  # don't drop a pending number
                     yield output(current)
                 else:
                     value = str(value or "") + "0"

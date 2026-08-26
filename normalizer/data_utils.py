@@ -23,18 +23,8 @@ def is_target_text_in_range(ref):
 
 # Language-specific filler words / hesitations, removed when the matching
 # lang= is passed to the multilingual normalizer. Multi-word entries are
-# supported (matched on whitespace boundaries).
-FILLER_WORDS = {
-    "hi": [
-        "अं", "अँ", "अः", "अह",
-        "आं", "आह",
-        "उम्", "उम्म", "उह", "उहं", "उ उ",
-        "ओह",
-        "ज़",
-        "हम्", "हम्म", "हम्म्म", "हुं हुं", "हुह", "हूँ", "हह",
-        "अ अ", "ह ह ह",
-    ],
-}
+# supported (matched on whitespace boundaries). Currently empty
+FILLER_WORDS = {}
 
 
 class MultilingualNormalizer(BasicMultilingualTextNormalizer):
@@ -52,8 +42,8 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
         # text exactly (base normalization may strip punctuation such as "…"
         # or combining marks). Longest-first so that multi-word and longer
         # variants match before their prefixes. Matched on whitespace
-        # boundaries ((?<!\S) / (?!\S)) since \b is unreliable next to
-        # combining marks (e.g. Devanagari virama in "उम्").
+        # boundaries ((?<!\S) / (?!\S)) rather than \b, which is unreliable
+        # next to combining marks.
         self._filler_patterns = {}
         base_normalize = super().__call__
         for lang, words in FILLER_WORDS.items():

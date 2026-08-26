@@ -174,9 +174,26 @@ def main():
         choices=ML_LANGUAGES,
         metavar="LANGUAGE",
         help=f"Language(s) to score (can be repeated). Choices: {', '.join(ML_LANGUAGES)}. "
-             "Only used with --multilingual. Defaults to all languages found.",
+             "Implies --multilingual. Defaults to all languages found.",
     )
     args = parser.parse_args()
+
+    # --language only has meaning for the multilingual pass, so passing it on its
+    # own implies --multilingual; otherwise it would silently score the English
+    # benchmarks and ignore the language. Must precede the bucket default below,
+    # which keys off args.multilingual.
+    if args.language and not args.multilingual:
+        print(f"--language {' '.join(args.language)} given: assuming --multilingual.\n")
+        args.multilingual = True
+
+    # The multilingual pass derives its families from the language list, so a
+    # --family selection has nowhere to apply. Say so rather than dropping it.
+    if args.family and args.multilingual:
+        print(
+            f"WARNING: ignoring --family {' '.join(args.family)}: families do not "
+            "apply to the multilingual pass, which scores one family per language.",
+            file=sys.stderr,
+        )
 
     bucket = args.bucket or (
         "hf-audio/asr_leaderboard_multilingual" if args.multilingual else "hf-audio/asr_leaderboard_h200"
