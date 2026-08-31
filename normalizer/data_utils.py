@@ -21,12 +21,46 @@ def is_target_text_in_range(ref):
         return ref.strip() != ""
 
 
+# Language-specific filler words / hesitations, removed when the matching
+# lang= is passed to the multilingual normalizer. Multi-word entries are
+# supported (matched on whitespace boundaries). Currently empty
+FILLER_WORDS = {}
+
+
 class MultilingualNormalizer(BasicMultilingualTextNormalizer):
     """BasicMultilingualTextNormalizer with optional number normalization.
 
     Call with just text for standard normalization (backward-compatible).
-    Pass lang= to also convert digits to words via num2words.
+    Pass lang= to also convert digits to words via num2words and remove
+    language-specific filler words (see FILLER_WORDS).
     """
+
+    def __init__(self, remove_diacritics: bool = True):
+        super().__init__(remove_diacritics)
+        # Pre-compile filler patterns. Each filler word is passed through the
+        # base normalization itself, so the pattern matches the normalized
+        # text exactly (base normalization may strip punctuation such as "…"
+        # or combining marks). Longest-first so that multi-word and longer
+        # variants match before their prefixes. Matched on whitespace
+        # boundaries ((?<!\S) / (?!\S)) rather than \b, which is unreliable
+        # next to combining marks.
+        self._filler_patterns = {}
+        base_normalize = super().__call__
+        for lang, words in FILLER_WORDS.items():
+            normalized_words = {base_normalize(w) for w in words}
+            normalized_words.discard("")
+            self._filler_patterns[lang] = re.compile(
+                r"(?<!\S)(?:"
+                + "|".join(re.escape(w) for w in sorted(normalized_words, key=len, reverse=True))
+                + r")(?!\S)"
+            )
+
+    def _remove_fillers(self, text, lang):
+        pattern = self._filler_patterns.get(lang)
+        if pattern is None:
+            return text
+        text = pattern.sub("", text)
+        return re.sub(r"\s+", " ", text).strip()
 
     def _normalize_numbers(self, text, lang):
         # Join space-separated thousand groups (e.g. "10 000" -> "10000")
@@ -44,6 +78,7 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
     def __call__(self, s, lang=None):
         s = super().__call__(s)
         if lang is not None:
+            s = self._remove_fillers(s, lang)
             s = self._normalize_numbers(s, lang)
         return s
 

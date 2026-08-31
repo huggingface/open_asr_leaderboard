@@ -1,24 +1,28 @@
 #!/bin/bash
-# Local script to submit HF Jobs for SALM (canary-qwen) ASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs_salm.sh
+# Local script to submit HF Jobs for BharatGen Shrutam-2 evaluation.
+# Shrutam-2 covers 12 Indic languages; of the leaderboard's multilingual sets
+# only Hindi overlaps, via the standalone VoiceArena/Monsoon_hi_test repo.
+# This script is NOT pushed to the HF Space — it runs on your local machine.
+# Usage: HF_TOKEN=hf_... bash submit_jobs_ml.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-nemo}"
-RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+SPACE="${SPACE:-bezzam/open-asr-leaderboard-bharat}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
+DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
+MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Set USE_LOCAL_SCRIPT=1 to run your local run_eval_salm.py instead of the version
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval_ml.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
 USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
 LOCAL_SCRIPT_INJECT=""
 if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_salm.py")
-    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval_salm.py &&"
+    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_ml.py")
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval_ml.py &&"
 fi
 
 # Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
@@ -30,52 +34,24 @@ if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
     LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
 fi
 
-# ── Models: "model_id batch_size" ────────────────────────────────────────────
+# ── Models: "model_id batch_size" ───────────────────────────────────────────
+# Batch size is conservative: decoding uses 4-way beam search over a 2B LLM.
 MODEL_CONFIGS=(
-    "nvidia/canary-qwen-2.5b 192"
+    "bharatgenai/Shrutam-2      128"
 )
 
-# ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
-# dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
-# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
-# config name: the first field is only a label for selection and result files.
+# ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
+# "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# all others would be configs of ${DATASET_PATH} (none currently cover the
+# Indic languages Shrutam-2 supports).
 DATASET_CONFIGS=(
-    "ami_cleaned test"
-    "gigaspeech_cleaned test"
-    "voxpopuli_cleaned_aa test"
-    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean"
-    "librispeech test.other"
-    "spgispeech test"
-    "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "monsoon hi"
 )
-# Optional: restrict this run to specific datasets, matched against the first
-# field of each DATASET_CONFIGS entry, e.g.:
-#   ONLY_DATASETS="monsoon_en_in" bash <this script>
-#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
-if [[ -n "${ONLY_DATASETS:-}" ]]; then
-    _selected=()
-    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
-        for _cfg in "${DATASET_CONFIGS[@]}"; do
-            read -r _name _ <<< "$_cfg"
-            for _want in ${ONLY_DATASETS}; do
-                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
-                    _selected+=("$_cfg")
-                fi
-            done
-        done
-    fi
-    if [[ ${#_selected[@]} -eq 0 ]]; then
-        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
-        exit 1
-    fi
-    DATASET_CONFIGS=("${_selected[@]}")
-fi
 
-
-# ── Submit one job per model/dataset combination ─────────────────────────────
+# ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
+    # Sanitize model ID for use as a folder name (e.g. "bharatgenai/Shrutam-2" -> "bharatgenai-Shrutam-2")
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -83,17 +59,18 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT DATASET_PATH <<< "$cfg"
-        if [[ -n "$DATASET_PATH" ]]; then
-            # Entry names its own repo: pass no config. Such repos hold a single
-            # (default) config, and the name here is just a label.
-            DATASET_CONFIG=""
+        read -r DATASET LANGUAGE <<< "$cfg"
+        if [[ "$DATASET" == "monsoon" ]]; then
+            # Standalone single-config dataset repo — no --config_name.
+            JOB_DATASET="${MONSOON_DATASET_PATH}"
+            CONFIG_ARG=""
+            CONFIG_NAME="(none)"
         else
-            DATASET_PATH="$DEFAULT_DATASET_PATH"
-            DATASET_CONFIG="$DATASET"
+            JOB_DATASET="${DATASET_PATH}"
+            CONFIG_NAME="${DATASET}_${LANGUAGE}"
+            CONFIG_ARG="--config_name=${CONFIG_NAME}"
         fi
-
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -102,25 +79,25 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
-            --env TOKENIZERS_PARALLELISM=false \
-            --env HF_AUDIO_DECODER_BACKEND=soundfile \
+            --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
                 ${LOCAL_NORMALIZER_INJECT}
                 ${LOCAL_SCRIPT_INJECT}
-                PYTHONPATH=/app python run_eval_salm.py \
+                PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET_CONFIG} \
-                    --split=${SPLIT} \
+                    --dataset=${JOB_DATASET} \
+                    ${CONFIG_ARG} \
+                    --language=${LANGUAGE} \
+                    --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
                     --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
-            " > /dev/null 2>&1 &
+            " > /dev/null 2>&1 &    # suppress output and run in background
     done
     if [ -n "$ORG_NAME" ]; then
         echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"
@@ -128,11 +105,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         echo "For live status see: https://huggingface.co/settings/jobs"
     fi
 
+    # Wait for all background job submissions to complete
     wait
-    echo "All jobs finished for ${MODEL_ID}."
+    echo "All jobs finished."
     sleep 10  # allow time for the last results to be flushed to the bucket
 
+    # Download results and score
     mkdir -p "./results/${MODEL_FOLDER}"
+
     hf buckets sync \
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
@@ -145,9 +125,23 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         echo "All ${ACTUAL} result files present."
     fi
 
-    PYTHONPATH="${REPO_ROOT}" python -c "
+    # Collect the set of languages actually evaluated (across all datasets)
+    ALL_LANGUAGES=()
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET LANGUAGE <<< "$cfg"
+        if [[ ! " ${ALL_LANGUAGES[*]} " == *" ${LANGUAGE} "* ]]; then
+            ALL_LANGUAGES+=("$LANGUAGE")
+        fi
+    done
+
+    # Evaluate results: one call per language, so each is normalized with the
+    # correct language-specific normalizer and only its "ml_<lang>" family
+    # CSV block is printed.
+    for LANGUAGE in "${ALL_LANGUAGES[@]}"; do
+        PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
+score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
 "
+    done
 
 done

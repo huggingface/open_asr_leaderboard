@@ -30,7 +30,8 @@ RUN pip install --no-cache-dir \
     requests \
     tqdm \
     python-dotenv \
-    kaldialign==0.12.0
+    kaldialign==0.12.0 \
+    voi_oiwer
 
 # ── Provider-specific SDKs ────────────────────────────────────────────────────
 RUN pip install --no-cache-dir \

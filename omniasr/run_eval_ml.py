@@ -1,5 +1,7 @@
 import argparse
+import json
 import os
+import re
 
 import torch
 from omnilingual_asr.models.inference.pipeline import ASRInferencePipeline
@@ -12,18 +14,31 @@ from tqdm import tqdm
 
 wer_metric = evaluate.load("wer")
 
+# omnilingual_asr expects NLLB-style language codes (e.g. "deu_Latn"), not the
+# 2-letter codes used by the datasets/normalizer.
+NLLB_LANGUAGE_CODES = {
+    "en": "eng_Latn",
+    "de": "deu_Latn",
+    "fr": "fra_Latn",
+    "it": "ita_Latn",
+    "es": "spa_Latn",
+    "pt": "por_Latn",
+    "hi": "hin_Deva",
+}
+
 def main(args):
-    CONFIG_NAME = args.config_name
+    CONFIG_NAME = args.config_name  # None for single-config dataset repos (e.g. VoiceArena/Monsoon_hi_test)
     SPLIT_NAME = args.split
 
-    # Extract language from config_name if not provided
+    # Determine language for normalization: use --language if provided, otherwise
+    # extract from config_name (e.g. "fleurs_de") or, for single-config repos,
+    # from the dataset name (e.g. "Monsoon_hi_test").
     if args.language:
         LANGUAGE = args.language
     else:
-        try:
-            LANGUAGE = CONFIG_NAME.split("_", 1)[1]
-        except IndexError:
-            LANGUAGE = "en"
+        source = CONFIG_NAME if CONFIG_NAME else os.path.basename(args.dataset)
+        lang_match = re.search(r"_([a-z]{2})(?:_test)?$", source)
+        LANGUAGE = lang_match.group(1) if lang_match else "en"
 
     # Always use the multilingual normalizer with number normalization
     text_normalizer = lambda s: data_utils.ml_normalizer(s, lang=LANGUAGE)
@@ -46,7 +61,12 @@ def main(args):
     MAX_AUDIO_SEC = 40  # Pipeline max audio length
 
     def get_text(sample):
-        if "text" in sample:
+        if "lattice" in sample:
+            # Lattice reference (e.g. VoiceArena/Monsoon_hi_test): JSON-encode the
+            # lattice so it survives the manifest; scoring decodes it and uses
+            # voi_oiwer (see normalizer/eval_utils.py).
+            return json.dumps(sample["lattice"], ensure_ascii=False)
+        elif "text" in sample:
             return sample["text"]
         elif "sentence" in sample:
             return sample["sentence"]
@@ -84,9 +104,12 @@ def main(args):
         # START TIMING
         start_time = time.time()
 
-        # Inference with the appropriate language code
+        # Force the target language (NLLB code, e.g. "deu_Latn"), consistent
+        # with the API models which always pass the language to the provider.
+        lang = [NLLB_LANGUAGE_CODES.get(LANGUAGE, "eng_Latn")] * minibatch_size
         transcriptions = pipeline.transcribe(
             audio_data,
+            lang=lang,
             batch_size=minibatch_size
         )
 
@@ -173,7 +196,7 @@ def main(args):
         all_results["predictions"],
         args.model_id,
         args.dataset,
-        CONFIG_NAME,
+        CONFIG_NAME or "",
         SPLIT_NAME,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
@@ -181,11 +204,22 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    norm_refs = [text_normalizer(r) for r in all_results["references"]]
-    norm_preds = [text_normalizer(p) for p in all_results["predictions"]]
-    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
-    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
-    wer = round(100 * wer, 2)
+    from normalizer.eval_utils import OIWER_LANGUAGES, score_oiwer
+    if LANGUAGE in OIWER_LANGUAGES:
+        # Lattice-based, orthography-aware scoring (voi_oiwer applies its own
+        # normalization internally).
+        manifest = [
+            {"text": ref, "pred_text": pred}
+            for ref, pred in zip(all_results["references"], all_results["predictions"])
+        ]
+        wer, _ins, _del, _sub = score_oiwer(manifest, OIWER_LANGUAGES[LANGUAGE])
+        wer = round(100 * wer, 2)
+    else:
+        norm_refs = [text_normalizer(r) for r in all_results["references"]]
+        norm_preds = [text_normalizer(p) for p in all_results["predictions"]]
+        wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
+        wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
+        wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print(f"Dataset: {args.dataset}")
     print(f"Language: {LANGUAGE}")
@@ -213,8 +247,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_name",
         type=str,
-        required=True,
-        help="Config name in format <dataset>_<lang> (e.g., fleurs_en, mcv_de, mls_es)",
+        default=None,
+        help="Config name in format <dataset>_<lang> (e.g., fleurs_en, mcv_de, mls_es). "
+             "Omit for single-config dataset repos (e.g. 'VoiceArena/Monsoon_hi_test').",
     )
     parser.add_argument(
         "--language",

@@ -34,6 +34,8 @@ DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
 # ── Datasets: "name:split[:dataset_path]" ────────────────────────────────────
 # dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
+# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
+# config name: the first field is only a label for selection and result files.
 EVAL_DATASETS=(
     "ami_cleaned:test"
     "earnings22_cleaned_aa_chunked:test:ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
@@ -42,6 +44,7 @@ EVAL_DATASETS=(
     "librispeech:test.other"
     "spgispeech:test"
     "voxpopuli_cleaned_aa:test"
+    "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
@@ -56,8 +59,14 @@ fi
 # Datasets that require lexical format prompt
 LEXICAL_DATASETS="librispeech gigaspeech"
 
+
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
+# The API image pins datasets==2.19.0, which cannot read a dataset_info.json
+# written by a newer datasets (e.g. "_type": "List", added in 4.x). Give it its
+# own arrow cache so it never reads one the host wrote; it rebuilds there on the
+# first run of each dataset.
+DATASETS_CACHE_DIR="/hf_cache/datasets_api"
 
 # Create the bind-mount sources up front: Docker would otherwise create them
 # as root, and the containers run as the current user (see --user below).
@@ -72,7 +81,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for entry in "${EVAL_DATASETS[@]}"; do
         IFS=":" read -r DATASET SPLIT DATASET_PATH <<< "$entry"
-        DATASET_PATH="${DATASET_PATH:-$DEFAULT_DATASET_PATH}"
+        if [[ -n "$DATASET_PATH" ]]; then
+            # Entry names its own repo: pass no config. Such repos hold a single
+            # (default) config, and the name here is just a label.
+            DATASET_CONFIG=""
+        else
+            DATASET_PATH="$DEFAULT_DATASET_PATH"
+            DATASET_CONFIG="$DATASET"
+        fi
 
         PROMPT_FLAG=""
         if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" $DATASET "* ]]; then
@@ -83,7 +99,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
             -e HF_HOME=/tmp/hf_home \
-            -e HF_DATASETS_CACHE=/hf_cache/datasets \
+            -e HF_DATASETS_CACHE="${DATASETS_CACHE_DIR}" \
             -e HF_HUB_CACHE=/hf_cache/hub \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
@@ -99,14 +115,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
-            -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
             "${IMAGE_TAG}" -c "
                 cd /app && PYTHONPATH=/app python run_eval.py \
-                    --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET} \
+                    --dataset_path=${DS_PATH} \
+                    --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
                     --max_workers=${MAX_WORKERS} \
@@ -138,8 +153,15 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         INCLUDE_ARGS=()
         for entry in "${EVAL_DATASETS[@]}"; do
             IFS=":" read -r _DS _SP _DP <<< "$entry"
-            _DP="${_DP:-$DEFAULT_DATASET_PATH}"
-            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${_DP//\//-}_${_DS}_${_SP}.jsonl"
+            if [[ -n "$_DP" ]]; then
+                _CFG=""
+            else
+                _DP="$DEFAULT_DATASET_PATH"
+                _CFG="$_DS"
+            fi
+            # Manifest names are "MODEL_<model>_DATASET_<repo-slug>_<config>_<split>.jsonl";
+            # <config> is empty for single-config repos, leaving a double underscore.
+            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${_DP//\//-}_${_CFG}_${_SP}.jsonl"
             if [[ -f "${MODEL_RESULTS_DIR}/${FNAME}" ]]; then
                 INCLUDE_ARGS+=(--include "${FNAME}")
             else

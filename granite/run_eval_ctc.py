@@ -20,8 +20,10 @@ ONCE with a single sync at the end -- no per-batch synchronize() -- so CPU data
 prep overlaps GPU compute and RTFx reflects sustained throughput. RTFx =
 total_audio_seconds / total_wall_time.
 
-The processor returns RAW (un-normalized) text; the leaderboard
-data_utils.normalizer is applied here, as before.
+The processor returns RAW (un-normalized) text, and raw references/predictions
+are what get written to the manifest -- matching the other run_eval scripts, so
+that scoring-time normalization stays revisable. data_utils.normalizer is only
+applied to the WER printed at the end of this script.
 """
 
 import argparse
@@ -121,7 +123,7 @@ def main(args):
         arr = sample["audio"]["array"]
         audios.append(arr)
         durations.append(len(arr) / 16000.0)
-        references.append(sample["norm_text"])
+        references.append(sample["original_text"])  # raw; normalization applied at scoring time
         for key in chunk_metadata:
             chunk_metadata[key].append(sample[key])
 
@@ -153,12 +155,11 @@ def main(args):
     # --- Timed loop: whole corpus, single sync at the end ---
     start_time = time.time()
     with torch.inference_mode():
-        predictions_raw = run_all()
+        predictions = run_all()  # raw; normalization applied at scoring time
     if is_cuda:
         torch.cuda.synchronize()
     total_time = time.time() - start_time
 
-    predictions = [data_utils.normalizer(p) for p in predictions_raw]
     avg_time = total_time / len(audios)
 
     manifest_path = data_utils.write_manifest(
@@ -177,7 +178,9 @@ def main(args):
         references = [session["text"] for session in sessions]
         predictions = [session["pred_text"] for session in sessions]
 
-    wer = wer_metric.compute(references=references, predictions=predictions)
+    norm_refs = [data_utils.normalizer(r) for r in references]
+    norm_preds = [data_utils.normalizer(p) for p in predictions]
+    wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(durations) / total_time, 2)
     print("WER:", wer, "%", "RTFx:", rtfx)
