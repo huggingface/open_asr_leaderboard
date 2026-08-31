@@ -9,6 +9,7 @@
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
+MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MAX_NEW_TOKENS=500
@@ -40,7 +41,9 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" ──────────────────────────────────
-# German, French, Italian, Spanish, Portuguese
+# German, French, Italian, Spanish, Portuguese, Hindi
+# "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# all others are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -55,6 +58,7 @@ DATASET_CONFIGS=(
     "mls fr"
     "mls it"
     "mls pt"
+    "monsoon hi"
 )
 
 # ── Submit one job per model/dataset/language combination ───────────────────

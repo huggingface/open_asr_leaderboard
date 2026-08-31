@@ -44,6 +44,8 @@ def main(args):
     asr_model.eval()
     print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
+    is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+
     dataset = data_utils.load_data(args)
 
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
@@ -120,6 +122,8 @@ def main(args):
         "durations": [],
         "references": [],
     }
+    if is_chunked:
+        all_data.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
 
     data_itr = iter(dataset)
     for data in tqdm(data_itr, desc="Downloading Samples"):
@@ -128,10 +132,8 @@ def main(args):
     
     # Sort audio_filepaths and references based on durations values
     sorted_indices = sorted(range(len(all_data["durations"])), key=lambda k: all_data["durations"][k], reverse=True)
-    all_data["audio_filepaths"] = [all_data["audio_filepaths"][i] for i in sorted_indices]
-    all_data["original_audio_filepaths"] = [all_data["original_audio_filepaths"][i] for i in sorted_indices]
-    all_data["references"] = [all_data["references"][i] for i in sorted_indices]
-    all_data["durations"] = [all_data["durations"][i] for i in sorted_indices]
+    for key, values in all_data.items():
+        all_data[key] = [values[i] for i in sorted_indices]
     
     
     total_time = 0
@@ -174,11 +176,23 @@ def main(args):
         audio_length=all_data["durations"],
         transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
         audio_filepaths=all_data["original_audio_filepaths"],
+        extra_fields={key: all_data[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        if is_chunked
+        else None,
     )
 
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    norm_references = [data_utils.normalizer(r) for r in all_data['references']]
+    if is_chunked:
+        sessions = data_utils.merge_chunked_manifest(
+            data_utils.read_manifest(manifest_path)
+        )
+        references = [session["text"] for session in sessions]
+        predictions = [session["pred_text"] for session in sessions]
+    else:
+        references = all_data["references"]
+
+    norm_references = [data_utils.normalizer(r) for r in references]
     norm_predictions = [data_utils.normalizer(p) for p in predictions]
     wer = wer_metric.compute(references=norm_references, predictions=norm_predictions)
     wer = round(100 * wer, 2)

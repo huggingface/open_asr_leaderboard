@@ -18,6 +18,7 @@ MODEL_CONFIGS=(
     # "openai/gpt-4o-mini-transcribe 16"
     # "openai/whisper-1              16"
     # "assembly/universal-3-pro      4"
+    # "assembly/universal-3-5-pro    4"
     # "elevenlabs/scribe_v2          8"
     # "speechmatics/enhanced         4"
     # "reson8/resonant-1             16"
@@ -28,9 +29,13 @@ MODEL_CONFIGS=(
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
+MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese
+# German, French, Italian, Spanish, Portuguese, Hindi
+# "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# all others are configs of ${DATASET_PATH}. Hindi is scored with voi_oiwer over
+# the dataset's reference lattice (see OIWER_LANGUAGES in normalizer/eval_utils.py).
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -45,7 +50,33 @@ DATASET_CONFIGS=(
     "mls fr"
     "mls it"
     "mls pt"
+    "monsoon hi"
 )
+
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry (a dataset path here, a dataset name in the
+# public scripts). A repo basename also matches, so both "HF_English_Private_Set"
+# and "hf-audio/HF_English_Private_Set" work, e.g.:
+#   ONLY_DATASETS="HF_English_Private_Set" MODEL="modulate/vfast 25" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" ]]; then
+    _selected=()
+    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+        for _cfg in "${DATASET_CONFIGS[@]}"; do
+            read -r _name _ <<< "$_cfg"
+            for _want in ${ONLY_DATASETS}; do
+                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
+                    _selected+=("$_cfg")
+                fi
+            done
+        done
+    fi
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+fi
+
 
 # Override DATASET_CONFIGS or MODEL_CONFIGS from the environment for quick runs, e.g.:
 #   DATASETS="fleurs:de" MODEL="modulate/multilingual 25" bash run_api_ml.sh
@@ -54,6 +85,10 @@ DATASET_CONFIGS=(
 if [[ -n "${DATASETS:-}" ]]; then
     DATASET_CONFIGS=()
     for pair in ${DATASETS}; do
+        if [[ "$pair" != *:* ]]; then
+            echo "ERROR: DATASETS entries must be \"dataset:language\", e.g. \"monsoon:hi\". Got: ${pair}" >&2
+            exit 1
+        fi
         DATASET_CONFIGS+=("${pair/:/ }")
     done
 fi
@@ -64,8 +99,30 @@ fi
 # Datasets that require lexical format prompt (azure only)
 LEXICAL_DATASETS="mls-it"
 
+# Resolve a "dataset language" pair to the repo it lives in and its config name.
+# Sets DS_PATH and CONFIG_NAME (empty for standalone single-config repos).
+resolve_dataset() {
+    local dataset="$1" language="$2"
+    if [[ "$dataset" == "monsoon" ]]; then
+        DS_PATH="${MONSOON_DATASET_PATH}"
+        CONFIG_NAME=""
+    else
+        DS_PATH="${DATASET_PATH}"
+        CONFIG_NAME="${dataset}_${language}"
+    fi
+}
+
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
+# The API image pins datasets==2.19.0, which cannot read a dataset_info.json
+# written by a newer datasets (e.g. "_type": "List", added in 4.x). Give it its
+# own arrow cache so it never reads one the host wrote; it rebuilds there on the
+# first run of each dataset.
+DATASETS_CACHE_DIR="/hf_cache/datasets_api"
+
+# Create the bind-mount sources up front: Docker would otherwise create them
+# as root, and the containers run as the current user (see --user below).
+mkdir -p "${RUNDIR}/results" "${HF_CACHE_DIR}"
 
 echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
 docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
@@ -84,7 +141,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r dataset language <<< "$cfg"
-        config_name="${dataset}_${language}"
+        resolve_dataset "$dataset" "$language"
+        CONFIG_ARG=""
+        [[ -n "$CONFIG_NAME" ]] && CONFIG_ARG="--config_name=${CONFIG_NAME}"
 
         PROMPT_FLAG=""
         if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" ${dataset}-${language} "* ]]; then
@@ -92,9 +151,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         fi
 
         echo ""
-        echo "Running evaluation: $config_name"
+        echo "Running evaluation: ${CONFIG_NAME:-$dataset}"
         echo "   Model: $MODEL_ID"
-        echo "   Dataset: $dataset"
+        echo "   Dataset: $DS_PATH"
+        echo "   Config: ${CONFIG_NAME:-(none)}"
         echo "   Language: $language"
         echo "   Time: $(date)"
         echo "----------------------------------------"
@@ -103,7 +163,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
             -e HF_HOME=/tmp/hf_home \
-            -e HF_DATASETS_CACHE=/hf_cache/datasets \
+            -e HF_DATASETS_CACHE="${DATASETS_CACHE_DIR}" \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
@@ -123,8 +183,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -v "${HF_CACHE_DIR}:/hf_cache" \
             "${IMAGE_TAG}" -c "
                 cd /app && PYTHONPATH=/app python run_eval_ml.py \
-                    --dataset_path=${DATASET_PATH} \
-                    --config_name=${config_name} \
+                    --dataset_path=${DS_PATH} \
+                    ${CONFIG_ARG} \
                     --language=${language} \
                     --split=test \
                     --model_name=${MODEL_ID} \
@@ -134,9 +194,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
         exit_code=$?
         if [ $exit_code -eq 0 ]; then
-            echo "Evaluation completed successfully for $config_name"
+            echo "Evaluation completed successfully for ${CONFIG_NAME:-$dataset}"
         else
-            echo "Evaluation failed for $config_name (exit code: $exit_code)"
+            echo "Evaluation failed for ${CONFIG_NAME:-$dataset} (exit code: $exit_code)"
         fi
         echo "----------------------------------------"
     done
@@ -182,11 +242,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     if [[ -n "${RESULTS_BUCKET}" ]]; then
         # Only upload the specific files for the datasets in DATASET_CONFIGS
-        DATASET_PATH_SLUG="${DATASET_PATH//\//-}"
         INCLUDE_ARGS=()
         for cfg in "${DATASET_CONFIGS[@]}"; do
             read -r dataset language <<< "$cfg"
-            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${DATASET_PATH_SLUG}_${dataset}_${language}_test.jsonl"
+            resolve_dataset "$dataset" "$language"
+            # Manifest names are "MODEL_<model>_DATASET_<repo-slug>_<config>_<split>.jsonl";
+            # <config> is empty for standalone repos, leaving a double underscore.
+            FNAME="MODEL_${MODEL_FOLDER}_DATASET_${DS_PATH//\//-}_${CONFIG_NAME}_test.jsonl"
             if [[ -f "${MODEL_RESULTS_DIR}/${FNAME}" ]]; then
                 INCLUDE_ARGS+=(--include "${FNAME}")
             else

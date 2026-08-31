@@ -5,41 +5,99 @@
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-granite}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
-# ── Models: "model_id type batch_size [additional_params]" ────────────────────
-# Types: speculative, speculative_bpe, nar
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Set USE_LOCAL_SCRIPT=1 to run your local eval script instead of the version
+# committed to the Space (useful for iterating without pushing to the Space).
+# The script is picked per model type below, so the injection is built there.
+USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
+USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
+LOCAL_NORMALIZER_INJECT=""
+if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
+    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
+    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
+fi
+
+# ── Models: "model_id type batch_size [revision]" ─────────────────────────────
+# Types: speculative, speculative_bpe, nar, ctc
+# revision: optional 4th field, a model repo commit/branch/tag. Only the ctc
+# eval script accepts --revision today; omit it for the other types.
 MODEL_CONFIGS=(
     "ibm-granite/granite-4.0-1b-speech speculative 256"
     "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
+    "ibm-granite/granite-speech-5.0-470m-turboctc ctc 256 78b07c8e131eede3d59b95545efc8506b45a505b"
+    "ibm-granite/granite-speech-5.0-470m-turboctc-nc ctc 256 05b33f57fe08aae7a0365c7e096a42658f8a28ac"
 )
 
-# ── Datasets: "name split" ───────────────────────────────────────────────────
+# ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
+# dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
+# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
+# config name: the first field is only a label for selection and result files.
 DATASET_CONFIGS=(
     "ami_cleaned test"
     "gigaspeech_cleaned test"
     "voxpopuli_cleaned_aa test"
-    "earnings22 test"
+    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
+    "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry
+#   ONLY_DATASETS="monsoon_en_in" bash <this script>
+#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" ]]; then
+    _selected=()
+    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+        for _cfg in "${DATASET_CONFIGS[@]}"; do
+            read -r _name _ <<< "$_cfg"
+            for _want in ${ONLY_DATASETS}; do
+                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
+                    _selected+=("$_cfg")
+                fi
+            done
+        done
+    fi
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+fi
+
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_TYPE BATCH_SIZE <<< "$model_cfg"
+    read -r MODEL_ID MODEL_TYPE BATCH_SIZE REVISION <<< "$model_cfg"
+    REVISION_ARG=""
+    [[ -n "$REVISION" ]] && REVISION_ARG="--revision=${REVISION}"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
-    echo "  Evaluating: ${MODEL_ID} (${MODEL_TYPE}, batch_size=${BATCH_SIZE})"
+    echo "  Evaluating: ${MODEL_ID} (${MODEL_TYPE}, batch_size=${BATCH_SIZE}${REVISION:+, revision=${REVISION}})"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT <<< "$cfg"
+        read -r DATASET SPLIT DATASET_PATH <<< "$cfg"
+        if [[ -n "$DATASET_PATH" ]]; then
+            # Entry names its own repo: pass no config. Such repos hold a single
+            # (default) config, and the name here is just a label.
+            DATASET_CONFIG=""
+        else
+            DATASET_PATH="$DEFAULT_DATASET_PATH"
+            DATASET_CONFIG="$DATASET"
+        fi
 
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE}"
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE}"
 
         # Build command based on model type
         if [[ "$MODEL_TYPE" == "speculative" ]]; then
@@ -51,9 +109,22 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         elif [[ "$MODEL_TYPE" == "nar" ]]; then
             EVAL_SCRIPT="run_eval_nar.py"
             EXTRA_ARGS=""
+        elif [[ "$MODEL_TYPE" == "ctc" ]]; then
+            EVAL_SCRIPT="run_eval_ctc.py"
+            EXTRA_ARGS="--warmup_steps=2"
         else
             echo "ERROR: Unknown model type: ${MODEL_TYPE}" >&2
             exit 1
+        fi
+
+        LOCAL_SCRIPT_INJECT=""
+        if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+            if [[ ! -f "${SCRIPT_DIR}/${EVAL_SCRIPT}" ]]; then
+                echo "ERROR: ${SCRIPT_DIR}/${EVAL_SCRIPT} not found (needed for type ${MODEL_TYPE})" >&2
+                exit 1
+            fi
+            RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/${EVAL_SCRIPT}")
+            LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/${EVAL_SCRIPT} &&"
         fi
 
         NAMESPACE_ARG=""
@@ -69,10 +140,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
+                ${LOCAL_NORMALIZER_INJECT}
+                ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python ${EVAL_SCRIPT} \
                     --model_id=${MODEL_ID} \
+                    ${REVISION_ARG} \
                     --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET} \
+                    --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
@@ -105,7 +179,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         echo "All ${ACTUAL} result files present."
     fi
 
-    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
     PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
 score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
