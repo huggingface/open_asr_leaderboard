@@ -26,7 +26,7 @@ MODEL_CONFIGS=(
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
     # "microsoft/azure-speech-06-2026  4"
-    # "modulate/vfast                25"
+    # "modulate/multilingual               25"
     # "gladia/solaria-3             20"
     # "soniox/stt-async-v5           20"
 )
