@@ -120,7 +120,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -v "${HF_CACHE_DIR}:/hf_cache" \
             "${IMAGE_TAG}" -c "
                 cd /app && PYTHONPATH=/app python run_eval.py \
-                    --dataset_path=${DS_PATH} \
+                    --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
