@@ -8,6 +8,7 @@
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
+MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
@@ -38,8 +39,10 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" ──────────────────────────────────
-# German, French, Italian, Spanish, Portuguese, Dutch
+# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
 # Note: --language is not passed so the model auto-detects the language.
+# "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# all others are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -57,6 +60,7 @@ DATASET_CONFIGS=(
     "mls it"
     "mls pt"
     "mls nl"
+    "monsoon hi"
 )
 
 # ── Submit one job per model/dataset/language combination ───────────────────
@@ -70,8 +74,20 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
-        CONFIG_NAME="${DATASET}_${LANGUAGE}"
-        echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
+        # --language is forced for every dataset so the model transcribes in the
+        # known target language (consistent with the API models, which always
+        # pass the language to the provider).
+        if [[ "$DATASET" == "monsoon" ]]; then
+            # Standalone single-config dataset repo — no --config_name.
+            JOB_DATASET="${MONSOON_DATASET_PATH}"
+            CONFIG_ARG="--language=${LANGUAGE}"
+            CONFIG_NAME="(none)"
+        else
+            JOB_DATASET="${DATASET_PATH}"
+            CONFIG_NAME="${DATASET}_${LANGUAGE}"
+            CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
+        fi
+        echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -88,8 +104,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset=${DATASET_PATH} \
-                    --config_name=${CONFIG_NAME} \
+                    --dataset=${JOB_DATASET} \
+                    ${CONFIG_ARG} \
                     --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \

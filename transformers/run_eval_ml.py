@@ -313,7 +313,13 @@ def main(args):
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         batch["predictions"] = pred_text  # raw; normalization applied at scoring time
-        batch["references"] = batch["text"]  # raw; normalization applied at scoring time
+        if "lattice" in batch:
+            # Lattice reference (e.g. VoiceArena/Monsoon_hi_test): store the
+            # lattice JSON-encoded in the reference field; scoring decodes it
+            # and uses voi_oiwer (see normalizer/eval_utils.py).
+            batch["references"] = [json.dumps(lat, ensure_ascii=False) for lat in batch["lattice"]]
+        else:
+            batch["references"] = batch["text"]  # raw; normalization applied at scoring time
 
         return batch
 
@@ -392,11 +398,22 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    norm_refs = [data_utils.ml_normalizer(r, lang=norm_language) for r in all_results["references"]]
-    norm_preds = [data_utils.ml_normalizer(p, lang=norm_language) for p in all_results["predictions"]]
-    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
-    wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
-    wer = round(100 * wer, 2)
+    from normalizer.eval_utils import OIWER_LANGUAGES, score_oiwer
+    if norm_language in OIWER_LANGUAGES:
+        # Lattice-based, orthography-aware scoring (voi_oiwer applies its own
+        # normalization internally).
+        manifest = [
+            {"text": ref, "pred_text": pred}
+            for ref, pred in zip(all_results["references"], all_results["predictions"])
+        ]
+        wer, _ins, _del, _sub = score_oiwer(manifest, OIWER_LANGUAGES[norm_language])
+        wer = round(100 * wer, 2)
+    else:
+        norm_refs = [data_utils.ml_normalizer(r, lang=norm_language) for r in all_results["references"]]
+        norm_preds = [data_utils.ml_normalizer(p, lang=norm_language) for p in all_results["predictions"]]
+        wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
+        wer = wer_metric.compute(references=wer_refs, predictions=wer_preds)
+        wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print("WER:", wer, "%", "RTFx:", rtfx)
 

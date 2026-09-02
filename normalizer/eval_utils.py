@@ -6,6 +6,61 @@ from difflib import SequenceMatcher
 
 from kaldialign import batch_error_rate
 
+# Languages scored with voi_oiwer (Orthographically Informed WER over a
+# reference lattice) instead of plain WER. Maps language code → voi_oiwer
+# input_language name.
+OIWER_LANGUAGES = {
+    "hi": "hindi",
+}
+
+
+def score_oiwer(manifest: list, language_name: str):
+    """Score a manifest with voi_oiwer (lattice-based, orthography-aware WER).
+
+    Each manifest entry must have "pred_text" and a reference in one of:
+      - "reference_lists": the lattice — list of slots, each a list of
+        accepted variants (a variant may span multiple words);
+      - "text" as a JSON-encoded lattice (list of lists of str);
+      - "text" as a plain string, converted to a trivial single-variant
+        lattice (one slot per word).
+
+    voi_oiwer applies its own indicnlp-based normalization internally, so no
+    external normalizer should be applied beforehand.
+
+    Returns (err_rate, total_ins, total_del, total_sub) with err_rate in [0, 1].
+    """
+    from voi_oiwer import oiwer  # deferred import: only needed for OIWER languages
+
+    total_ins = total_del = total_sub = 0
+    total_ref_words = 0
+    for datum in manifest:
+        reference_lists = datum.get("reference_lists")
+        if reference_lists is None:
+            text = datum["text"]
+            if isinstance(text, str) and text.lstrip().startswith("[["):
+                try:
+                    text = json.loads(text)
+                except json.JSONDecodeError:
+                    pass
+            if isinstance(text, list):
+                reference_lists = text
+            else:
+                # Plain string reference: trivial lattice, one slot per word.
+                reference_lists = [[word] for word in str(text).split()]
+
+        _score, _h, _r, _ops, (ins, dele, sub), ref_words, _meta, _std = oiwer(
+            hypothesis=datum["pred_text"],
+            reference_lists=reference_lists,
+            input_language=language_name,
+        )
+        total_ins += ins
+        total_del += dele
+        total_sub += sub
+        total_ref_words += ref_words
+
+    err_rate = (total_ins + total_del + total_sub) / total_ref_words if total_ref_words else 0.0
+    return err_rate, total_ins, total_del, total_sub
+
 
 def normalize_compound_pairs(refs, preds):
     """Align compound word boundaries between ref/pred pairs.
@@ -234,9 +289,12 @@ def score_results(
         csv_only: If True, suppress all output except the CSV summary block.
         language: Language code used for normalization (e.g. 'en', 'de', 'fr').
                   When not 'en', ml_normalizer is used instead of the English normalizer.
-        families: Optional list of family keys ("appen", "dataocean", "public", "extra",
-                  "ml_de", "ml_fr", "ml_it", "ml_es", "ml_pt", "ml_nl") restricting which
-                  CSV summary blocks are printed. None prints all detected families.
+                  Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
+                  voi_oiwer over a reference lattice instead of plain WER.
+        families: Optional list of family keys ("appen", "dataocean", "voicearena_private",
+                  "voicearena_private_hi", "public", "extra", "ml_de", "ml_fr", "ml_it", "ml_es",
+                  "ml_pt", "ml_nl") restricting which CSV summary blocks are printed.
+                  None prints all detected families.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -326,12 +384,35 @@ def score_results(
             },
         ),
         (
+            "voicearena_private",
+            "HF_English",
+            "model,English Private WER",
+            {
+                "HF_English_Private_Set__test": ("English Private WER", None),
+            },
+        ),
+        (
+            "voicearena_private_hi",
+            "HF_Hindi_Private_Set",
+            "model,Hindi WER",
+            {
+                "HF_Hindi_Private_Set__test": ("Hindi WER", None),
+            },
+        ),
+        (
             "public",
             None,  # always printed when public datasets are present
             "model,RTFx,License,Size (B),# Languages,Encoder,Decoder,"
-            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voxpopuli-Cleaned-AA WER",
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voice-Arena-Moonsoon WER,Voxpopuli-Cleaned-AA WER",
             {
                 "ami_cleaned_test": ("AMI-Cleaned WER", None),
+                # Datasets in their own repo are run without a config name, so their
+                # manifest id is "<repo-slug>__<split>". The name-based key is kept
+                # for manifests produced before that convention.
+                "Earnings22-Cleaned-AA-chunked__test": (
+                    "Earnings22-Cleaned-AA-chunked WER",
+                    None,
+                ),
                 "earnings22_cleaned_aa_chunked_test": (
                     "Earnings22-Cleaned-AA-chunked WER",
                     None,
@@ -340,6 +421,7 @@ def score_results(
                 "librispeech_test.clean": ("LS Clean WER", None),
                 "librispeech_test.other": ("LS Other WER", None),
                 "spgispeech_test": ("SPGISpeech WER", None),
+                "Monsoon_en_IN_test__test": ("Voice-Arena-Moonsoon WER", None),
                 "voxpopuli_cleaned_aa_test": ("Voxpopuli-Cleaned-AA WER", None),
             },
         ),
@@ -365,8 +447,10 @@ def score_results(
         "es": ["fleurs", "mcv", "mls"],
         "pt": ["fleurs", "mls"],
         "nl": ["fleurs", "mcv", "mls"],
+        # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
+        "hi": ["Monsoon"],
     }
-    ML_DATASET_LABELS = {"fleurs": "FLEURS", "mcv": "MCV", "mls": "MLS"}
+    ML_DATASET_LABELS = {"fleurs": "FLEURS", "mcv": "MCV", "mls": "MLS", "Monsoon": "Monsoon"}
     for lang, datasets in ML_LANG_DATASETS.items():
         col_map = {
             f"{dataset}_{lang}_test": (f"{ML_DATASET_LABELS[dataset]} WER", None)
@@ -409,32 +493,39 @@ def score_results(
         manifest = merge_chunked_manifest(read_manifest(result_file))
         model_id_of_file, dataset_id = parse_filepath(result_file)
 
-        if language == "en":
-            normalize = data_utils.normalizer
-        else:
-            normalize = lambda t: data_utils.ml_normalizer(t, lang=language)
-        references = [normalize(datum["text"]) for datum in manifest]
-        predictions = [normalize(datum["pred_text"]) for datum in manifest]
-
         time = [datum["time"] for datum in manifest]
         duration = [datum["duration"] for datum in manifest]
         compute_rtfx = all(time) and all(duration)
 
-        if multilingual:
-            # Align compound word boundaries (e.g. German/Italian compounds)
-            # before scoring, so split-vs-joined spelling doesn't count as an error.
-            references, predictions = normalize_compound_pairs(references, predictions)
+        if language in OIWER_LANGUAGES:
+            # Lattice-based, orthography-aware scoring (voi_oiwer). The package
+            # applies its own indicnlp-based normalization internally.
+            wer, total_ins, total_del, total_sub = score_oiwer(
+                manifest, OIWER_LANGUAGES[language]
+            )
+        else:
+            if language == "en":
+                normalize = data_utils.normalizer
+            else:
+                normalize = lambda t: data_utils.ml_normalizer(t, lang=language)
+            references = [normalize(datum["text"]) for datum in manifest]
+            predictions = [normalize(datum["pred_text"]) for datum in manifest]
 
-        # Use kaldialign batch_error_rate with merge_compounds=True so that
-        # split compounds (e.g. "white paper" vs "whitepaper") count as
-        # 0 errors in either direction.
-        refs_split = [tuple(r.split()) for r in references]
-        preds_split = [tuple(p.split()) for p in predictions]
-        r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
-        total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
-        wer = r["err_rate"]
+            if multilingual:
+                # Align compound word boundaries (e.g. German/Italian compounds)
+                # before scoring, so split-vs-joined spelling doesn't count as an error.
+                references, predictions = normalize_compound_pairs(references, predictions)
+
+            # Use kaldialign batch_error_rate with merge_compounds=True so that
+            # split compounds (e.g. "white paper" vs "whitepaper") count as
+            # 0 errors in either direction.
+            refs_split  = [tuple(r.split()) for r in references]
+            preds_split = [tuple(p.split()) for p in predictions]
+            r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
+            total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
+            wer = r["err_rate"]
+
         extra = {"ins": total_ins, "del": total_del, "sub": total_sub}
-
         wer = round(100 * wer, 2)
 
         if compute_rtfx:
@@ -496,19 +587,34 @@ def score_results(
 
     all_dataset_ids = " ".join(results.keys())
 
-    def find_wer_in(model_key, col_label, col_map):
+    def find_metric_in(model_key, col_label, col_map, metric="wer"):
         for ds_substr, (label, _group) in col_map.items():
             if label == col_label:
                 for result_key, result_val in results.items():
                     if model_key.rstrip() in result_key and ds_substr in result_key:
-                        return result_val["wer"]
+                        return result_val[metric]
         return None
 
-    def print_csv_block(header, col_map, family_key=None, family_name=None):
+    def find_wer_in(model_key, col_label, col_map):
+        return find_metric_in(model_key, col_label, col_map, "wer")
+
+    def print_csv_block(
+        header, col_map, family_key=None, family_name=None, per_dataset_rtfx=False
+    ):
         csv_columns = [lbl for lbl, _grp in col_map.values()]
         # deduplicate while preserving order
         seen = set()
         csv_columns = [c for c in csv_columns if not (c in seen or seen.add(c))]
+
+        # Prefix columns (RTFx, License, ...) are whatever the header has before
+        # the per-dataset WER labels; measure it before appending anything.
+        n_prefix = len(header.split(",")) - 1 - len(csv_columns)
+        rtfx_columns = []
+        if per_dataset_rtfx:
+            # Derived from the WER labels rather than spelled out in the header,
+            # so the two halves cannot drift out of order.
+            rtfx_columns = [c.replace(" WER", " RTFx") for c in csv_columns]
+            header = header + "," + ",".join(rtfx_columns)
 
         title = f"CSV Summary ({family_name}):" if family_name else "CSV Summary:"
         print()
@@ -542,6 +648,12 @@ def score_results(
                 str(wer_vals[col]) if wer_vals[col] is not None else ""
                 for col in csv_columns
             ]
+            if rtfx_columns:
+                rtfx_vals = [
+                    find_metric_in(model_key, col, col_map, "rtfx")
+                    for col in csv_columns
+                ]
+                wer_cols += [str(v) if v is not None else "" for v in rtfx_vals]
 
             is_private = any(grp is not None for _lbl, grp in col_map.values())
             if is_private:
@@ -574,7 +686,6 @@ def score_results(
                     + ",".join(wer_cols)
                 )
             else:
-                n_prefix = len(header.split(",")) - 1 - len(csv_columns)
                 if family_key == "public" or (family_key or "").startswith("ml_"):
                     family_audio = sum(
                         results[rk]["audio_length"]
@@ -616,7 +727,9 @@ def score_results(
         if presence_substr is None:
             has_public = any(ds_substr in all_dataset_ids for ds_substr in col_map)
             if has_public:
-                print_csv_block(header, col_map, family_key, family_name)
+                print_csv_block(
+                    header, col_map, family_key, family_name, per_dataset_rtfx=True
+                )
         else:
             if presence_substr in all_dataset_ids:
                 print_csv_block(header, col_map, family_key, family_name)

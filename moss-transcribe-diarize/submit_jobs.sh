@@ -25,7 +25,31 @@ DATASET_CONFIGS=(
     "librispeech test.other"
     "spgispeech test"
     "voxpopuli_cleaned_aa test"
+    "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_DATASETS="monsoon_en_in" bash <this script>
+#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" ]]; then
+    _selected=()
+    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+        for _cfg in "${DATASET_CONFIGS[@]}"; do
+            read -r _name _ <<< "$_cfg"
+            for _want in ${ONLY_DATASETS}; do
+                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
+                    _selected+=("$_cfg")
+                fi
+            done
+        done
+    fi
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+fi
+
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
     echo "HF_TOKEN is required" >&2
@@ -62,7 +86,14 @@ fi
 pids=()
 for config in "${DATASET_CONFIGS[@]}"; do
     read -r dataset split dataset_path <<< "${config}"
-    dataset_path="${dataset_path:-$DEFAULT_DATASET_PATH}"
+    if [[ -n "$dataset_path" ]]; then
+        # Entry names its own repo: pass no config. Such repos hold a single
+        # (default) config, and the name here is just a label.
+        dataset_config=""
+    else
+        dataset_path="$DEFAULT_DATASET_PATH"
+        dataset_config="$dataset"
+    fi
     echo "Submitting model=${MODEL_ID} dataset_path=${dataset_path} dataset=${dataset} split=${split} batch_size=${BATCH_SIZE}"
 
     (

@@ -7,6 +7,7 @@ Usage:
     python scripts/score_bucket_results.py --bucket bezzam/asr_leaderboard --local_dir results
     python scripts/score_bucket_results.py --skip_sync   # re-score already-downloaded results
     python scripts/score_bucket_results.py --family appen --family dataocean   # non-default families
+    python scripts/score_bucket_results.py --family voicearena_private_hi  # Hindi private set (voi_oiwer)
     python scripts/score_bucket_results.py --family all  # every detected family
 
     # Multilingual (FLEURS/MCV/MLS) results. Defaults to the
@@ -20,6 +21,7 @@ import argparse
 import os
 import subprocess
 import sys
+from collections import defaultdict
 
 # Allow importing normalizer from the repo root regardless of where the script
 # is called from.
@@ -28,8 +30,14 @@ sys.path.insert(0, REPO_ROOT)
 
 from normalizer.eval_utils import score_results
 
-# Languages covered by the multilingual (FLEURS/MCV/MLS) benchmarks.
-ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl"]
+# Languages covered by the multilingual (FLEURS/MCV/MLS + Hindi Monsoon) benchmarks.
+ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hi"]
+
+# Dataset families selectable via --family, and the language each is scored with.
+# Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
+# 'hi' routes through voi_oiwer (see OIWER_LANGUAGES in normalizer/eval_utils.py).
+FAMILIES = ["appen", "dataocean", "public", "extra", "voicearena_private_hi", "voicearena_private"]
+FAMILY_LANGUAGES = {"voicearena_private_hi": "hi"}
 
 # Columns of the combined multilingual CSV summary: (column label, dataset substring).
 ML_CSV_COLUMNS = [
@@ -49,6 +57,7 @@ ML_CSV_COLUMNS = [
     ("nl_covost", "mcv_nl_test"),
     ("nl_mls", "mls_nl_test"),
     ("nl_fleurs", "fleurs_nl_test"),
+    ("hi_monsoon", "Monsoon_hi_test"),
 ]
 
 
@@ -138,11 +147,12 @@ def main():
         "--family",
         action="append",
         default=None,
-        choices=["appen", "dataocean", "public", "extra", "all"],
+        choices=FAMILIES + ["all"],
         metavar="FAMILY",
         help="Dataset family to include in the CSV summary (can be repeated). "
-             "Choices: appen, dataocean, public, extra, all. Defaults to public. "
-             "Ignored when --multilingual is set.",
+             f"Choices: {', '.join(FAMILIES)}, all. Defaults to public. "
+             "Families requiring a non-English normalizer (e.g. voicearena_private_hi) are "
+             "scored in a separate pass. Ignored when --multilingual is set.",
     )
     parser.add_argument(
         "--model_id",
@@ -167,9 +177,26 @@ def main():
         choices=ML_LANGUAGES,
         metavar="LANGUAGE",
         help=f"Language(s) to score (can be repeated). Choices: {', '.join(ML_LANGUAGES)}. "
-             "Only used with --multilingual. Defaults to all languages found.",
+             "Implies --multilingual. Defaults to all languages found.",
     )
     args = parser.parse_args()
+
+    # --language only has meaning for the multilingual pass, so passing it on its
+    # own implies --multilingual; otherwise it would silently score the English
+    # benchmarks and ignore the language. Must precede the bucket default below,
+    # which keys off args.multilingual.
+    if args.language and not args.multilingual:
+        print(f"--language {' '.join(args.language)} given: assuming --multilingual.\n")
+        args.multilingual = True
+
+    # The multilingual pass derives its families from the language list, so a
+    # --family selection has nowhere to apply. Say so rather than dropping it.
+    if args.family and args.multilingual:
+        print(
+            f"WARNING: ignoring --family {' '.join(args.family)}: families do not "
+            "apply to the multilingual pass, which scores one family per language.",
+            file=sys.stderr,
+        )
 
     bucket = args.bucket or (
         "hf-audio/asr_leaderboard_multilingual" if args.multilingual else "hf-audio/asr_leaderboard_h200"
@@ -211,10 +238,27 @@ def main():
     else:
         families = args.family or ["public"]
         if "all" in families:
-            families = None  # None means all families
+            families = FAMILIES
+
+        # Each score_results call applies a single normalizer, so families are
+        # grouped by the language they must be scored with and passed one group
+        # per call.
+        families_by_language = defaultdict(list)
+        for family in families:
+            families_by_language[FAMILY_LANGUAGES.get(family, "en")].append(family)
 
         for model_id in model_ids:
-            score_results(local_dir, model_id=model_id, csv_only=True, families=families)
+            for language, language_families in families_by_language.items():
+                try:
+                    score_results(
+                        local_dir,
+                        model_id=model_id,
+                        csv_only=True,
+                        language=language,
+                        families=language_families,
+                    )
+                except ValueError as e:
+                    print(f"Skipping families={language_families} model_id={model_id}: {e}")
 
 
 if __name__ == "__main__":

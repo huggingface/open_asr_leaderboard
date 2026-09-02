@@ -39,6 +39,8 @@ MODEL_CONFIGS=(
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
 # dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
+# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
+# config name: the first field is only a label for selection and result files.
 DATASET_CONFIGS=(
     "ami_cleaned test 128"
     "gigaspeech_cleaned test 128"
@@ -47,7 +49,31 @@ DATASET_CONFIGS=(
     "librispeech test.clean 128"
     "librispeech test.other 128"
     "spgispeech test 128"
+    "monsoon_en_in test 128 VoiceArena/Monsoon_en_IN_test"
 )
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_DATASETS="monsoon_en_in" bash <this script>
+#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" ]]; then
+    _selected=()
+    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+        for _cfg in "${DATASET_CONFIGS[@]}"; do
+            read -r _name _ <<< "$_cfg"
+            for _want in ${ONLY_DATASETS}; do
+                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
+                    _selected+=("$_cfg")
+                fi
+            done
+        done
+    fi
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+fi
+
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
@@ -59,7 +85,14 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET SPLIT BATCH_SIZE DATASET_PATH <<< "$cfg"
-        DATASET_PATH="${DATASET_PATH:-$DEFAULT_DATASET_PATH}"
+        if [[ -n "$DATASET_PATH" ]]; then
+            # Entry names its own repo: pass no config. Such repos hold a single
+            # (default) config, and the name here is just a label.
+            DATASET_CONFIG=""
+        else
+            DATASET_PATH="$DEFAULT_DATASET_PATH"
+            DATASET_CONFIG="$DATASET"
+        fi
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
@@ -80,7 +113,7 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
                 PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
                     --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET} \
+                    --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \

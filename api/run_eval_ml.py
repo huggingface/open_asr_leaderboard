@@ -1,4 +1,5 @@
 import argparse
+import json
 from typing import Optional
 import datasets
 from datasets import Audio
@@ -12,7 +13,7 @@ import itertools
 from tqdm import tqdm
 from dotenv import load_dotenv
 from normalizer import data_utils
-from normalizer.eval_utils import normalize_compound_pairs
+from normalizer.eval_utils import OIWER_LANGUAGES, normalize_compound_pairs, score_oiwer
 import concurrent.futures
 from providers import get_provider, PermanentError
 
@@ -21,6 +22,10 @@ load_dotenv()
 
 def fetch_audio_urls(dataset_path, config_name, split, batch_size=100, max_retries=20):
     API_URL = "https://datasets-server.huggingface.co/rows"
+
+    # Single-config repos have no config name locally, but the datasets-server
+    # still addresses them as "default".
+    config_name = config_name or "default"
 
     size_url = f"https://datasets-server.huggingface.co/size?dataset={dataset_path}&config={config_name}&split={split}"
     size_response = requests.get(size_url).json()
@@ -112,7 +117,8 @@ def transcribe_dataset(
             audio_rows = itertools.islice(audio_rows, max_samples)
         ds = audio_rows
     else:
-        ds = datasets.load_dataset(dataset_path, config_name, split=split, streaming=False)
+        # config_name is None/"" for single-config repos (e.g. HF_Hindi_Private_Set)
+        ds = datasets.load_dataset(dataset_path, config_name or None, split=split, streaming=False)
         ds = ds.cast_column("audio", Audio(sampling_rate=16000))
         if max_samples:
             ds = ds.select(range(min(max_samples, len(ds))))
@@ -126,9 +132,20 @@ def transcribe_dataset(
 
     print(f"Transcribing with model: {model_name}, language: {language}, config: {config_name}")
 
+    def get_reference(row):
+        """Reference text, or the JSON-encoded lattice when the dataset has one.
+
+        Lattice datasets (e.g. hf-audio/HF_Hindi_Private_Set) give a list of
+        accepted variants per word; scoring decodes it and uses voi_oiwer
+        (see normalizer/eval_utils.py).
+        """
+        if row.get("lattice") is not None:
+            return json.dumps(row["lattice"], ensure_ascii=False)
+        return row.get("text", "").strip()
+
     def process_sample(sample):
         if use_url:
-            reference = sample["row"]["text"].strip()
+            reference = get_reference(sample["row"])
             audio_duration = sample["row"]["audio_length_s"]
             start = time.time()
             try:
@@ -140,7 +157,7 @@ def transcribe_dataset(
                 return None
 
         else:
-            reference = sample.get("text", "").strip()
+            reference = get_reference(sample)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
                 sf.write(
                     tmpfile.name,
@@ -206,7 +223,7 @@ def transcribe_dataset(
         results["predictions"],
         model_name.replace("/", "-"),
         dataset_path,
-        config_name,
+        config_name or "",
         split,
         audio_length=results["audio_length_s"],
         transcription_time=results["transcription_time_s"],
@@ -214,12 +231,21 @@ def transcribe_dataset(
 
     print("Results saved at path:", manifest_path)
 
-    norm_refs = [data_utils.ml_normalizer(r, lang=language) for r in results["references"]]
-    norm_preds = [data_utils.ml_normalizer(t, lang=language) for t in results["predictions"]]
-    wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
-    refs_split = [tuple(r.split()) for r in wer_refs]
-    preds_split = [tuple(p.split()) for p in wer_preds]
-    wer = batch_error_rate(refs_split, preds_split, merge_compounds=True)["err_rate"]
+    if language in OIWER_LANGUAGES:
+        # Lattice-based, orthography-aware scoring (voi_oiwer applies its own
+        # normalization internally, so no external normalizer is used here).
+        manifest = [
+            {"text": ref, "pred_text": pred}
+            for ref, pred in zip(results["references"], results["predictions"])
+        ]
+        wer, _ins, _del, _sub = score_oiwer(manifest, OIWER_LANGUAGES[language])
+    else:
+        norm_refs = [data_utils.ml_normalizer(r, lang=language) for r in results["references"]]
+        norm_preds = [data_utils.ml_normalizer(t, lang=language) for t in results["predictions"]]
+        wer_refs, wer_preds = normalize_compound_pairs(norm_refs, norm_preds)
+        refs_split = [tuple(r.split()) for r in wer_refs]
+        preds_split = [tuple(p.split()) for p in wer_preds]
+        wer = batch_error_rate(refs_split, preds_split, merge_compounds=True)["err_rate"]
     wer_percent = round(100 * wer, 2)
     rtfx = round(
         sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2
@@ -234,7 +260,11 @@ if __name__ == "__main__":
         description="Multilingual API Transcription Script with Concurrency"
     )
     parser.add_argument("--dataset_path", required=True)
-    parser.add_argument("--config_name", required=True, help="Dataset config name, e.g. 'fleurs_de'")
+    parser.add_argument(
+        "--config_name",
+        default=None,
+        help="Dataset config name, e.g. 'fleurs_de'. Omit for single-config repos.",
+    )
     parser.add_argument("--language", required=True, help="Language code, e.g. 'de'")
     parser.add_argument("--split", default="test")
     parser.add_argument(
