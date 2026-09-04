@@ -31,7 +31,7 @@ bash api/run_api.sh
 
 Same idea, but using `api/run_api_ml.sh`, which evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 - Set the relevant model in `MODEL_CONFIGS` of `api/run_api_ml.sh` with the model ID and the number max workers that the API allows, or pass `MODEL` via env var.
-- Set the relevant dataset/language pairs in `DATASET_CONFIGS` of `api/run_api_ml.sh`, or pass `"dataset:language"` pairs via `DATASETS` (see examples below).
+- Set the relevant dataset/language pairs in `DATASET_CONFIGS` of `api/run_api_ml.sh`, or narrow that list with `DATASETS` and `LANGUAGES` (see examples below).
 
 Smoke test (single model, single dataset/language):
 ```bash
@@ -44,6 +44,24 @@ To pass multiple dataset/language pairs via `DATASETS`, separate them with a spa
 ```bash
 AZURE_API_KEY=<YOUR_KEY> MODEL="microsoft/azure-speech 4" \
 DATASETS="fleurs:de mcv:de mls:it" \
+bash api/run_api_ml.sh
+```
+
+`LANGUAGES` restricts the run to one or more languages, keeping every dataset in
+`DATASET_CONFIGS` that covers them. For example, to evaluate Dutch across FLEURS,
+MCV, and MLS:
+```bash
+AZURE_API_KEY=<YOUR_KEY> MODEL="microsoft/azure-speech 4" \
+LANGUAGES="nl" \
+bash api/run_api_ml.sh
+```
+
+`DATASETS` also accepts bare dataset names, which combine with `LANGUAGES` to
+select a subset of both. For example, Dutch and German on FLEURS and MCV only
+(four combinations):
+```bash
+AZURE_API_KEY=<YOUR_KEY> MODEL="microsoft/azure-speech 4" \
+DATASETS="fleurs mcv" LANGUAGES="nl de" \
 bash api/run_api_ml.sh
 ```
 

@@ -293,7 +293,7 @@ def score_results(
                   voi_oiwer over a reference lattice instead of plain WER.
         families: Optional list of family keys ("appen", "dataocean", "voicearena_private",
                   "voicearena_private_hi", "public", "extra", "ml_de", "ml_fr", "ml_it", "ml_es",
-                  "ml_pt") restricting which CSV summary blocks are printed.
+                  "ml_pt", "ml_nl") restricting which CSV summary blocks are printed.
                   None prints all detected families.
 
     Returns:
@@ -446,6 +446,7 @@ def score_results(
         "it": ["fleurs", "mcv", "mls"],
         "es": ["fleurs", "mcv", "mls"],
         "pt": ["fleurs", "mls"],
+        "nl": ["fleurs", "mcv", "mls"],
         # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
         "hi": ["Monsoon"],
     }
@@ -717,7 +718,7 @@ def score_results(
         if families is not None and family_key not in families:
             continue
         if family_key.startswith("ml_"):
-            family_name = family_key[len("ml_") :]  # "de", "fr", "it", "es", "pt"
+            family_name = family_key[len("ml_") :]  # "de", "fr", "it", "es", "pt", "nl"
         else:
             family_name = (
                 family_key.capitalize()

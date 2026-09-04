@@ -19,6 +19,7 @@ LANGUAGE_NAMES = {
     "it": "Italian",
     "es": "Spanish",
     "pt": "Portuguese",
+    "nl": "Dutch",
 }
 
 def main(args):
