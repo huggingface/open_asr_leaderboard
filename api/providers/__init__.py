@@ -59,6 +59,7 @@ from . import (
     openai_provider,
     reson8_provider,
     revai_provider,
+    sophea_provider,
     smallest_provider,
     soniox_provider,
     speechmatics_provider,
