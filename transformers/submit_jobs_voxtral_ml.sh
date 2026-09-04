@@ -3,6 +3,7 @@
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_voxtral_ml.sh
+#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_voxtral_ml.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
@@ -63,6 +64,38 @@ DATASET_CONFIGS=(
     "monsoon hi"
 )
 
+# Optional: restrict this run to specific datasets and/or languages, matched
+# against the first and second field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_LANGUAGES="nl" bash <this script>
+#   ONLY_DATASETS="fleurs mcv" ONLY_LANGUAGES="nl de" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" || -n "${ONLY_LANGUAGES:-}" ]]; then
+    _selected=()
+    for _cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r _name _lang <<< "$_cfg"
+        _keep_ds=1
+        if [[ -n "${ONLY_DATASETS:-}" ]]; then
+            _keep_ds=0
+            for _want in ${ONLY_DATASETS}; do
+                [[ "$_name" == "$_want" ]] && _keep_ds=1
+            done
+        fi
+        _keep_lang=1
+        if [[ -n "${ONLY_LANGUAGES:-}" ]]; then
+            _keep_lang=0
+            for _want in ${ONLY_LANGUAGES}; do
+                [[ "$_lang" == "$_want" ]] && _keep_lang=1
+            done
+        fi
+        [[ "$_keep_ds" == 1 && "$_keep_lang" == 1 ]] && _selected+=("$_cfg")
+    done
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS:-}' ONLY_LANGUAGES='${ONLY_LANGUAGES:-}' matched no entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+    echo "Restricted to ${#DATASET_CONFIGS[@]} dataset/language combination(s): ${DATASET_CONFIGS[*]}"
+fi
+
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
@@ -77,8 +110,17 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         # --language is forced for every dataset so the model transcribes in the
         # known target language (consistent with the API models, which always
         # pass the language to the provider).
-        CONFIG_NAME="${DATASET}_${LANGUAGE}"
-        echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
+        if [[ "$DATASET" == "monsoon" ]]; then
+            # Standalone single-config dataset repo — no --config_name.
+            JOB_DATASET="${MONSOON_DATASET_PATH}"
+            CONFIG_ARG="--language=${LANGUAGE}"
+            CONFIG_NAME="(none)"
+        else
+            JOB_DATASET="${DATASET_PATH}"
+            CONFIG_NAME="${DATASET}_${LANGUAGE}"
+            CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
+        fi
+        echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -95,9 +137,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset=${DATASET_PATH} \
-                    --config_name=${CONFIG_NAME} \
-                    --language=${LANGUAGE} \
+                    --dataset=${JOB_DATASET} \
+                    ${CONFIG_ARG} \
                     --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \

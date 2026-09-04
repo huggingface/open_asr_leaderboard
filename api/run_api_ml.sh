@@ -56,45 +56,64 @@ DATASET_CONFIGS=(
     "monsoon hi"
 )
 
-# Optional: restrict this run to specific datasets, matched against the first
-# field of each DATASET_CONFIGS entry (a dataset path here, a dataset name in the
-# public scripts). A repo basename also matches, so both "HF_English_Private_Set"
-# and "hf-audio/HF_English_Private_Set" work, e.g.:
-#   ONLY_DATASETS="HF_English_Private_Set" MODEL="modulate/vfast 25" bash <this script>
-if [[ -n "${ONLY_DATASETS:-}" ]]; then
+# Optional: restrict this run with DATASETS and/or LANGUAGES.
+#
+# DATASETS selects datasets, space-separated, in either of two forms (mixable):
+#   - a bare name filters DATASET_CONFIGS to that dataset's entries. It matches
+#     the first field, and a repo basename also matches, so both
+#     "HF_English_Private_Set" and "hf-audio/HF_English_Private_Set" work.
+#   - a "dataset:language" pair names that exact combination directly, whether or
+#     not it is listed (or commented out) in DATASET_CONFIGS above.
+# LANGUAGES filters whatever DATASETS left by language, matched against the
+# second field. E.g.:
+#   DATASETS="HF_English_Private_Set" MODEL="modulate/vfast 25" bash <this script>
+#   LANGUAGES="nl" MODEL="modulate/multilingual 25" bash <this script>
+#   DATASETS="fleurs mcv" LANGUAGES="nl de" bash <this script>
+#   DATASETS="fleurs:de mls:it" bash <this script>
+if [[ -n "${DATASETS:-}" ]]; then
     _selected=()
-    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
-        for _cfg in "${DATASET_CONFIGS[@]}"; do
-            read -r _name _ <<< "$_cfg"
-            for _want in ${ONLY_DATASETS}; do
+    for _want in ${DATASETS}; do
+        if [[ "$_want" == *:* ]]; then
+            # Explicit "dataset:language" pair — taken as given.
+            _selected+=("${_want/:/ }")
+        elif [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+            # Bare dataset name — keep its entries from DATASET_CONFIGS.
+            for _cfg in "${DATASET_CONFIGS[@]}"; do
+                read -r _name _ <<< "$_cfg"
                 if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
                     _selected+=("$_cfg")
                 fi
             done
-        done
-    fi
+        fi
+    done
     if [[ ${#_selected[@]} -eq 0 ]]; then
-        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+        echo "ERROR: DATASETS='${DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
         exit 1
     fi
     DATASET_CONFIGS=("${_selected[@]}")
 fi
-
-
-# Override DATASET_CONFIGS or MODEL_CONFIGS from the environment for quick runs, e.g.:
-#   DATASETS="fleurs:de" MODEL="modulate/multilingual 25" bash run_api_ml.sh
-# For multiple "dataset:language" pairs, separate them with a space, e.g.:
-#   DATASETS="fleurs:de mls:it"
-if [[ -n "${DATASETS:-}" ]]; then
-    DATASET_CONFIGS=()
-    for pair in ${DATASETS}; do
-        if [[ "$pair" != *:* ]]; then
-            echo "ERROR: DATASETS entries must be \"dataset:language\", e.g. \"monsoon:hi\". Got: ${pair}" >&2
-            exit 1
-        fi
-        DATASET_CONFIGS+=("${pair/:/ }")
-    done
+if [[ -n "${LANGUAGES:-}" ]]; then
+    _selected=()
+    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
+        for _cfg in "${DATASET_CONFIGS[@]}"; do
+            read -r _ _lang <<< "$_cfg"
+            for _want in ${LANGUAGES}; do
+                [[ "$_lang" == "$_want" ]] && _selected+=("$_cfg") && break
+            done
+        done
+    fi
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: LANGUAGES='${LANGUAGES}' matched no active entry in DATASET_CONFIGS${DATASETS:+ (after DATASETS='${DATASETS}')}." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
 fi
+if [[ -n "${DATASETS:-}" || -n "${LANGUAGES:-}" ]]; then
+    echo "Restricted to ${#DATASET_CONFIGS[@]} dataset/language combination(s): ${DATASET_CONFIGS[*]}"
+fi
+
+# Override MODEL_CONFIGS from the environment for quick runs, e.g.:
+#   MODEL="modulate/multilingual 25" bash run_api_ml.sh
 if [[ -n "${MODEL:-}" ]]; then
     MODEL_CONFIGS=("$MODEL")
 fi

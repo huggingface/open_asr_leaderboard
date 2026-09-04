@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Local script to submit HF Jobs for multilingual MOSS-Transcribe-Diarize evaluation.
+# Usage: HF_TOKEN=hf_... bash submit_jobs_ml.sh
+#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_ml.sh
 set -euo pipefail
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-moss-transcribe-diarize}"
@@ -21,14 +24,17 @@ DATASET_CONFIGS=(
     "fleurs it"
     "fleurs es"
     "fleurs pt"
+    "fleurs nl"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
+    "mcv nl"
     "mls es"
     "mls fr"
     "mls it"
     "mls pt"
+    "mls nl"
 )
 
 # Optional smoke-test override: DATASETS="fleurs:pt mcv:de" bash ...
@@ -37,6 +43,38 @@ if [[ -n "${DATASETS:-}" ]]; then
     for pair in ${DATASETS}; do
         DATASET_CONFIGS+=("${pair/:/ }")
     done
+fi
+
+# Optional: restrict this run to specific datasets and/or languages, matched
+# against the first and second field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_LANGUAGES="nl" bash <this script>
+#   ONLY_DATASETS="fleurs mcv" ONLY_LANGUAGES="nl de" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" || -n "${ONLY_LANGUAGES:-}" ]]; then
+    _selected=()
+    for _cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r _name _lang <<< "$_cfg"
+        _keep_ds=1
+        if [[ -n "${ONLY_DATASETS:-}" ]]; then
+            _keep_ds=0
+            for _want in ${ONLY_DATASETS}; do
+                [[ "$_name" == "$_want" ]] && _keep_ds=1
+            done
+        fi
+        _keep_lang=1
+        if [[ -n "${ONLY_LANGUAGES:-}" ]]; then
+            _keep_lang=0
+            for _want in ${ONLY_LANGUAGES}; do
+                [[ "$_lang" == "$_want" ]] && _keep_lang=1
+            done
+        fi
+        [[ "$_keep_ds" == 1 && "$_keep_lang" == 1 ]] && _selected+=("$_cfg")
+    done
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS:-}' ONLY_LANGUAGES='${ONLY_LANGUAGES:-}' matched no entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+    echo "Restricted to ${#DATASET_CONFIGS[@]} dataset/language combination(s): ${DATASET_CONFIGS[*]}"
 fi
 
 if [[ -z "${HF_TOKEN:-}" ]]; then

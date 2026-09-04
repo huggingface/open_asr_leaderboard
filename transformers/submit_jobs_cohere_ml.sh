@@ -3,6 +3,7 @@
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_cohere_ml.sh
+#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_cohere_ml.sh
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
@@ -56,6 +57,38 @@ DATASET_CONFIGS=(
     "mls pt"
     "mls nl"
 )
+
+# Optional: restrict this run to specific datasets and/or languages, matched
+# against the first and second field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_LANGUAGES="nl" bash <this script>
+#   ONLY_DATASETS="fleurs mcv" ONLY_LANGUAGES="nl de" bash <this script>
+if [[ -n "${ONLY_DATASETS:-}" || -n "${ONLY_LANGUAGES:-}" ]]; then
+    _selected=()
+    for _cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r _name _lang <<< "$_cfg"
+        _keep_ds=1
+        if [[ -n "${ONLY_DATASETS:-}" ]]; then
+            _keep_ds=0
+            for _want in ${ONLY_DATASETS}; do
+                [[ "$_name" == "$_want" ]] && _keep_ds=1
+            done
+        fi
+        _keep_lang=1
+        if [[ -n "${ONLY_LANGUAGES:-}" ]]; then
+            _keep_lang=0
+            for _want in ${ONLY_LANGUAGES}; do
+                [[ "$_lang" == "$_want" ]] && _keep_lang=1
+            done
+        fi
+        [[ "$_keep_ds" == 1 && "$_keep_lang" == 1 ]] && _selected+=("$_cfg")
+    done
+    if [[ ${#_selected[@]} -eq 0 ]]; then
+        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS:-}' ONLY_LANGUAGES='${ONLY_LANGUAGES:-}' matched no entry in DATASET_CONFIGS." >&2
+        exit 1
+    fi
+    DATASET_CONFIGS=("${_selected[@]}")
+    echo "Restricted to ${#DATASET_CONFIGS[@]} dataset/language combination(s): ${DATASET_CONFIGS[*]}"
+fi
 
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
