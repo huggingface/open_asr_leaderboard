@@ -76,7 +76,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
         docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -e HF_TOKEN="${HF_TOKEN:-}"
+            -e HF_TOKEN="${HF_TOKEN:-}" \
             -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
             -e HF_HOME=/tmp/hf_home \
             -e HF_DATASETS_CACHE=/hf_cache/datasets \
