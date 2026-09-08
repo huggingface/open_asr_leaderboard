@@ -16,7 +16,7 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
   The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
 * **Multilingual Benchmark:**
-  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes fleurs, mcv and mls. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used.
+  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes FLEURS, MCV and MLS. Armenian uses the public `google/fleurs` (`hy_am`) and Common Voice 26 (`hy-AM`) test sets. Reviewed Armenian FLEURS references from [`Metric-AI/fleurs-corrections`](https://huggingface.co/datasets/Metric-AI/fleurs-corrections) are overlaid automatically during loading. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used.
 
 
 * **Private datasets:** 
@@ -62,6 +62,10 @@ conda activate leaderboard_jobs
 pip install -r requirements/requirements_jobs.txt
 huggingface-cli login   # paste your WRITE token when prompted
 ```
+
+Before evaluating Armenian Common Voice 26, accept the access conditions for
+[`deepdml/common_voice_26_0`](https://huggingface.co/datasets/deepdml/common_voice_26_0)
+with the same Hugging Face account used by `HF_TOKEN`.
 
 3. **Launch an evaluation** 🚀
 ```bash

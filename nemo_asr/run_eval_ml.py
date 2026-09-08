@@ -10,7 +10,7 @@ import evaluate
 import soundfile
 import numpy as np
 from tqdm import tqdm
-from datasets import load_dataset, Audio
+from datasets import Audio
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs
 from nemo.collections.asr.models import ASRModel
@@ -62,7 +62,7 @@ def main(args):
     # Load dataset using the HuggingFace dataset repository
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
 
-    dataset = load_dataset(args.dataset, CONFIG_NAME, split=SPLIT_NAME, streaming=args.streaming)
+    dataset = data_utils.load_multilingual_dataset(args.dataset, CONFIG_NAME, split=SPLIT_NAME, streaming=args.streaming)
 
     # Re-sample and cast audio to a consistent dict format ({"array", "sampling_rate"}),
     # matching run_eval.py's data_utils.prepare_data(). Without this, some `datasets`
@@ -74,11 +74,17 @@ def main(args):
         dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
 
     # Configure decoding strategy
+    use_rnnt_decoder = args.model_id == "nvidia/stt_hy_fastconformer_hybrid_large_pc"
+    if use_rnnt_decoder:
+        asr_model.change_decoding_strategy(decoder_type="rnnt")
     if asr_model.cfg.decoding.strategy != "beam":
         asr_model.cfg.decoding.strategy = "greedy_batch"
         if hasattr(asr_model.cfg.decoding, "greedy"):
             OmegaConf.update(asr_model.cfg.decoding, "greedy.use_cuda_graph_decoder", False, force_add=True)
-        asr_model.change_decoding_strategy(asr_model.cfg.decoding)
+        if use_rnnt_decoder:
+            asr_model.change_decoding_strategy(asr_model.cfg.decoding, decoder_type="rnnt")
+        else:
+            asr_model.change_decoding_strategy(asr_model.cfg.decoding)
 
     def download_audio_files(batch):
         """Process audio files and prepare them for evaluation."""

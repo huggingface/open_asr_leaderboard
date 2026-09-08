@@ -8,7 +8,7 @@ from omnilingual_asr.models.inference.pipeline import ASRInferencePipeline
 import evaluate
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs
-from datasets import load_dataset, Audio
+from datasets import Audio
 import time
 from tqdm import tqdm
 
@@ -23,6 +23,7 @@ NLLB_LANGUAGE_CODES = {
     "it": "ita_Latn",
     "es": "spa_Latn",
     "pt": "por_Latn",
+    "hy": "hye_Armn",
     "hi": "hin_Deva",
 }
 
@@ -131,7 +132,7 @@ def main(args):
 
     # Load dataset
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
-    dataset = load_dataset(
+    dataset = data_utils.load_multilingual_dataset(
         args.dataset,
         CONFIG_NAME,
         split=SPLIT_NAME,
@@ -156,7 +157,7 @@ def main(args):
 
     # Warmup
     if args.warmup_steps is not None:
-        warmup_dataset = load_dataset(
+        warmup_dataset = data_utils.load_multilingual_dataset(
             args.dataset,
             CONFIG_NAME,
             split=SPLIT_NAME,

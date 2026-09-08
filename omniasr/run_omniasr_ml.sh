@@ -14,9 +14,10 @@ BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
 # Multilingual datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
-DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl"
+DATASET_NAMES=("fleurs" "mcv" "mcv26" "mls")
+DATASET_LANGS_fleurs="de fr it es pt nl hy"
 DATASET_LANGS_mcv="de es fr it nl"
+DATASET_LANGS_mcv26="hy"
 DATASET_LANGS_mls="es fr it pt nl"
 
 # Function to run multilingual evaluation
@@ -61,6 +62,12 @@ num_models=${#MODEL_IDs[@]}
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
+    ARMENIAN_MODEL=0
+    case "$MODEL_ID" in
+        facebook/omniASR-CTC-300M|facebook/omniASR-CTC-1B|facebook/omniASR-CTC-3B|facebook/omniASR-LLM-300M|facebook/omniASR-LLM-1B|facebook/omniASR-LLM-3B)
+            ARMENIAN_MODEL=1
+            ;;
+    esac
 
     echo "========================================================"
     echo "Model: $MODEL_ID"
@@ -76,6 +83,7 @@ do
             echo ""
 
             for language in $languages; do
+                [[ "$language" == "hy" && "$ARMENIAN_MODEL" == 0 ]] && continue
                 run_evaluation "$MODEL_ID" "$dataset" "$language"
             done
         fi

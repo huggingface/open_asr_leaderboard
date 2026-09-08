@@ -31,7 +31,7 @@ sys.path.insert(0, REPO_ROOT)
 from normalizer.eval_utils import score_results
 
 # Languages covered by the multilingual (FLEURS/MCV/MLS + Hindi Monsoon) benchmarks.
-ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hi"]
+ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi"]
 
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
@@ -57,6 +57,8 @@ ML_CSV_COLUMNS = [
     ("nl_covost", "mcv_nl_test"),
     ("nl_mls", "mls_nl_test"),
     ("nl_fleurs", "fleurs_nl_test"),
+    ("hy_fleurs", "fleurs_hy_test"),
+    ("hy_mcv26", "mcv26_hy_test"),
     ("hi_monsoon", "Monsoon_hi_test"),
 ]
 
@@ -166,7 +168,7 @@ def main():
     parser.add_argument(
         "--multilingual",
         action="store_true",
-        help="Score multilingual (FLEURS/MCV/MLS) results instead of the English "
+        help="Score multilingual (FLEURS/MCV/MCV26/MLS) results instead of the English "
              "public benchmarks. Scores each language separately, since each "
              "requires its own normalizer.",
     )

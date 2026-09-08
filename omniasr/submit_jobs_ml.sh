@@ -44,21 +44,22 @@ MODEL_CONFIGS=(
     "facebook/omniASR-LLM-1B-v2     64"
     "facebook/omniASR-LLM-3B-v2     64"
     "facebook/omniASR-LLM-7B-v2     64"
-    # "facebook/omniASR-CTC-300M      64"
-    # "facebook/omniASR-CTC-1B        64"
-    # "facebook/omniASR-CTC-3B        64"
+    "facebook/omniASR-CTC-300M      64"
+    "facebook/omniASR-CTC-1B        64"
+    "facebook/omniASR-CTC-3B        64"
     # "facebook/omniASR-CTC-7B        64"
-    # "facebook/omniASR-LLM-300M      64"
-    # "facebook/omniASR-LLM-1B        64"
-    # "facebook/omniASR-LLM-3B        64"
+    "facebook/omniASR-LLM-300M      64"
+    "facebook/omniASR-LLM-1B        64"
+    "facebook/omniASR-LLM-3B        64"
     # "facebook/omniASR-LLM-7B        64"
 
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
-# all others are configs of ${DATASET_PATH}.
+# Armenian configs resolve to their public upstream repositories in data_utils;
+# all other non-Monsoon entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -66,6 +67,8 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs hy"
+    "mcv26 hy"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -114,6 +117,12 @@ fi
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
+    ARMENIAN_MODEL=0
+    case "$MODEL_ID" in
+        facebook/omniASR-CTC-300M|facebook/omniASR-CTC-1B|facebook/omniASR-CTC-3B|facebook/omniASR-LLM-300M|facebook/omniASR-LLM-1B|facebook/omniASR-LLM-3B)
+            ARMENIAN_MODEL=1
+            ;;
+    esac
     # Sanitize model ID for use as a folder name (e.g. "facebook/omniASR" -> "facebook-omniASR")
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
@@ -123,6 +132,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
+        [[ "$LANGUAGE" == "hy" && "$ARMENIAN_MODEL" == 0 ]] && continue
+        [[ "$LANGUAGE" != "hy" && "$ARMENIAN_MODEL" == 1 ]] && continue
         if [[ "$DATASET" == "monsoon" ]]; then
             # Standalone single-config dataset repo — no --config_name.
             JOB_DATASET="${MONSOON_DATASET_PATH}"

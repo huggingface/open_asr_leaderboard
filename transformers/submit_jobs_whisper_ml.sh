@@ -38,12 +38,15 @@ fi
 MODEL_CONFIGS=(
     "openai/whisper-large-v3-turbo      64"
     "openai/whisper-large-v3            64"
+    "facebook/mms-1b-all                64"
+    "facebook/seamless-m4t-v2-large     16"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
-# all others are configs of ${DATASET_PATH}.
+# Armenian configs resolve to their public upstream repositories in data_utils;
+# all other non-Monsoon entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -51,6 +54,8 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs hy"
+    "mcv26 hy"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -108,6 +113,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
+        if [[ "$LANGUAGE" == "hy" && "$MODEL_ID" != "openai/whisper-large-v3" && "$MODEL_ID" != "facebook/mms-1b-all" && "$MODEL_ID" != "facebook/seamless-m4t-v2-large" ]]; then
+            continue
+        fi
+        if [[ ( "$MODEL_ID" == "facebook/mms-1b-all" || "$MODEL_ID" == "facebook/seamless-m4t-v2-large" ) && "$LANGUAGE" != "hy" ]]; then
+            continue
+        fi
         if [[ "$DATASET" == "monsoon" ]]; then
             # Standalone single-config dataset repo — no --config_name.
             JOB_DATASET="${MONSOON_DATASET_PATH}"

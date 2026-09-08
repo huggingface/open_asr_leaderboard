@@ -9,6 +9,8 @@ export PYTHONPATH="..":$PYTHONPATH
 MODEL_IDs=(
     "openai/whisper-large-v3"
     "openai/whisper-large-v3-turbo"
+    "facebook/mms-1b-all"
+    "facebook/seamless-m4t-v2-large"
 )
 
 BATCH_SIZE=64
@@ -17,10 +19,11 @@ DEVICE_ID=0
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
-# # German, French, Italian, Spanish, Portuguese, Dutch
-DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl"
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian
+DATASET_NAMES=("fleurs" "mcv" "mcv26" "mls")
+DATASET_LANGS_fleurs="de fr it es pt nl hy"
 DATASET_LANGS_mcv="de es fr it nl"
+DATASET_LANGS_mcv26="hy"
 DATASET_LANGS_mls="es fr it pt nl"
 
 # Function to run evaluation
@@ -87,6 +90,12 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         echo ""
 
         for language in $languages; do
+            if [[ "$language" == "hy" && "$MODEL_ID" != "openai/whisper-large-v3" && "$MODEL_ID" != "facebook/mms-1b-all" && "$MODEL_ID" != "facebook/seamless-m4t-v2-large" ]]; then
+                continue
+            fi
+            if [[ ( "$MODEL_ID" == "facebook/mms-1b-all" || "$MODEL_ID" == "facebook/seamless-m4t-v2-large" ) && "$language" != "hy" ]]; then
+                continue
+            fi
             run_evaluation "$MODEL_ID" "$dataset" "$language"
         done
     done
