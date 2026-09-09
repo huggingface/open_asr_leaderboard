@@ -19,10 +19,9 @@ DEVICE_ID=0
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 
-DATASET_NAMES=("fleurs" "mcv" "mcv26" "mls")
+DATASET_NAMES=("fleurs" "mcv" "mls")
 DATASET_LANGS_fleurs="de fr it es pt nl hy"
-DATASET_LANGS_mcv="de es fr it nl"
-DATASET_LANGS_mcv26="hy"
+DATASET_LANGS_mcv="de es fr it nl hy"
 DATASET_LANGS_mls="es fr it pt nl"
 
 # Function to run evaluation

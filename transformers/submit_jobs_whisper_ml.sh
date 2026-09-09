@@ -3,6 +3,7 @@
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_whisper_ml.sh
+#        Armenian MCV also requires MDC_API_KEY=...
 #        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_whisper_ml.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ MODEL_CONFIGS=(
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
 # German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
-# Armenian configs resolve to their public upstream repositories in data_utils;
+# Armenian configs resolve to their public upstream sources in data_utils;
 # all other non-Monsoon entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
@@ -55,7 +56,7 @@ DATASET_CONFIGS=(
     "fleurs pt"
     "fleurs nl"
     "fleurs hy"
-    "mcv26 hy"
+    "mcv hy"
     "mcv de"
     "mcv es"
     "mcv fr"

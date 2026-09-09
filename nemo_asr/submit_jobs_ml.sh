@@ -47,7 +47,7 @@ DATASET_CONFIGS=(
     "fleurs pt"
     "fleurs nl"
     "fleurs hy"
-    "mcv26 hy"
+    "mcv hy"
     "mcv de"
     "mcv es"
     "mcv fr"

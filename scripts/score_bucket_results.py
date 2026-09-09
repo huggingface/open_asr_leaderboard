@@ -58,7 +58,7 @@ ML_CSV_COLUMNS = [
     ("nl_mls", "mls_nl_test"),
     ("nl_fleurs", "fleurs_nl_test"),
     ("hy_fleurs", "fleurs_hy_test"),
-    ("hy_mcv26", "mcv26_hy_test"),
+    ("hy_mcv", "mcv_hy_test"),
     ("hi_monsoon", "Monsoon_hi_test"),
 ]
 
@@ -168,7 +168,7 @@ def main():
     parser.add_argument(
         "--multilingual",
         action="store_true",
-        help="Score multilingual (FLEURS/MCV/MCV26/MLS) results instead of the English "
+        help="Score multilingual (FLEURS/MCV/MLS) results instead of the English "
              "public benchmarks. Scores each language separately, since each "
              "requires its own normalizer.",
     )

@@ -447,14 +447,13 @@ def score_results(
         "es": ["fleurs", "mcv", "mls"],
         "pt": ["fleurs", "mls"],
         "nl": ["fleurs", "mcv", "mls"],
-        "hy": ["fleurs", "mcv26"],
+        "hy": ["fleurs", "mcv"],
         # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
         "hi": ["Monsoon"],
     }
     ML_DATASET_LABELS = {
         "fleurs": "FLEURS",
         "mcv": "MCV",
-        "mcv26": "MCV 26",
         "mls": "MLS",
         "Monsoon": "Monsoon",
     }
