@@ -62,12 +62,6 @@ num_models=${#MODEL_IDs[@]}
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
-    ARMENIAN_MODEL=0
-    case "$MODEL_ID" in
-        facebook/omniASR-CTC-300M|facebook/omniASR-CTC-1B|facebook/omniASR-CTC-3B|facebook/omniASR-LLM-300M|facebook/omniASR-LLM-1B|facebook/omniASR-LLM-3B)
-            ARMENIAN_MODEL=1
-            ;;
-    esac
 
     echo "========================================================"
     echo "Model: $MODEL_ID"
@@ -83,7 +77,6 @@ do
             echo ""
 
             for language in $languages; do
-                [[ "$language" == "hy" && "$ARMENIAN_MODEL" == 0 ]] && continue
                 run_evaluation "$MODEL_ID" "$dataset" "$language"
             done
         fi

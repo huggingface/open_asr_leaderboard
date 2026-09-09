@@ -95,15 +95,6 @@ fi
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
-    MODEL_DATASET_CONFIGS=()
-    for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r _dataset _language <<< "$cfg"
-        if [[ "$MODEL_ID" == "nvidia/stt_hy_fastconformer_hybrid_large_pc" && "$_language" == "hy" ]]; then
-            MODEL_DATASET_CONFIGS+=("$cfg")
-        elif [[ "$MODEL_ID" != "nvidia/stt_hy_fastconformer_hybrid_large_pc" && "$_language" != "hy" ]]; then
-            MODEL_DATASET_CONFIGS+=("$cfg")
-        fi
-    done
     # Sanitize model ID for use as a folder name (e.g. "nvidia/parakeet" -> "nvidia-parakeet")
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
@@ -111,7 +102,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     echo "  Evaluating: ${MODEL_ID}"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
-    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
+    for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         CONFIG_NAME="${DATASET}_${LANGUAGE}"
         echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
@@ -160,7 +151,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
 
-    EXPECTED=${#MODEL_DATASET_CONFIGS[@]}
+    EXPECTED=${#DATASET_CONFIGS[@]}
     ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
     if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
         echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
@@ -172,7 +163,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     # Collect the set of languages actually evaluated (across all datasets)
     ALL_LANGUAGES=()
-    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
+    for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         if [[ ! " ${ALL_LANGUAGES[*]} " == *" ${LANGUAGE} "* ]]; then
             ALL_LANGUAGES+=("$LANGUAGE")

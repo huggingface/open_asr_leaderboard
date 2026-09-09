@@ -90,12 +90,6 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         echo ""
 
         for language in $languages; do
-            if [[ "$language" == "hy" && "$MODEL_ID" != "openai/whisper-large-v3" && "$MODEL_ID" != "facebook/mms-1b-all" && "$MODEL_ID" != "facebook/seamless-m4t-v2-large" ]]; then
-                continue
-            fi
-            if [[ ( "$MODEL_ID" == "facebook/mms-1b-all" || "$MODEL_ID" == "facebook/seamless-m4t-v2-large" ) && "$language" != "hy" ]]; then
-                continue
-            fi
             run_evaluation "$MODEL_ID" "$dataset" "$language"
         done
     done

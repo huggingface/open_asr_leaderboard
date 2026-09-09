@@ -114,12 +114,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
-        if [[ "$LANGUAGE" == "hy" && "$MODEL_ID" != "openai/whisper-large-v3" && "$MODEL_ID" != "facebook/mms-1b-all" && "$MODEL_ID" != "facebook/seamless-m4t-v2-large" ]]; then
-            continue
-        fi
-        if [[ ( "$MODEL_ID" == "facebook/mms-1b-all" || "$MODEL_ID" == "facebook/seamless-m4t-v2-large" ) && "$LANGUAGE" != "hy" ]]; then
-            continue
-        fi
         if [[ "$DATASET" == "monsoon" ]]; then
             # Standalone single-config dataset repo — no --config_name.
             JOB_DATASET="${MONSOON_DATASET_PATH}"

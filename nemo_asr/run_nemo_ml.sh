@@ -84,12 +84,6 @@ for MODEL_ID in "${MODEL_IDS[@]}"; do
             echo ""
             
             for language in $languages; do
-                if [[ "$MODEL_ID" == "nvidia/stt_hy_fastconformer_hybrid_large_pc" && "$language" != "hy" ]]; then
-                    continue
-                fi
-                if [[ "$MODEL_ID" != "nvidia/stt_hy_fastconformer_hybrid_large_pc" && "$language" == "hy" ]]; then
-                    continue
-                fi
                 run_evaluation "$MODEL_ID" "$dataset" "$language"
             done
         fi
