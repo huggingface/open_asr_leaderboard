@@ -4,17 +4,29 @@ import os
 import re
 import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoModelForRNNT, AutoProcessor, SeamlessM4Tv2ForSpeechToText, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, MODEL_FOR_RNNT_MAPPING, CompileConfig
+from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoModelForRNNT, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, MODEL_FOR_RNNT_MAPPING, CompileConfig
 import evaluate
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs
 from tqdm import tqdm
-from datasets import Audio
+from datasets import load_dataset, Audio
 import random
 import numpy as np
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
+
+MODEL_LANGUAGE_CODES = {
+    "en": "eng",
+    "de": "deu",
+    "fr": "fra",
+    "it": "ita",
+    "es": "spa",
+    "pt": "por",
+    "nl": "nld",
+    "hy": "hye",
+    "hi": "hin",
+}
 
 
 def remove_brackets(text):
@@ -44,10 +56,8 @@ def main(args):
     torch_dtype = getattr(torch, args.dtype)
 
     config = AutoConfig.from_pretrained(args.model_id, revision=args.revision)
-    is_seamless_m4t_v2 = args.model_id.lower() == "facebook/seamless-m4t-v2-large"
-    if is_seamless_m4t_v2:
-        cls_model = SeamlessM4Tv2ForSpeechToText
-    elif type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING:
+    is_seamless_m4t_v2 = config.model_type == "seamless_m4t_v2"
+    if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING:
         cls_model = AutoModelForSpeechSeq2Seq
     elif type(config) in MODEL_FOR_MULTIMODAL_LM_MAPPING:
         cls_model = AutoModelForMultimodalLM
@@ -68,6 +78,7 @@ def main(args):
         lang_match = re.search(r"_([a-z]{2})(?:_test)?$", source)
         norm_language = lang_match.group(1) if lang_match else "en"
         print(f"Language not specified, extracted '{norm_language}' from '{source}'")
+    model_language = MODEL_LANGUAGE_CODES.get(norm_language, norm_language)
 
     if "vibevoice" in args.model_id.lower():
         model = cls_model.from_pretrained(
@@ -92,15 +103,10 @@ def main(args):
 
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
     is_mms = args.model_id.lower() == "facebook/mms-1b-all"
-    mms_language = {"hy": "hye"}.get(norm_language) if is_mms else None
-    if is_mms and mms_language is None:
-        raise ValueError(
-            f"No MMS adapter mapping is configured for language {norm_language!r}."
-        )
-    if mms_language is not None:
-        model.load_adapter(mms_language)
+    if is_mms:
+        model.load_adapter(model_language)
         processor = AutoProcessor.from_pretrained(
-            args.model_id, revision=args.revision, target_lang=mms_language
+            args.model_id, revision=args.revision, target_lang=model_language
         )
     else:
         processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
@@ -132,9 +138,7 @@ def main(args):
 
         # For multilingual models, set task to transcribe and pass language (None = auto-detect)
         if is_seamless_m4t_v2:
-            if norm_language != "hy":
-                raise ValueError("SeamlessM4T v2 is configured here for Armenian only.")
-            gen_kwargs["tgt_lang"] = "hye"
+            gen_kwargs["tgt_lang"] = model_language
         elif getattr(model.generation_config, "is_multilingual", False):
             gen_kwargs["task"] = "transcribe"
             if args.language is not None:
@@ -159,7 +163,7 @@ def main(args):
 
     # Load dataset
     print(f"Loading dataset: {args.dataset} with config: {CONFIG_NAME}")
-    dataset = data_utils.load_multilingual_dataset(
+    dataset = load_dataset(
         args.dataset,
         CONFIG_NAME,
         split=SPLIT_NAME,
@@ -358,7 +362,7 @@ def main(args):
             continue
 
     # Reload dataset for actual evaluation (reset streaming pointer)
-    dataset = data_utils.load_multilingual_dataset(
+    dataset = load_dataset(
         args.dataset,
         CONFIG_NAME,
         split=SPLIT_NAME,

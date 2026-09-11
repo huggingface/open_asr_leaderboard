@@ -3,7 +3,6 @@
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_ml.sh
-#        Armenian MCV also requires MDC_API_KEY=...
 #        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_ml.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -36,22 +35,23 @@ if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
 fi
 
 # ── Models: "model_id batch_size" (conservative batch size due to LLM memory requirements) ──
+# Each model entry also lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "facebook/omniASR-CTC-300M-v2   64"
-    "facebook/omniASR-CTC-1B-v2     64"
-    "facebook/omniASR-CTC-3B-v2     64"
-    "facebook/omniASR-CTC-7B-v2     64"
-    "facebook/omniASR-LLM-300M-v2   64"
-    "facebook/omniASR-LLM-1B-v2     64"
-    "facebook/omniASR-LLM-3B-v2     64"
-    "facebook/omniASR-LLM-7B-v2     64"
-    "facebook/omniASR-CTC-300M      64"
-    "facebook/omniASR-CTC-1B        64"
-    "facebook/omniASR-CTC-3B        64"
+    "facebook/omniASR-CTC-300M-v2   64 de fr it es pt nl hi"
+    "facebook/omniASR-CTC-1B-v2     64 de fr it es pt nl hi"
+    "facebook/omniASR-CTC-3B-v2     64 de fr it es pt nl hi"
+    "facebook/omniASR-CTC-7B-v2     64 de fr it es pt nl hi"
+    "facebook/omniASR-LLM-300M-v2   64 de fr it es pt nl hi"
+    "facebook/omniASR-LLM-1B-v2     64 de fr it es pt nl hi"
+    "facebook/omniASR-LLM-3B-v2     64 de fr it es pt nl hi"
+    "facebook/omniASR-LLM-7B-v2     64 de fr it es pt nl hi"
+    "facebook/omniASR-CTC-300M      64 hy"
+    "facebook/omniASR-CTC-1B        64 hy"
+    "facebook/omniASR-CTC-3B        64 hy"
     # "facebook/omniASR-CTC-7B        64"
-    "facebook/omniASR-LLM-300M      64"
-    "facebook/omniASR-LLM-1B        64"
-    "facebook/omniASR-LLM-3B        64"
+    "facebook/omniASR-LLM-300M      64 hy"
+    "facebook/omniASR-LLM-1B        64 hy"
+    "facebook/omniASR-LLM-3B        64 hy"
     # "facebook/omniASR-LLM-7B        64"
 
 )
@@ -59,8 +59,7 @@ MODEL_CONFIGS=(
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
 # German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
-# Armenian configs resolve to their public upstream sources in data_utils;
-# all other non-Monsoon entries are configs of ${DATASET_PATH}.
+# all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -117,15 +116,27 @@ fi
 
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
+    read -r MODEL_ID BATCH_SIZE MODEL_LANGUAGES <<< "$model_cfg"
     # Sanitize model ID for use as a folder name (e.g. "facebook/omniASR" -> "facebook-omniASR")
     MODEL_FOLDER="${MODEL_ID//\//-}"
+
+    MODEL_DATASET_CONFIGS=()
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r _dataset _language <<< "$cfg"
+        if [[ " $MODEL_LANGUAGES " == *" $_language "* ]]; then
+            MODEL_DATASET_CONFIGS+=("$cfg")
+        fi
+    done
+    if [[ ${#MODEL_DATASET_CONFIGS[@]} -eq 0 ]]; then
+        echo "Skipping ${MODEL_ID}: no configured dataset/language combinations selected."
+        continue
+    fi
 
     echo "████████████████████████████████████████████████████████████████████████████████"
     echo "  Evaluating: ${MODEL_ID}"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
-    for cfg in "${DATASET_CONFIGS[@]}"; do
+    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         if [[ "$DATASET" == "monsoon" ]]; then
             # Standalone single-config dataset repo — no --config_name.
@@ -184,7 +195,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
 
-    EXPECTED=${#DATASET_CONFIGS[@]}
+    EXPECTED=${#MODEL_DATASET_CONFIGS[@]}
     ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
     if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
         echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
@@ -196,7 +207,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     # Collect the set of languages actually evaluated (across all datasets)
     ALL_LANGUAGES=()
-    for cfg in "${DATASET_CONFIGS[@]}"; do
+    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         if [[ ! " ${ALL_LANGUAGES[*]} " == *" ${LANGUAGE} "* ]]; then
             ALL_LANGUAGES+=("$LANGUAGE")

@@ -3,17 +3,16 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Available omniASR models
-MODEL_IDs=(
-    "facebook/omniASR-CTC-300M" "facebook/omniASR-CTC-1B" "facebook/omniASR-CTC-3B" "facebook/omniASR-CTC-7B"
-    "facebook/omniASR-CTC-300M-v2" "facebook/omniASR-CTC-1B-v2" "facebook/omniASR-CTC-3B-v2" "facebook/omniASR-CTC-7B-v2"
-    "facebook/omniASR-LLM-300M" "facebook/omniASR-LLM-1B" "facebook/omniASR-LLM-3B" "facebook/omniASR-LLM-7B"
-    "facebook/omniASR-LLM-300M-v2" "facebook/omniASR-LLM-1B-v2" "facebook/omniASR-LLM-3B-v2" "facebook/omniASR-LLM-7B-v2"
+MODEL_CONFIGS=(
+    "facebook/omniASR-CTC-300M hy" "facebook/omniASR-CTC-1B hy" "facebook/omniASR-CTC-3B hy" "facebook/omniASR-CTC-7B de fr it es pt nl"
+    "facebook/omniASR-CTC-300M-v2 de fr it es pt nl" "facebook/omniASR-CTC-1B-v2 de fr it es pt nl" "facebook/omniASR-CTC-3B-v2 de fr it es pt nl" "facebook/omniASR-CTC-7B-v2 de fr it es pt nl"
+    "facebook/omniASR-LLM-300M hy" "facebook/omniASR-LLM-1B hy" "facebook/omniASR-LLM-3B hy" "facebook/omniASR-LLM-7B de fr it es pt nl"
+    "facebook/omniASR-LLM-300M-v2 de fr it es pt nl" "facebook/omniASR-LLM-1B-v2 de fr it es pt nl" "facebook/omniASR-LLM-3B-v2 de fr it es pt nl" "facebook/omniASR-LLM-7B-v2 de fr it es pt nl"
     )
 BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
 
 # Multilingual datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
-# mcv_hy is Common Voice 26 from Mozilla and requires MDC_API_KEY.
 
 DATASET_NAMES=("fleurs" "mcv" "mls")
 DATASET_LANGS_fleurs="de fr it es pt nl hy"
@@ -57,11 +56,11 @@ run_evaluation() {
     return $exit_code
 }
 
-num_models=${#MODEL_IDs[@]}
+num_models=${#MODEL_CONFIGS[@]}
 
 for (( i=0; i<${num_models}; i++ ));
 do
-    MODEL_ID=${MODEL_IDs[$i]}
+    read -r MODEL_ID MODEL_LANGUAGES <<< "${MODEL_CONFIGS[$i]}"
 
     echo "========================================================"
     echo "Model: $MODEL_ID"
@@ -77,6 +76,9 @@ do
             echo ""
 
             for language in $languages; do
+                if [[ " $MODEL_LANGUAGES " != *" $language "* ]]; then
+                    continue
+                fi
                 run_evaluation "$MODEL_ID" "$dataset" "$language"
             done
         fi

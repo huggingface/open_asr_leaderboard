@@ -6,10 +6,10 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
-MODEL_IDS=(
-    "nvidia/parakeet-tdt-0.6b-v3"
-    "nvidia/canary-1b-v2"
-    "nvidia/stt_hy_fastconformer_hybrid_large_pc"
+MODEL_CONFIGS=(
+    "nvidia/parakeet-tdt-0.6b-v3 de fr it es pt nl"
+    "nvidia/canary-1b-v2 de fr it es pt nl"
+    "nvidia/stt_hy_fastconformer_hybrid_large_pc hy"
 )
 
 BATCH_SIZE=64
@@ -66,7 +66,8 @@ run_evaluation() {
 # Main execution
 RUNDIR=$(pwd)
 
-for MODEL_ID in "${MODEL_IDS[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID MODEL_LANGUAGES <<< "$model_cfg"
     echo "========================================================"
     echo "Model: $MODEL_ID"
     echo "Batch Size: $BATCH_SIZE"
@@ -84,6 +85,9 @@ for MODEL_ID in "${MODEL_IDS[@]}"; do
             echo ""
             
             for language in $languages; do
+                if [[ " $MODEL_LANGUAGES " != *" $language "* ]]; then
+                    continue
+                fi
                 run_evaluation "$MODEL_ID" "$dataset" "$language"
             done
         fi

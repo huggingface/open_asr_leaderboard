@@ -31,10 +31,11 @@ if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
 fi
 
 # ── Models: "model_id batch_size" ───────────────────────────────────────────
+# Each model entry also lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "nvidia/parakeet-tdt-0.6b-v3      64"
-    "nvidia/canary-1b-v2              64"
-    "nvidia/stt_hy_fastconformer_hybrid_large_pc 64"
+    "nvidia/parakeet-tdt-0.6b-v3      64 de fr it es pt nl"
+    "nvidia/canary-1b-v2              64 de fr it es pt nl"
+    "nvidia/stt_hy_fastconformer_hybrid_large_pc 64 hy"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
@@ -94,15 +95,27 @@ fi
 
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
+    read -r MODEL_ID BATCH_SIZE MODEL_LANGUAGES <<< "$model_cfg"
     # Sanitize model ID for use as a folder name (e.g. "nvidia/parakeet" -> "nvidia-parakeet")
     MODEL_FOLDER="${MODEL_ID//\//-}"
+
+    MODEL_DATASET_CONFIGS=()
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r _dataset _language <<< "$cfg"
+        if [[ " $MODEL_LANGUAGES " == *" $_language "* ]]; then
+            MODEL_DATASET_CONFIGS+=("$cfg")
+        fi
+    done
+    if [[ ${#MODEL_DATASET_CONFIGS[@]} -eq 0 ]]; then
+        echo "Skipping ${MODEL_ID}: no configured dataset/language combinations selected."
+        continue
+    fi
 
     echo "████████████████████████████████████████████████████████████████████████████████"
     echo "  Evaluating: ${MODEL_ID}"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
-    for cfg in "${DATASET_CONFIGS[@]}"; do
+    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         CONFIG_NAME="${DATASET}_${LANGUAGE}"
         echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
@@ -151,7 +164,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
 
-    EXPECTED=${#DATASET_CONFIGS[@]}
+    EXPECTED=${#MODEL_DATASET_CONFIGS[@]}
     ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
     if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
         echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
@@ -163,7 +176,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     # Collect the set of languages actually evaluated (across all datasets)
     ALL_LANGUAGES=()
-    for cfg in "${DATASET_CONFIGS[@]}"; do
+    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         if [[ ! " ${ALL_LANGUAGES[*]} " == *" ${LANGUAGE} "* ]]; then
             ALL_LANGUAGES+=("$LANGUAGE")

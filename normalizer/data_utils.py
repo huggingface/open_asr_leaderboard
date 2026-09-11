@@ -1,6 +1,5 @@
 import os
 import re
-from functools import lru_cache
 
 import num2words
 from datasets import Audio, IterableDataset, load_dataset
@@ -30,183 +29,6 @@ def is_target_text_in_range(ref):
 # lang= is passed to the multilingual normalizer. Multi-word entries are
 # supported (matched on whitespace boundaries). Currently empty
 FILLER_WORDS = {}
-
-ARMENIAN_FLEURS_CONFIGS = {"fleurs_hy", "hy_am"}
-ARMENIAN_FLEURS_CORRECTIONS_DATASET = "Metric-AI/fleurs-corrections"
-MULTILINGUAL_DATASET_OVERRIDES = {
-    "fleurs_hy": ("google/fleurs", "hy_am"),
-    "mcv26_hy": ("deepdml/common_voice_26_0", "hy-AM"),
-}
-
-
-def resolve_multilingual_dataset(dataset_path, config_name):
-    """Resolve a leaderboard config to its public upstream dataset."""
-    return MULTILINGUAL_DATASET_OVERRIDES.get(
-        config_name, (dataset_path, config_name)
-    )
-
-
-def load_multilingual_dataset(dataset_path, config_name, split, **kwargs):
-    """Load a benchmark dataset and expose the common runner schema.
-
-    Armenian datasets currently live outside the aggregate leaderboard dataset,
-    so their canonical leaderboard config names are redirected here.  Keeping
-    the canonical name in callers also keeps result filenames stable.
-    """
-    resolved_path, resolved_config = resolve_multilingual_dataset(
-        dataset_path, config_name
-    )
-    if resolved_path == "deepdml/common_voice_26_0":
-        kwargs.setdefault("trust_remote_code", True)
-    dataset = load_dataset(
-        resolved_path,
-        resolved_config or None,
-        split=split,
-        **kwargs,
-    )
-
-    column_names = dataset.column_names
-    if isinstance(column_names, dict):
-        column_names = next(iter(column_names.values()), [])
-
-    transcript_column = next(
-        (
-            name
-            for name in ("text", "raw_transcription", "transcription", "sentence")
-            if name in column_names
-        ),
-        None,
-    )
-    if transcript_column is None:
-        raise ValueError(
-            f"Dataset {resolved_path!r}/{resolved_config!r} has no supported transcript column"
-        )
-    if transcript_column != "text":
-        dataset = dataset.map(lambda sample: {"text": sample[transcript_column]})
-
-    # google/fleurs exposes the stable WAV name as `path`; the correction
-    # manifest calls the same value `file_name`.
-    if config_name in ARMENIAN_FLEURS_CONFIGS and "file_name" not in column_names:
-        if "path" not in column_names:
-            raise ValueError(
-                "Armenian FLEURS has neither 'file_name' nor 'path' for corrections"
-            )
-        dataset = dataset.map(
-            lambda sample: {"file_name": os.path.basename(sample["path"])}
-        )
-
-    # Common Voice 26 exposes the source filename as `path`; runners use the
-    # leaderboard's canonical `file_name` field when creating local WAV files.
-    if config_name == "mcv26_hy" and "file_name" not in column_names:
-        dataset = dataset.map(
-            lambda sample: {"file_name": os.path.basename(sample["path"])}
-        )
-
-    if (
-        config_name in ARMENIAN_FLEURS_CONFIGS
-        and split == "test"
-        and not isinstance(dataset, IterableDataset)
-    ):
-        source_file_names = {
-            os.path.basename(file_name) for file_name in dataset["file_name"]
-        }
-        missing = set(_armenian_fleurs_corrections()) - source_file_names
-        if missing:
-            examples = ", ".join(repr(name) for name in sorted(missing)[:3])
-            raise ValueError(
-                f"{len(missing)} Armenian FLEURS correction rows do not match "
-                f"the evaluation dataset (examples: {examples})"
-            )
-
-    return apply_reference_corrections(dataset, config_name, split)
-
-
-@lru_cache(maxsize=1)
-def _armenian_fleurs_corrections():
-    """Load the small, text-only correction manifest once per process."""
-    corrections = load_dataset(
-        ARMENIAN_FLEURS_CORRECTIONS_DATASET,
-        split="test",
-        token=True,
-    )
-    by_file_name = {}
-    for row in corrections:
-        file_name = os.path.basename(row["file_name"])
-        correction = (
-            row["original_transcription"],
-            row["corrected_transcription"],
-        )
-        if file_name in by_file_name and by_file_name[file_name] != correction:
-            raise ValueError(
-                f"Conflicting Armenian FLEURS corrections for {file_name!r}"
-            )
-        by_file_name[file_name] = correction
-    return by_file_name
-
-
-def corrected_reference(sample, reference, config_name, split="test"):
-    """Return the reviewed Armenian FLEURS reference for one dataset sample.
-
-    Corrections are keyed by the stable FLEURS WAV filename.  An exact check
-    against the recorded original transcript prevents a correction from being
-    silently applied to the wrong dataset revision.
-    """
-    if config_name not in ARMENIAN_FLEURS_CONFIGS or split != "test":
-        return reference
-
-    file_name = sample.get("file_name") or sample.get("path")
-    if not file_name:
-        raise ValueError(
-            "Armenian FLEURS samples must include 'file_name' so reviewed "
-            "reference corrections can be joined safely"
-        )
-    correction = _armenian_fleurs_corrections().get(os.path.basename(file_name))
-    if correction is None:
-        return reference
-
-    original, corrected = correction
-    if reference not in {original, corrected}:
-        raise ValueError(
-            f"Armenian FLEURS source reference mismatch for {file_name!r}; "
-            "the correction manifest and evaluation dataset may use different revisions"
-        )
-    return corrected
-
-
-def apply_reference_corrections(dataset, config_name, split="test"):
-    """Overlay reviewed references onto an Armenian FLEURS Dataset."""
-    if config_name not in ARMENIAN_FLEURS_CONFIGS or split != "test":
-        return dataset
-
-    column_names = dataset.column_names
-    if isinstance(column_names, dict):
-        column_names = next(iter(column_names.values()), [])
-    text_column = next(
-        (
-            name
-            for name in ("text", "raw_transcription", "transcription", "sentence")
-            if name in column_names
-        ),
-        None,
-    )
-    if text_column is None:
-        raise ValueError(
-            "Armenian FLEURS dataset has no supported transcript column"
-        )
-    if "file_name" not in column_names:
-        raise ValueError(
-            "Armenian FLEURS dataset has no 'file_name' column for corrections"
-        )
-
-    def apply(sample):
-        sample[text_column] = corrected_reference(
-            sample, sample[text_column], config_name, split
-        )
-        # All multilingual runners consume the canonical `text` column.
-        sample["text"] = sample[text_column]
-        return sample
-
-    return dataset.map(apply)
 
 
 class MultilingualNormalizer(BasicMultilingualTextNormalizer):
@@ -259,8 +81,7 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
         return re.sub(r"\d+", _replace, text)
 
     def __call__(self, s, lang=None):
-        language_key = lang.lower().replace("_", "-") if lang is not None else None
-        language_normalizer = self._language_normalizers.get(language_key)
+        language_normalizer = self._language_normalizers.get(lang)
         if language_normalizer is not None:
             return language_normalizer(s)
 
@@ -274,8 +95,6 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
 def get_text(sample):
     if "text" in sample:
         return sample["text"]
-    elif "raw_transcription" in sample:
-        return sample["raw_transcription"]
     elif "sentence" in sample:
         return sample["sentence"]
     elif "normalized_text" in sample:
@@ -286,9 +105,8 @@ def get_text(sample):
         return sample["transcription"]
     else:
         raise ValueError(
-            f"Expected transcript column of either 'text', 'raw_transcription', 'sentence', "
-            f"'normalized_text', 'transcript', or 'transcription'. Got sample keys: "
-            f"{list(sample.keys())}. Ensure a text column name is present in the dataset."
+            f"Expected transcript column of either 'text', 'sentence', 'normalized_text' or 'transcript'. Got sample of "
+            ".join{sample.keys()}. Ensure a text column name is present in the dataset."
         )
 
 

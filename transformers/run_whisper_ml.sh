@@ -6,11 +6,12 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
-MODEL_IDs=(
-    "openai/whisper-large-v3"
-    "openai/whisper-large-v3-turbo"
-    "facebook/mms-1b-all"
-    "facebook/seamless-m4t-v2-large"
+# The language list after each model ID limits that model's evaluations.
+MODEL_CONFIGS=(
+    "openai/whisper-large-v3 de fr it es pt nl hy"
+    "openai/whisper-large-v3-turbo de fr it es pt nl"
+    "facebook/mms-1b-all hy"
+    "facebook/seamless-m4t-v2-large hy"
 )
 
 BATCH_SIZE=64
@@ -18,7 +19,6 @@ DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
-# mcv_hy is Common Voice 26 from Mozilla and requires MDC_API_KEY.
 
 # German, French, Italian, Spanish, Portuguese, Dutch, Armenian
 DATASET_NAMES=("fleurs" "mcv" "mls")
@@ -74,7 +74,8 @@ echo "Device: $DEVICE_ID"
 echo ""
 
 # Run evaluations for all models
-for MODEL_ID in "${MODEL_IDs[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID MODEL_LANGUAGES <<< "$model_cfg"
     echo ""
     echo "Processing Model: $MODEL_ID"
     echo "========================================================"
@@ -90,6 +91,9 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         echo ""
 
         for language in $languages; do
+            if [[ " $MODEL_LANGUAGES " != *" $language "* ]]; then
+                continue
+            fi
             run_evaluation "$MODEL_ID" "$dataset" "$language"
         done
     done
