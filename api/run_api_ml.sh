@@ -26,6 +26,7 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech        4"
     # "modulate/multilingual         25"
     # "soniox/stt-async-v5           20"
+    # "sprag/symphony                8"
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
@@ -199,6 +200,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
+            -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \

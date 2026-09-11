@@ -62,5 +62,6 @@ from . import (
     smallest_provider,
     soniox_provider,
     speechmatics_provider,
+    sprag_provider,
     zoom_provider,
 )
