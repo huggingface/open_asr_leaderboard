@@ -24,7 +24,6 @@ class MicrosoftAzureProvider(APIProvider):
         "pt": "pt-PT",
         "nl": "nl-NL",
         "hi": "hi-IN",
-        "nl": "nl-NL",
     }
 
     def transcribe(
