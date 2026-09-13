@@ -165,8 +165,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         CONFIG_ARG=""
         [[ -n "$CONFIG_NAME" ]] && CONFIG_ARG="--config_name=${CONFIG_NAME}"
 
-        PROMPT_FLAG=""
-
         echo ""
         echo "Running evaluation: ${CONFIG_NAME:-$dataset}"
         echo "   Model: $MODEL_ID"
@@ -206,8 +204,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --language=${language} \
                     --split=test \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS} \
-                    ${PROMPT_FLAG}
+                    --max_workers=${MAX_WORKERS}
             "
 
         exit_code=$?

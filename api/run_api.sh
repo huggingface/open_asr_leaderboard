@@ -31,6 +31,7 @@ MODEL_CONFIGS=(
     # "gladia/solaria-3             20"
     # "meta/muse-voice-transcribe    16"
     # "soniox/stt-async-v5           20"
+    # "sophea/asr-k1                 16"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -88,11 +89,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_CONFIG="$DATASET"
         fi
 
-        PROMPT_FLAG=""
-
         docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
             -e HF_HOME=/tmp/hf_home \
             -e HF_DATASETS_CACHE="${DATASETS_CACHE_DIR}" \
             -e HF_HUB_CACHE=/hf_cache/hub \
@@ -120,8 +120,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS} \
-                    ${PROMPT_FLAG}
+                    --max_workers=${MAX_WORKERS}
             "
     done
 
