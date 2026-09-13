@@ -23,9 +23,10 @@ MODEL_CONFIGS=(
     # "speechmatics/enhanced         4"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
-    # "microsoft/azure-speech        4"
+    # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual         25"
     # "soniox/stt-async-v5           20"
+    # "meta/muse-voice-transcribe    16"
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
@@ -118,9 +119,6 @@ if [[ -n "${MODEL:-}" ]]; then
     MODEL_CONFIGS=("$MODEL")
 fi
 
-# Datasets that require lexical format prompt (azure only)
-LEXICAL_DATASETS="mls-it"
-
 # Resolve a "dataset language" pair to the repo it lives in and its config name.
 # Sets DS_PATH and CONFIG_NAME (empty for standalone single-config repos).
 resolve_dataset() {
@@ -168,9 +166,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         [[ -n "$CONFIG_NAME" ]] && CONFIG_ARG="--config_name=${CONFIG_NAME}"
 
         PROMPT_FLAG=""
-        if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" ${dataset}-${language} "* ]]; then
-            PROMPT_FLAG="--prompt 'Output must be in lexical format.'"
-        fi
 
         echo ""
         echo "Running evaluation: ${CONFIG_NAME:-$dataset}"
@@ -200,6 +195,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
+            -e META_API_KEY="${META_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
