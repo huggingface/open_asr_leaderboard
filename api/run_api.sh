@@ -26,7 +26,7 @@ MODEL_CONFIGS=(
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
-    # "microsoft/azure-speech-06-2026  4"
+    # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"
     # "soniox/stt-async-v5           20"
@@ -56,10 +56,6 @@ fi
 if [[ -n "${MODEL:-}" ]]; then
     MODEL_CONFIGS=("$MODEL")
 fi
-
-# Datasets that require lexical format prompt
-LEXICAL_DATASETS="librispeech gigaspeech"
-
 
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
@@ -91,11 +87,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_CONFIG="$DATASET"
         fi
 
-        PROMPT_FLAG=""
-        if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" $DATASET "* ]]; then
-            PROMPT_FLAG="--prompt 'Output must be in lexical format.'"
-        fi
-
         docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
@@ -125,8 +116,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS} \
-                    ${PROMPT_FLAG}
+                    --max_workers=${MAX_WORKERS}
             "
     done
 

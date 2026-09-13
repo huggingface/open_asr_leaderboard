@@ -118,9 +118,6 @@ if [[ -n "${MODEL:-}" ]]; then
     MODEL_CONFIGS=("$MODEL")
 fi
 
-# Datasets that require lexical format prompt (azure only)
-LEXICAL_DATASETS="mls-it"
-
 # Resolve a "dataset language" pair to the repo it lives in and its config name.
 # Sets DS_PATH and CONFIG_NAME (empty for standalone single-config repos).
 resolve_dataset() {
@@ -167,11 +164,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         CONFIG_ARG=""
         [[ -n "$CONFIG_NAME" ]] && CONFIG_ARG="--config_name=${CONFIG_NAME}"
 
-        PROMPT_FLAG=""
-        if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" ${dataset}-${language} "* ]]; then
-            PROMPT_FLAG="--prompt 'Output must be in lexical format.'"
-        fi
-
         echo ""
         echo "Running evaluation: ${CONFIG_NAME:-$dataset}"
         echo "   Model: $MODEL_ID"
@@ -210,8 +202,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --language=${language} \
                     --split=test \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS} \
-                    ${PROMPT_FLAG}
+                    --max_workers=${MAX_WORKERS}
             "
 
         exit_code=$?
