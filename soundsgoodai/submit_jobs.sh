@@ -1,153 +1,128 @@
 #!/bin/bash
-# Local script to submit HF Jobs for SoundsgoodAI Zipformer ASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# Submit one HF job per model, exporting once and evaluating all datasets.
+# Usage: HF_TOKEN=hf_... bash soundsgoodai/submit_jobs.sh
+set -euo pipefail
+shopt -s nullglob
 
-# ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-zipformer}"
-RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
-FLAVOR="${FLAVOR:-h200}"
-ORG_NAME="${ORG_NAME:-}"
+SPACE=${SPACE:-hf-audio/open-asr-leaderboard-zipformer}
+RESULTS_BUCKET=${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}
+FLAVOR=${FLAVOR:-h200}
+ORG_NAME=${ORG_NAME:-}
+RUN_ID=${RUN_ID:-fast-gpu-asr-$(date -u +%Y%m%dT%H%M%S)}
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
-# committed to the Space (useful for iterating without pushing to the Space).
-USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
-LOCAL_SCRIPT_INJECT=""
-if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
-    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
-fi
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "${SCRIPT_DIR}/config.sh"
+REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
+LOCAL_DIR=${SCRIPT_DIR}/results/${RUN_ID}
+export PYTHONPATH=${REPO_ROOT}:${PYTHONPATH:-}
 
 # Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
 # job (so normalizer changes take effect without updating the HF Space).
-USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
-LOCAL_NORMALIZER_INJECT=""
-if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
+LOCAL_NORMALIZER_INJECT=
+if [[ ${USE_LOCAL_NORMALIZER:-0} == 1 ]]; then
     NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
-    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
+    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app"
 fi
 
-# ── Models: "model_id batch_size" ────────────────────────────────────────────
-MODEL_CONFIGS=(
-    "soundsgoodai/Zipformer-transducer-XL-290M 64"
-    "soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M 64"
-)
+# Set USE_LOCAL_SCRIPT=1 to inject your local run_eval.py.
+LOCAL_SCRIPT_INJECT=
+if [[ ${USE_LOCAL_SCRIPT:-0} == 1 ]]; then
+    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py"
+fi
 
-# ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
-# dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
-# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
-# config name: the first field is only a label for selection and result files.
-DATASET_CONFIGS=(
-    "ami_cleaned test"
-    "gigaspeech_cleaned test"
-    "voxpopuli_cleaned_aa test"
-    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean"
-    "librispeech test.other"
-    "spgispeech test"
-    "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
-)
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="librispeech spgispeech" bash <this script>
-if [[ -n "${ONLY_DATASETS:-}" ]]; then
-    _selected=()
-    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
-        for _cfg in "${DATASET_CONFIGS[@]}"; do
-            read -r _name _ <<< "$_cfg"
-            for _want in ${ONLY_DATASETS}; do
-                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
-                    _selected+=("$_cfg")
-                fi
-            done
+if [[ -n ${ONLY_DATASETS:-} ]]; then
+    read -ra WANTED <<< ${ONLY_DATASETS}
+    SELECTED=()
+    for CONFIG in "${DATASET_CONFIGS[@]}"; do
+        read -r NAME _ <<< ${CONFIG}
+        for WANT in "${WANTED[@]}"; do
+            if [[ ${NAME} == "${WANT}" || ${NAME##*/} == "${WANT}" ]]; then
+                SELECTED+=("${CONFIG}")
+                break
+            fi
         done
-    fi
-    if [[ ${#_selected[@]} -eq 0 ]]; then
-        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
+    done
+    if (( ${#SELECTED[@]} == 0 )); then
+        echo "ONLY_DATASETS='${ONLY_DATASETS}' matched no datasets." >&2
         exit 1
     fi
-    DATASET_CONFIGS=("${_selected[@]}")
+    DATASET_CONFIGS=("${SELECTED[@]}")
 fi
 
+NAMESPACE_ARGS=()
+if [[ -n ${ORG_NAME} ]]; then
+    NAMESPACE_ARGS=(--namespace "${ORG_NAME}")
+fi
+mkdir -p "${SCRIPT_DIR}/results"
+mkdir "${LOCAL_DIR}"  # Do not mix the current run with existing local results.
 
-# ── Submit one job per model/dataset combination ─────────────────────────────
-for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
-    MODEL_FOLDER="${MODEL_ID//\//-}"
+for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE <<< ${MODEL_CONFIG}
+    MODEL_FOLDER=${MODEL_ID//\//-}/${DECODER_TYPE}
+    MODEL_DIR=${LOCAL_DIR}/${MODEL_FOLDER}
+    DESTINATION=/results/${RUN_ID}/${MODEL_FOLDER}
+    mkdir -p "${MODEL_DIR}"
 
-    echo "████████████████████████████████████████████████████████████████████████████████"
-    echo "  Evaluating: ${MODEL_ID}"
-    echo "████████████████████████████████████████████████████████████████████████████████"
+    # Serialize configuration safely; the quoted body expands variables in the job.
+    JOB_COMMAND=$(
+        declare -p MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE \
+            DEFAULT_DATASET_PATH DATASET_CONFIGS COMMON_ARGS DESTINATION
+        echo "${LOCAL_NORMALIZER_INJECT}"
+        echo "${LOCAL_SCRIPT_INJECT}"
+        cat <<'JOB'
+export PYTHONPATH=/app
+mkdir -p /app/evaluation "${DESTINATION}"
+cd /app/evaluation
+for CONFIG in "${DATASET_CONFIGS[@]}"; do
+    read -r DATASET SPLIT DATASET_PATH <<< ${CONFIG}
+    DATASET_CONFIG=${DATASET}
+    if [[ -n ${DATASET_PATH} ]]; then
+        DATASET_CONFIG=
+    fi
+    echo "Evaluating ${MODEL_ID}: ${DATASET} ${SPLIT}, batch ${BATCH_SIZE}, beam ${BEAM}"
+    python /app/run_eval.py "${COMMON_ARGS[@]}" \
+        --engine-cache=/app/engines \
+        --model-id="${MODEL_ID}" --model-family="${MODEL_TYPE}" \
+        --checkpoint-file="${CHECKPOINT_FILE}" --decoder-type="${DECODER_TYPE}" \
+        --beam="${BEAM}" --batch-size="${BATCH_SIZE}" \
+        --dataset-path="${DATASET_PATH:-${DEFAULT_DATASET_PATH}}" \
+        --dataset="${DATASET_CONFIG}" --split="${SPLIT}" \
+        2>&1 | tee "${DESTINATION}/${DATASET}-${SPLIT}.log"
+    cp results/*.jsonl results/*.metadata.json "${DESTINATION}/"
+done
+JOB
+    )
 
-    for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT DATASET_PATH <<< "$cfg"
-        if [[ -n "$DATASET_PATH" ]]; then
-            # Entry names its own repo: pass no config. Such repos hold a single
-            # (default) config, and the name here is just a label.
-            DATASET_CONFIG=""
-        else
-            DATASET_PATH="$DEFAULT_DATASET_PATH"
-            DATASET_CONFIG="$DATASET"
+    echo "Submitting ${MODEL_ID} ${DECODER_TYPE}: ${#DATASET_CONFIGS[@]} datasets in one job"
+    hf jobs run \
+        --flavor "${FLAVOR}" \
+        --timeout "${TIMEOUT:-8h}" \
+        --secrets HF_TOKEN \
+        "${NAMESPACE_ARGS[@]}" \
+        --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
+        -- "hf.co/spaces/${SPACE}" \
+        bash -euo pipefail -c "${JOB_COMMAND}" \
+        2>&1 | tee "${MODEL_DIR}/job.log"
+
+    hf buckets sync "hf://buckets/${RESULTS_BUCKET}/${RUN_ID}/${MODEL_FOLDER}" "${MODEL_DIR}"
+
+    MANIFESTS=("${MODEL_DIR}"/*.jsonl)
+    if (( ${#MANIFESTS[@]} != ${#DATASET_CONFIGS[@]} )); then
+        echo "Expected ${#DATASET_CONFIGS[@]} manifests, found ${#MANIFESTS[@]}; refusing to score." >&2
+        exit 1
+    fi
+    for MANIFEST in "${MANIFESTS[@]}"; do
+        if [[ ! -f ${MANIFEST%.jsonl}.metadata.json ]]; then
+            echo "Missing metadata for ${MANIFEST}; refusing to score." >&2
+            exit 1
         fi
-
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
-
-        NAMESPACE_ARG=""
-        [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
-
-        hf jobs run \
-            --flavor "$FLAVOR" \
-            --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
-            ${NAMESPACE_ARG} \
-            --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
-            "hf.co/spaces/${SPACE}" \
-            bash -c "
-                ${LOCAL_NORMALIZER_INJECT}
-                ${LOCAL_SCRIPT_INJECT}
-                ICEFALL_PATH=/app/soundsgoodai/icefall
-                PYTHONPATH=\${ICEFALL_PATH}:\${ICEFALL_PATH}/egs/librispeech/ASR/zipformer:/app python run_eval.py \
-                    --model_id=${MODEL_ID} \
-                    --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET_CONFIG} \
-                    --split=${SPLIT} \
-                    --device=0 \
-                    --batch_size=${BATCH_SIZE} \
-                    --max_eval_samples=-1 &&
-                mkdir -p /results/${MODEL_FOLDER} &&
-                cp results/*.jsonl /results/${MODEL_FOLDER}/
-            " > /dev/null 2>&1 &
     done
-    if [ -n "$ORG_NAME" ]; then
-        echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"
-    else
-        echo "For live status see: https://huggingface.co/settings/jobs"
-    fi
 
-    wait
-    echo "All jobs finished for ${MODEL_ID}."
-    sleep 10  # allow time for the last results to be flushed to the bucket
-
-    mkdir -p "./results/${MODEL_FOLDER}"
-    hf buckets sync \
-        "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
-        "./results/${MODEL_FOLDER}" > /dev/null 2>&1
-
-    EXPECTED=${#DATASET_CONFIGS[@]}
-    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
-    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
-        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
-    else
-        echo "All ${ACTUAL} result files present."
-    fi
-
-    PYTHONPATH="${REPO_ROOT}" python -c "
-from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
-"
-
+    python -c 'import sys; from normalizer.eval_utils import score_results; score_results(sys.argv[1], sys.argv[2])' \
+        "${MODEL_DIR}" "${MODEL_ID}" 2>&1 | tee "${MODEL_DIR}/scores.log"
 done
