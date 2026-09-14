@@ -242,6 +242,16 @@ def main(args):
             else:
                 inputs = processor.apply_transcription_request(audios)
             prompt_len = inputs["input_ids"].shape[1]
+        elif is_seamless_m4t_v2:
+            # SeamlessM4T's first positional processor argument is text, so
+            # audio must be passed explicitly by keyword.
+            inputs = processor(
+                audio=audios,
+                sampling_rate=sampling_rate,
+                return_tensors="pt",
+                padding=True,
+                return_attention_mask=True,
+            )
         elif not model.can_generate():
             # CTC pre-processing: normalize to mean 0, std 1
             inputs = processor(
