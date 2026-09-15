@@ -45,10 +45,10 @@ selects datasets; `COMMON_ARGS` sets precision, duration profiles, and warm-ups.
 bash soundsgoodai/run_models.sh
 ```
 
-Defaults are **FP16, batch 256**, beam **6** for Zipformer RNN-T and **1** for
-Parakeet and CTC, a **0.1 / 10 / 40-second** duration profile (min/opt/max),
-optimization level **5**, and blank penalty **0.0**. The eight dataset splits are
-LibriSpeech clean/other, AMI, chunked Earnings22, GigaSpeech, SPGISpeech,
+Defaults are **FP16, batch 256**, beam **10** for Zipformer RNN-T, **6** for
+Parakeet TDT V2/V3, and **1** for CTC, a **0.1 / 10 / 40-second** duration profile
+(min/opt/max), optimization level **5**, and blank penalty **0.0**. The eight
+dataset splits are LibriSpeech clean/other, AMI, chunked Earnings22, GigaSpeech, SPGISpeech,
 VoxPopuli, and Monsoon English. Reduce batch sizes if needed for GPU memory.
 
 Local suites save to `soundsgoodai/runs/<RUN_ID>/<model>/<decoder>/results/`.
