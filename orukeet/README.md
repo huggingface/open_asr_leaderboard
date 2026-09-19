@@ -1,50 +1,63 @@
-# Orukeet: English short-form evaluation
+# Orukeet R15-0100: English short-form evaluation
 
-This submission evaluates the released [oruk/orukeet](https://huggingface.co/oruk/orukeet) r3 checkpoint on the eight public English datasets. **r3 trained on LibriSpeech test-other and used it for selection; Monsoon English also influenced earlier training-partition selection.** See [the disclosure](training-disclosure.md). We request maintainer guidance on how this exposure should be represented and whether a different checkpoint is required for inclusion.
+This submission proposes [oruk/orukeet-r15-0100](https://huggingface.co/oruk/orukeet-r15-0100) as the earlier checkpoint for [PR #221](https://github.com/huggingface/open_asr_leaderboard/pull/221). R15-0100 is the archived parent of FT-4035. It predates the Monsoon-informed FT-4035 continuation and the subsequent r3 continuation trained directly on LibriSpeech test-other. The candidate was selected from its recorded lineage before the fresh evaluation.
 
-The model has 627,008,134 parameters, a FastConformer encoder and TDT decoder, supports 25 languages, and uses CC BY-SA 4.0 weights. This submission covers English only.
+**Earlier validation and selection exposure remains.** LibriSpeech test-other appeared in the initial adaptation/cooldown validation and evaluation, including all 2,939 recordings. Inspected initial logs show the monitored `val_wer` matching FLEURS, with test-other reported separately; whether test-other results influenced the fixed-step EMA export is unresolved. R15 recovery selection used a regression suite containing all 2,620 LibriSpeech test-clean recordings. Earlier VoxPopuli evaluation/selection also occurred; overlap with the current cleaned 628-record partition has not been established. Inherited pretraining overlap is incompletely verified. See [the full disclosure](training-disclosure.md).
+
+We request maintainer confirmation that this rollback, with the remaining history disclosed, satisfies the requested checkpoint criterion. We do not describe it as fully unexposed or independently held out.
+
+## Checkpoint
+
+The model has a FastConformer encoder and TDT decoder, supports 25 languages, and uses CC BY-SA 4.0 weights. This submission evaluates English only. The exact checkpoint tensor audit verifies 627,008,134 model parameters, including 110,592 fixed Gabor coefficients. The count excludes 49,176 batch-normalization buffer scalars and 33,296 fixed preprocessing window/filterbank scalars from the 627,090,606 state-dictionary scalars.
+
+| Identity | Value |
+| --- | --- |
+| Model | `oruk/orukeet-r15-0100` |
+| Immutable revision | `073489c0619cd7939e327bebfc6c5d4ace4b69bf` |
+| File | `orukeet-r15-0100.nemo` |
+| SHA-256 | `4295a6d820a40b99786331d1c7a6b6c328916c8329b23d39415b0649a5d42811` |
 
 ## Reproduce
 
-The [evaluation Space](https://huggingface.co/spaces/oruk/open-asr-leaderboard-orukeet/tree/171ab5e79454cc3772a8700479cb150cfe4cc84f) contains the full evaluator and unmodified pinned official normalizer, its exact upstream patch, tests and bundle checksums. The launcher below verifies the immutable Space commit and every bundled file before invocation.
+The launcher is pinned to the candidate Space revision and bundle below and verifies every bundled source file before invocation.
 
-Install `huggingface_hub>=1.11.0`, authenticate with a write token, and create a results bucket in your account. From the repository root:
+The [candidate evaluation Space](https://huggingface.co/spaces/oruk/open-asr-leaderboard-orukeet/tree/4c32209217703fdcbf474d54e68e62f3b3e5d804) contains the evaluator, unchanged pinned official normalizer, source patch, tests, model/data pins and bundle manifest. Its bundle SHA-256 is `590c29ff1945167a21dae22277e218064c0956ff71c5b7f8805716b3b6a96f69`.
+
+Install `huggingface_hub>=1.11.0`, authenticate with a write token, and create a results bucket. From the repository root:
 
 ```sh
-# Inspect the eight jobs without launching them.
+# Inspect the candidate's eight jobs without launching them.
 bash orukeet/submit_jobs.sh --namespace YOUR_NAMESPACE --bucket YOUR_NAMESPACE/YOUR_BUCKET
 
-# Submit at most two bounded H200 jobs at once, and wait for completion.
+# Execute the fixed plan with at most two H200 jobs concurrently.
 bash orukeet/submit_jobs.sh --namespace YOUR_NAMESPACE --bucket YOUR_NAMESPACE/YOUR_BUCKET \
-  --execute --receipt-directory ./orukeet-job-receipts
+  --execute --receipt-directory ./orukeet-r15-job-receipts
 ```
 
-The fixed profile uses the official NeMo Docker image by digest, H200, NeMo 2.7.2, Torch 2.8.0, BF16, batch size 128, greedy-batch decoding and `max_symbols=10`. It preserves original audio boundaries and the official reference filtering. Batch size 128 follows the existing Parakeet profile; exhaustive batch-size or throughput tuning is not claimed. CUDA synchronization brackets the timed full transcription pass after up to four warmup batches.
+The fixed profile uses the official NeMo Docker image by digest, H200, NeMo 2.7.2, Torch 2.8.0, BF16, batch 128, one loader worker, greedy-batch decoding and `max_symbols=10`. It preserves the official reference filtering and original audio boundaries. Each job has a 1,200-second limit. No automatic retries, checkpoint sweep or decoding sweep are included. Batch 128 follows the existing Parakeet profile; maximum-throughput tuning is not claimed.
 
-All model and dataset revisions are pinned. The NeMo checkpoint is downloaded from model revision `555136b50265a132d4cea0d35560c26fc4f657ab` and checked against SHA-256 `031c8ddab4845aeced904a7cde8e8aa57993b2e344716cf83a545b079c473b56`. Audio is staged on local job storage; result manifests and completion receipts go to your bucket. Earnings22 chunk metadata is retained for six-session scoring.
+CUDA synchronization brackets the full transcription pass, including file loading and decoding, after up to four warmup batches. Aggregate RTFx is total evaluated audio duration divided by total timed transcription duration across the eight datasets; it excludes model initialization, data staging and warmup. It is not the mean of per-dataset RTFx values or end-to-end job throughput.
 
-After completion, download the eight successful run directories from your bucket's `oruk-orukeet/` prefix into `./orukeet-results`. Retain their original manifest filenames, include exactly one successful run per dataset, and exclude failed attempts or canaries. Score with the pinned official normalizer:
+Candidate results use the separate `oruk-orukeet-r15-0100/` bucket prefix. Retain all original manifests and completion receipts and require exactly one complete candidate run per dataset. Use the candidate collector and metadata validator from the pinned Space; they check model identity, dataset pins, output counts and artifact hashes before invoking the unchanged official scorer. Empty predictions remain in scoring. Earnings22's 341 ordered chunks are joined into six complete reference sessions.
 
-```sh
-pip install -r requirements/requirements_jobs.txt
-hf download oruk/open-asr-leaderboard-orukeet --repo-type space \
-  --revision 171ab5e79454cc3772a8700479cb150cfe4cc84f \
-  --include 'evaluator/**' --local-dir ./orukeet-source
-python -c 'import sys; sys.path.insert(0, "./orukeet-source/evaluator"); from normalizer.eval_utils import score_results; score_results("./orukeet-results", model_id="oruk/orukeet", language="en", families=["public"])'
-```
+## Fresh R15-0100 results
 
-## Measured H200 results
+All eight complete runs passed artifact, count, input, runtime and independent numerical checks. Evaluated September 19, 2026 (UTC).
 
-| Dataset | WER (%) | H200 RTFx |
-|:--|--:|--:|
-| AMI-Cleaned | 8.68 | 3741.22 |
-| Earnings22-Cleaned-AA | 5.74 | 2982.17 |
-| GigaSpeech-Cleaned | 7.48 | 5346.49 |
-| LibriSpeech test-clean | 1.47 | 4180.11 |
-| LibriSpeech test-other (trained on) | 2.84 | 4159.42 |
-| SPGISpeech | 3.38 | 6419.21 |
-| Monsoon English (prior selection exposure) | 3.84 | 4835.62 |
-| VoxPopuli-Cleaned-AA | 2.46 | 2488.16 |
-| **Public-eight aggregate** | **4.49** | **5545.68** |
+| Dataset | R15-0100 WER (%) | H200 RTFx |
+| --- | ---: | ---: |
+| AMI-Cleaned | 9.69 | 3625.50 |
+| Earnings22-Cleaned-AA | 6.50 | 2980.66 |
+| GigaSpeech-Cleaned | 7.95 | 5474.17 |
+| LibriSpeech test-clean — earlier selection exposure | 1.49 | 4076.97 |
+| LibriSpeech test-other — earlier validation/evaluation | 3.11 | 4144.22 |
+| SPGISpeech | 3.39 | 6700.20 |
+| Monsoon English | 3.98 | 4862.19 |
+| VoxPopuli-Cleaned-AA — earlier subset overlap unresolved | 3.07 | 2620.26 |
+| **Public-eight aggregate** | **4.90** | **5689.99** |
 
-All 74,443 eligible records were evaluated. These are self-reported public-set measurements. [Complete results and hashes](https://huggingface.co/oruk/orukeet/blob/main/evaluation/open_asr_20260918/public-eight-h200-results.json) and [evaluation YAML](https://huggingface.co/oruk/orukeet/blob/main/.eval_results/open_asr_leaderboard.yaml) are published in the model repository. The current Hub task registry has no Monsoon task ID; its result is reported explicitly in the complete companion report, rather than assigned an invented ID. Private-set verification and inclusion remain the maintainers' decision.
+The complete run contains 74,443 eligible inputs from 74,544 source records after excluding 90 AMI and 11 GigaSpeech references under the official normalization rules. WER uses the pinned official normalizer and compound-aware alignment. The macro-average equally weights the eight per-dataset WERs rounded to two decimals.
+
+Candidate results: https://huggingface.co/oruk/orukeet-r15-0100/blob/29e54a79807faada4b64e085a7b740ee78f05b89/evaluation/open_asr_20260919/public-eight-h200-results.json. Candidate Hub YAML: https://huggingface.co/oruk/orukeet-r15-0100/blob/29e54a79807faada4b64e085a7b740ee78f05b89/.eval_results/open_asr_leaderboard.yaml. The current pinned task registry has no Monsoon task ID; its measured value is retained in the all-eight companion summary and aggregate. A Monsoon task ID is not invented.
+
+Historical r3 evidence remains in [the r3 model repository](https://huggingface.co/oruk/orukeet) and [its immutable evaluator Space revision](https://huggingface.co/spaces/oruk/open-asr-leaderboard-orukeet/tree/171ab5e79454cc3772a8700479cb150cfe4cc84f). Its scores and comparative placement do not apply to R15-0100. The default leaderboard additionally requires two private datasets; no private-set score, official default rank or maintainer acceptance is claimed here.

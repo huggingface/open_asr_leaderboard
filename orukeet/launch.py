@@ -8,8 +8,8 @@ from tempfile import TemporaryDirectory
 from huggingface_hub import snapshot_download
 
 SPACE = "oruk/open-asr-leaderboard-orukeet"
-REVISION = "171ab5e79454cc3772a8700479cb150cfe4cc84f"
-BUNDLE_SHA256 = "0cb403d1553052f0396770be499558cdd2a0d88dd29e73481121b54f715af5cd"
+REVISION = "4c32209217703fdcbf474d54e68e62f3b3e5d804"
+BUNDLE_SHA256 = "590c29ff1945167a21dae22277e218064c0956ff71c5b7f8805716b3b6a96f69"
 
 
 def main():
