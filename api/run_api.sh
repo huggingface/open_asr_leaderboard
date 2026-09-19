@@ -29,7 +29,8 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"
-    # "meta/muse-voice-transcribe    16"
+    # "meta/muse-voice-transcribe    8"
+    # "meta/muse-voice-transcribe-streaming    8"
     # "soniox/stt-async-v5           20"
     # "sophea/asr-k1                 16"
 )
@@ -40,14 +41,14 @@ DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 # An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
 # config name: the first field is only a label for selection and result files.
 EVAL_DATASETS=(
-    "ami_cleaned:test"
+    # "ami_cleaned:test"
     "earnings22_cleaned_aa_chunked:test:ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "gigaspeech_cleaned:test"
-    "librispeech:test.clean"
-    "librispeech:test.other"
-    "spgispeech:test"
+    # "gigaspeech_cleaned:test"
+    # "librispeech:test.clean"
+    # "librispeech:test.other"
+    # "spgispeech:test"
     "voxpopuli_cleaned_aa:test"
-    "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
+    # "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
@@ -100,6 +101,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
             -e META_API_KEY="${META_API_KEY:-}" \
+            -e META_FILE_MODE="${META_FILE_MODE:-}" \
+            -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
+            -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \

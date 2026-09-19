@@ -26,7 +26,8 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual         25"
     # "soniox/stt-async-v5           20"
-    # "meta/muse-voice-transcribe    16"
+    # "meta/muse-voice-transcribe    8"
+    # "meta/muse-voice-transcribe-streaming    8"
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
@@ -194,6 +195,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e META_API_KEY="${META_API_KEY:-}" \
+            -e META_FILE_MODE="${META_FILE_MODE:-}" \
+            -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
+            -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \

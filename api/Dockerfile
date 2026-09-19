@@ -42,7 +42,8 @@ RUN pip install --no-cache-dir \
     speechmatics-python \
     httpx \
     requests-toolbelt \
-    gladiaio-sdk
+    gladiaio-sdk \
+    websockets
 
 # Force soundfile backend for datasets audio decoding
 ENV HF_AUDIO_DECODER_BACKEND=soundfile

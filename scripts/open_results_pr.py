@@ -28,6 +28,12 @@ Usage:
     python scripts/open_results_pr.py --target multilingual --language de --model_id my-org/my-model
     python scripts/open_results_pr.py --target multilingual --model_id my-org/my-model  # all languages
 
+    # an API model: results are read from the private bucket for every target
+    python scripts/open_results_pr.py --target english --model_id my-org/my-api-model --api
+
+    # re-run a model and replace its row outright (blank what was not re-scored)
+    python scripts/open_results_pr.py --target english --model_id my-org/my-model --overwrite
+
     # re-use results already synced locally
     python scripts/open_results_pr.py --target english --model_id my-org/my-model --skip_sync
 
@@ -251,8 +257,21 @@ def fetch_csv(repo_id, filename, hf_token):
     return header, rows
 
 
-def upsert(header, rows, model_id, values, metadata, sort):
-    """Insert or replace `model_id`'s row. Returns (rows, action, new_row)."""
+def upsert(header, rows, model_id, values, metadata, sort, overwrite=False):
+    """Insert or replace `model_id`'s row. Returns (rows, action, new_row, cleared).
+
+    An existing row is always replaced in place, keeping its position in the file.
+    What happens to a column this run produced no value for depends on `overwrite`:
+
+    merge (default)
+        Keep whatever the published row already has. Safe for scoring one dataset
+        at a time and building the row up across several PRs, but a column left
+        over from an earlier run stays, so one row can mix two runs.
+    overwrite
+        Blank it, so the row holds this run's results and nothing else. Metadata
+        columns are still kept unless their flag was passed, since scoring can
+        never produce them.
+    """
     new_row = []
     for column in header:
         if column == "model":
@@ -264,19 +283,26 @@ def upsert(header, rows, model_id, values, metadata, sort):
 
     for i, row in enumerate(rows):
         if row and row[0].strip() == model_id:
-            # Preserve anything already curated in a column this run has no value
-            # for (e.g. metadata filled in by hand on a previous PR).
             padded = row + [""] * (len(header) - len(row))
-            merged = [
-                new if new != "" else old for new, old in zip(new_row, padded)
-            ]
+            merged, cleared = [], []
+            for column, fresh, old in zip(header, new_row, padded):
+                if fresh != "":
+                    merged.append(fresh)
+                elif not overwrite or column in METADATA_ARGS:
+                    # Metadata is curated by hand and scoring cannot regenerate
+                    # it, so --overwrite does not drop it either.
+                    merged.append(old)
+                else:
+                    merged.append("")
+                    if old.strip():
+                        cleared.append((column, old))
             rows = rows[:i] + [merged] + rows[i + 1 :]
-            return rows, "updated", merged
+            return rows, "updated", merged, cleared
 
     rows = rows + [new_row]
     if sort:
         rows = sorted(rows, key=lambda r: (r[0] or "").lower())
-    return rows, "added", new_row
+    return rows, "added", new_row, []
 
 
 def write_csv(header, rows):
@@ -293,7 +319,16 @@ def process(target, args, api, synced):
     local_dir = args.local_dir or os.path.join(REPO_ROOT, "results")
     # Targets read from different buckets; sync each one once per run. `hf buckets
     # sync` defaults to --no-delete, so several buckets can share one directory.
-    bucket = args.bucket or target.bucket
+    # API models are evaluated on the private infrastructure and every one of their
+    # runs lands in PRIVATE_BUCKET, whatever sheet the row is destined for, so --api
+    # overrides the target's own bucket. An explicit --bucket still wins.
+    if args.bucket:
+        bucket = args.bucket
+    elif args.api and target.bucket != PRIVATE_BUCKET:
+        bucket = PRIVATE_BUCKET
+        print(f"--api: reading from {PRIVATE_BUCKET} instead of {target.bucket}")
+    else:
+        bucket = target.bucket
     if not args.skip_sync and bucket not in synced:
         sync_bucket(bucket, local_dir, hf_token=args.hf_token)
         synced.add(bucket)
@@ -322,7 +357,29 @@ def process(target, args, api, synced):
     if ignored:
         print(f"WARNING: {target.filename} has no column(s) {ignored}; those flags are ignored.")
 
-    rows, action, new_row = upsert(header, rows, args.model_id, values, metadata, args.sort)
+    rows, action, new_row, cleared = upsert(
+        header, rows, args.model_id, values, metadata, args.sort, args.overwrite
+    )
+    if cleared:
+        print(
+            f"\n--overwrite: clearing {len(cleared)} column(s) this run did not "
+            f"score, which held values from an earlier run:"
+        )
+        for column, old in cleared:
+            print(f"  {column:<36} {old}  ->  (blank)")
+    elif action == "updated" and not args.overwrite:
+        stale = [
+            c
+            for c, v in zip(header, new_row)
+            if v.strip() and c not in values and c not in METADATA_ARGS and c != "model"
+            and c != target.avg_column
+        ]
+        if stale:
+            print(
+                f"\nNOTE: {len(stale)} column(s) kept from the published row because "
+                f"this run produced no value for them: {', '.join(stale)}.\n"
+                f"      Pass --overwrite to blank them instead."
+            )
 
     if target.avg_column and target.avg_column in header:
         index = {c: i for i, c in enumerate(header)}
@@ -432,7 +489,12 @@ def main():
         help="For --target multilingual: language file(s) to update (repeatable). "
              f"Choices: {', '.join(ML_LANGUAGES)}. Defaults to all.",
     )
-    parser.add_argument("--bucket", default=None, help="Override the source bucket.")
+    parser.add_argument(
+        "--bucket",
+        default=None,
+        help="Override the source bucket. Takes precedence over the target's default "
+             "and over the bucket --api selects.",
+    )
     parser.add_argument("--local_dir", default=None, help="Where to sync results (default <repo>/results).")
     parser.add_argument("--skip_sync", action="store_true", help="Score already-downloaded results.")
     parser.add_argument("--hf_token", default=os.environ.get("HF_TOKEN"), help="Defaults to $HF_TOKEN.")
@@ -442,11 +504,13 @@ def main():
     parser.add_argument(
         "--api",
         action="store_true",
-        help="Model is served through an API: do not upload RTFx. Throughput measured "
-             "over a network call is not comparable with a local GPU run, so the "
-             "published sheets leave it out for API models. Clears every RTFx column, "
-             f"including any value already in the row, and sets License to "
-             f"{API_LICENSE!r} unless --license is given.",
+        help="Model is served through an API. Reads results from "
+             f"{PRIVATE_BUCKET} for every target, since that is where API runs land. "
+             "Also does not upload RTFx: throughput measured over a network call is "
+             "not comparable with a local GPU run, so the published sheets leave it "
+             "out for API models. Clears every RTFx column, including any value "
+             f"already in the row, and sets License to {API_LICENSE!r} unless "
+             "--license is given.",
     )
     parser.add_argument(
         "--api_rtfx",
@@ -455,6 +519,14 @@ def main():
         help="Override what --api writes into the RTFx columns. Defaults to the "
              "convention of the target file (blank for english/hi, -1 for the other "
              "multilingual languages).",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing row outright: columns this run did not score are "
+             "blanked instead of keeping the published value. Use when re-running a "
+             "model so its row holds one run's results rather than a mix. Metadata "
+             "columns are still preserved unless their flag is passed.",
     )
     parser.add_argument(
         "--sort",
