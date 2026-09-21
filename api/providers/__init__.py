@@ -54,6 +54,7 @@ from . import (
     assemblyai_provider,
     elevenlabs_provider,
     gladia_provider,
+    meta_provider,
     microsoft_azure_provider,
     modulate_provider,
     openai_provider,

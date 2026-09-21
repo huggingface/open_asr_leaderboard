@@ -29,6 +29,8 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"
+    # "meta/muse-voice-transcribe    8"
+    # "meta/muse-voice-transcribe-streaming    8"
     # "soniox/stt-async-v5           20"
     # "sophea/asr-k1                 16"
 )
@@ -98,6 +100,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
+            -e META_API_KEY="${META_API_KEY:-}" \
+            -e META_FILE_MODE="${META_FILE_MODE:-}" \
+            -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
+            -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
