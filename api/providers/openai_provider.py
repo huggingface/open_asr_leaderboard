@@ -2,7 +2,7 @@ import requests
 from io import BytesIO
 from typing import Optional
 
-import openai
+from openai import OpenAI
 
 from . import APIProvider, register
 
@@ -17,10 +17,11 @@ class OpenAIProvider(APIProvider):
         use_url: bool = False,
         language: str = "en",
     ) -> str:
+        client = OpenAI()
         if use_url:
             response = requests.get(sample["row"]["audio"][0]["src"])
             audio_data = BytesIO(response.content)
-            response = openai.Audio.transcribe(
+            response = client.audio.transcriptions.create(
                 model=model_variant,
                 file=audio_data,
                 response_format="text",
@@ -29,7 +30,7 @@ class OpenAIProvider(APIProvider):
             )
         else:
             with open(audio_file_path, "rb") as audio_file:
-                response = openai.Audio.transcribe(
+                response = client.audio.transcriptions.create(
                     model=model_variant,
                     file=audio_file,
                     response_format="text",
