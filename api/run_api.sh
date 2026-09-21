@@ -41,14 +41,14 @@ DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 # An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
 # config name: the first field is only a label for selection and result files.
 EVAL_DATASETS=(
-    # "ami_cleaned:test"
+    "ami_cleaned:test"
     "earnings22_cleaned_aa_chunked:test:ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    # "gigaspeech_cleaned:test"
-    # "librispeech:test.clean"
-    # "librispeech:test.other"
-    # "spgispeech:test"
+    "gigaspeech_cleaned:test"
+    "librispeech:test.clean"
+    "librispeech:test.other"
+    "spgispeech:test"
     "voxpopuli_cleaned_aa:test"
-    # "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
+    "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
