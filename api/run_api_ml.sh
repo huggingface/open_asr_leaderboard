@@ -23,9 +23,11 @@ MODEL_CONFIGS=(
     # "speechmatics/enhanced         4"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
-    # "microsoft/azure-speech        4"
+    # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual         25"
     # "soniox/stt-async-v5           20"
+    # "meta/muse-voice-transcribe    8"
+    # "meta/muse-voice-transcribe-streaming    8"
     # "sprag/symphony                8"
 )
 
@@ -119,9 +121,6 @@ if [[ -n "${MODEL:-}" ]]; then
     MODEL_CONFIGS=("$MODEL")
 fi
 
-# Datasets that require lexical format prompt (azure only)
-LEXICAL_DATASETS="mls-it"
-
 # Resolve a "dataset language" pair to the repo it lives in and its config name.
 # Sets DS_PATH and CONFIG_NAME (empty for standalone single-config repos).
 resolve_dataset() {
@@ -168,11 +167,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         CONFIG_ARG=""
         [[ -n "$CONFIG_NAME" ]] && CONFIG_ARG="--config_name=${CONFIG_NAME}"
 
-        PROMPT_FLAG=""
-        if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" ${dataset}-${language} "* ]]; then
-            PROMPT_FLAG="--prompt 'Output must be in lexical format.'"
-        fi
-
         echo ""
         echo "Running evaluation: ${CONFIG_NAME:-$dataset}"
         echo "   Model: $MODEL_ID"
@@ -203,6 +197,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
+            -e META_API_KEY="${META_API_KEY:-}" \
+            -e META_FILE_MODE="${META_FILE_MODE:-}" \
+            -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
+            -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
@@ -213,8 +211,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --language=${language} \
                     --split=test \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS} \
-                    ${PROMPT_FLAG}
+                    --max_workers=${MAX_WORKERS}
             "
 
         exit_code=$?

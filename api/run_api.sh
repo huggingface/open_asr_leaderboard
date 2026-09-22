@@ -26,10 +26,13 @@ MODEL_CONFIGS=(
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
-    # "microsoft/azure-speech-06-2026  4"
+    # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"
+    # "meta/muse-voice-transcribe    8"
+    # "meta/muse-voice-transcribe-streaming    8"
     # "soniox/stt-async-v5           20"
+    # "sophea/asr-k1                 16"
     # "sprag/symphony                8"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
@@ -57,10 +60,6 @@ fi
 if [[ -n "${MODEL:-}" ]]; then
     MODEL_CONFIGS=("$MODEL")
 fi
-
-# Datasets that require lexical format prompt
-LEXICAL_DATASETS="librispeech gigaspeech"
-
 
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
@@ -92,20 +91,20 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_CONFIG="$DATASET"
         fi
 
-        PROMPT_FLAG=""
-        if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" $DATASET "* ]]; then
-            PROMPT_FLAG="--prompt 'Output must be in lexical format.'"
-        fi
-
         docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
             -e HF_HOME=/tmp/hf_home \
             -e HF_DATASETS_CACHE="${DATASETS_CACHE_DIR}" \
             -e HF_HUB_CACHE=/hf_cache/hub \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
             -e MODULATE_API_KEY="${MODULATE_API_KEY:-}" \
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
+            -e META_API_KEY="${META_API_KEY:-}" \
+            -e META_FILE_MODE="${META_FILE_MODE:-}" \
+            -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
+            -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
@@ -128,8 +127,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS} \
-                    ${PROMPT_FLAG}
+                    --max_workers=${MAX_WORKERS}
             "
     done
 

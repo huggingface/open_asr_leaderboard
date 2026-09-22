@@ -31,6 +31,32 @@ def remove_brackets(text):
     return text
 
 
+# Gemma 4 is a general multimodal LLM, not a dedicated ASR model: the task has to
+# come from an explicit instruction in the chat template.
+GEMMA4_LANGUAGE_NAMES = {
+    "de": "German",
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "hi": "Hindi",
+    "it": "Italian",
+    "nl": "Dutch",
+    "pt": "Portuguese",
+}
+
+
+def gemma4_transcribe_prompt(language):
+    """Build the Gemma 4 transcription instruction for `language` (a code)."""
+    name = GEMMA4_LANGUAGE_NAMES.get(language, language)
+    return (
+        f"Write out, word for word, exactly what is said in this audio. "
+        f"The speech is in {name}; write the transcript in {name}, using that language's normal script. "
+        f"Do not answer, explain, translate, continue, or comment on it. "
+        f"The audio may be only one or two words long; in that case output just those words. "
+        f"Output nothing but the transcript."
+    )
+
+
 def main(args):
 
     # Set seed for reproducibility
@@ -89,6 +115,9 @@ def main(args):
     is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
+    # Gemma 4 (incl. the E2B/E4B variants): multimodal chat model, audio goes
+    # through the chat template rather than apply_transcription_request.
+    is_gemma4 = "gemma-4" in args.model_id.lower()
 
     # Extract sampling rate from processor
     if hasattr(processor, "feature_extractor") and processor.feature_extractor is not None:
@@ -109,6 +138,14 @@ def main(args):
             gen_kwargs["task"] = "transcribe"
             if args.language is not None:
                 gen_kwargs["language"] = args.language
+        if is_gemma4:
+            gen_kwargs["do_sample"] = False
+            channel_token_id = processor.tokenizer.convert_tokens_to_ids("<|channel>")
+            suppressed = list(getattr(model.generation_config, "suppress_tokens", None) or [])
+            if isinstance(channel_token_id, int) and channel_token_id >= 0:
+                if channel_token_id not in suppressed:
+                    suppressed.append(channel_token_id)
+            gen_kwargs["suppress_tokens"] = suppressed
     elif args.max_new_tokens:
         raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
@@ -204,6 +241,32 @@ def main(args):
         elif is_voxtral_realtime:
             # Realtime model uses a plain processor call — no prompt, no apply_transcription_request
             inputs = processor(audios, return_tensors="pt")
+        elif is_gemma4:
+            # No apply_transcription_request: build a chat turn per sample with the
+            # audio and a language-specific instruction. The tokenizer left-pads, so
+            # every prompt ends at the same column and prompt_len slices uniformly.
+            prompt = gemma4_transcribe_prompt(norm_language)
+            conversations = [
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "audio", "audio": audio},
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ]
+                for audio in audios
+            ]
+            inputs = processor.apply_chat_template(
+                conversations,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
+                return_tensors="pt",
+                padding=True,
+            )
+            prompt_len = inputs["input_ids"].shape[1]
         elif has_transcription_processor:
             if "voxtral" in args.model_id.lower():
                 inputs = processor.apply_transcription_request(
@@ -294,6 +357,9 @@ def main(args):
         elif is_voxtral_realtime:
             # No prompt tokens to strip — decode directly
             pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        elif is_gemma4:
+            # Left padding means prompt_len is the same column for every sample.
+            pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_qwen3_asr:
             # Structured decode strips the "language <NAME><asr_text>" prefix.
             pred_text = processor.decode(pred_ids[:, prompt_len:], return_format="transcription_only")

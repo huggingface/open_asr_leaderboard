@@ -343,7 +343,7 @@ def score_results(
         (
             "appen",
             "appen",
-            "model,Avg Appen WER,Avg Scripted,Avg Conversational,"
+            "model,Avg WER,Avg Scripted,Avg Conversational,"
             "Scripted-US,Scripted-AU,Scripted-CA,Scripted-IN,"
             "Conversational-US003,Conversational-US004,Conversational-IN",
             {
@@ -386,24 +386,24 @@ def score_results(
         (
             "voicearena_private",
             "HF_English",
-            "model,English Private WER",
+            "model,HF_English_Private_Set",
             {
-                "HF_English_Private_Set__test": ("English Private WER", None),
+                "HF_English_Private_Set__test": ("HF_English_Private_Set", None),
             },
         ),
         (
             "voicearena_private_hi",
             "HF_Hindi_Private_Set",
-            "model,Hindi WER",
+            "model,HF_Hindi_Private_Set",
             {
-                "HF_Hindi_Private_Set__test": ("Hindi WER", None),
+                "HF_Hindi_Private_Set__test": ("HF_Hindi_Private_Set", None),
             },
         ),
         (
             "public",
             None,  # always printed when public datasets are present
-            "model,RTFx,License,Size (B),# Languages,Encoder,Decoder,"
-            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voice-Arena-Moonsoon WER,Voxpopuli-Cleaned-AA WER",
+            "model,avg,RTFx,License,Size (B),# Languages,Encoder,Decoder,Training data disclosure,"
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER",
             {
                 "ami_cleaned_test": ("AMI-Cleaned WER", None),
                 # Datasets in their own repo are run without a config name, so their
@@ -421,8 +421,8 @@ def score_results(
                 "librispeech_test.clean": ("LS Clean WER", None),
                 "librispeech_test.other": ("LS Other WER", None),
                 "spgispeech_test": ("SPGISpeech WER", None),
-                "Monsoon_en_IN_test__test": ("Voice-Arena-Moonsoon WER", None),
-                "voxpopuli_cleaned_aa_test": ("Voxpopuli-Cleaned-AA WER", None),
+                "Monsoon_en_IN_test__test": ("Voice Arena Monsoon WER", None),
+                "voxpopuli_cleaned_aa_test": ("Voxpopuli-AA-Cleaned WER", None),
             },
         ),
         (
@@ -706,7 +706,19 @@ def score_results(
                     rtfx_val = (
                         round(family_audio / family_time, 2) if family_time else ""
                     )
-                    prefix_cols = [str(rtfx_val)] + [""] * (n_prefix - 1)
+                    # Fill the prefix columns by name, not by position: the
+                    # families do not share a prefix layout (ml_* is just
+                    # "model,RTFx,...", public also carries avg and the metadata
+                    # columns), and the metadata ones are filled in by hand later.
+                    all_wers = [v for v in wer_vals.values() if v is not None]
+                    known = {
+                        "RTFx": rtfx_val,
+                        # Unrounded, to match english_short_latest.csv, whose avg
+                        # is the plain mean of the per-dataset WERs.
+                        "avg": (sum(all_wers) / len(all_wers)) if all_wers else "",
+                    }
+                    prefix_labels = header.split(",")[1 : 1 + n_prefix]
+                    prefix_cols = [str(known.get(lbl, "")) for lbl in prefix_labels]
                 else:
                     prefix_cols = [""] * n_prefix
                 print(",".join([csv_model_label] + prefix_cols + wer_cols))
