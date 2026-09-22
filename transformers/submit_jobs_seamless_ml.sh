@@ -1,9 +1,9 @@
 #!/bin/bash
-# Local script to submit HF Jobs for multilingual Whisper ASR evaluation.
+# Local script to submit HF Jobs for multilingual SeamlessM4T ASR evaluation.
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
-# Usage: HF_TOKEN=hf_... bash submit_jobs_whisper_ml.sh
-#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_whisper_ml.sh
+# Usage: HF_TOKEN=hf_... bash submit_jobs_seamless_ml.sh
+#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_seamless_ml.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
@@ -38,8 +38,7 @@ fi
 # ── Models: "model_id batch_size languages..." ──────────────────────────────
 # Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi"
-    "openai/whisper-large-v3            64 de fr it es pt nl hy hi"
+    "facebook/seamless-m4t-v2-large 16 de fr it es pt nl hy hi"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
