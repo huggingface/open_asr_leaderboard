@@ -9,6 +9,7 @@
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-omniasr}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
+ARMENIAN_DATASET_PATH="${ARMENIAN_DATASET_PATH:-Metric-AI/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
@@ -145,6 +146,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             CONFIG_NAME="(none)"
         else
             JOB_DATASET="${DATASET_PATH}"
+            [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
             CONFIG_NAME="${DATASET}_${LANGUAGE}"
             CONFIG_ARG="--config_name=${CONFIG_NAME}"
         fi

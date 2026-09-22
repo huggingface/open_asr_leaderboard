@@ -18,6 +18,7 @@ DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
+ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 
 DATASET_NAMES=("fleurs" "mcv" "mls")
 DATASET_LANGS_fleurs="de fr it es pt nl hy"
@@ -30,6 +31,8 @@ run_evaluation() {
     local dataset=$2
     local language=$3
     local config_name="${dataset}_${language}"
+    local dataset_path="$DATASETS"
+    [[ "$language" == "hy" ]] && dataset_path="$ARMENIAN_DATASETS"
     
     echo ""
     echo "🚀 Running evaluation: $config_name"
@@ -43,7 +46,7 @@ run_evaluation() {
     
     python run_eval_ml.py \
         --model_id="$model_id" \
-        --dataset="$DATASETS" \
+        --dataset="$dataset_path" \
         --config_name="$config_name" \
         --language="$language" \
         --split="test" \
