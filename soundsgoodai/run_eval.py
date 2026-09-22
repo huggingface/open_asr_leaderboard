@@ -80,6 +80,15 @@ def parse_args() -> Namespace:
         help="Hugging Face repository containing the model checkpoint.",
     )
     parser.add_argument(
+        "--report-name",
+        type=str,
+        default=None,
+        help=(
+            "Model name recorded in result manifests and scoring, such as "
+            "'nvidia/parakeet-tdt-0.6b-v3 (fast-gpu-asr)'. Defaults to --model-id."
+        ),
+    )
+    parser.add_argument(
         "--model-family",
         type=str,
         choices=("zipformer", "parakeet"),
@@ -201,6 +210,8 @@ def parse_args() -> Namespace:
     parser.set_defaults(streaming=False)
     args = parser.parse_args()
 
+    if not args.report_name:
+        args.report_name = args.model_id
     if args.batch_size < 1 or args.beam < 1:
         parser.error("batch_size and beam must be positive.")
     if args.warmup_steps < 0 or args.max_eval_samples == 0 or args.max_eval_samples < -1:
@@ -555,7 +566,7 @@ def main() -> None:
             data_utils.write_manifest(
                 results["references"],
                 results["predictions"],
-                args.model_id,
+                args.report_name,
                 args.dataset_path,
                 args.dataset,
                 args.split,

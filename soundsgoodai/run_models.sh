@@ -15,9 +15,11 @@ export PYTHONPATH=${SCRIPT_DIR}/..:${PYTHONPATH:-}
 ENGINE_CACHE=$(realpath -m "${ENGINE_CACHE:-${SCRIPT_DIR}/engines}")
 RUN_DIR=${SCRIPT_DIR}/runs/${RUN_ID}
 for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE <<< ${MODEL_CONFIG}
+    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE REPORT_SUFFIX <<< ${MODEL_CONFIG}
+    # Reported name; also names the result folder.
+    REPORT_NAME=${MODEL_ID}${REPORT_SUFFIX:+ ${REPORT_SUFFIX}}
 
-    MODEL_DIR=${RUN_DIR}/${MODEL_ID//\//-}/${DECODER_TYPE}
+    MODEL_DIR=${RUN_DIR}/$(model_folder "${REPORT_NAME}")
     mkdir -p "${MODEL_DIR}"
     cd "${MODEL_DIR}"
 
@@ -32,6 +34,7 @@ for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
         python "${SCRIPT_DIR}/run_eval.py" "${COMMON_ARGS[@]}" \
             --engine-cache="${ENGINE_CACHE}" \
             --model-id="${MODEL_ID}" \
+            --report-name="${REPORT_NAME}" \
             --model-family="${MODEL_TYPE}" \
             --checkpoint-file="${CHECKPOINT_FILE}" \
             --decoder-type="${DECODER_TYPE}" \
@@ -42,5 +45,5 @@ for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
             --split="${SPLIT}"
     done
 
-    python -c 'import sys; from normalizer.eval_utils import score_results; score_results("results", sys.argv[1])' "${MODEL_ID}"
+    python -c 'import sys; from normalizer.eval_utils import score_results; score_results("results", sys.argv[1])' "${REPORT_NAME}"
 done

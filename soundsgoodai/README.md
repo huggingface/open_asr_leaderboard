@@ -6,16 +6,26 @@ The [NeMo runners](../nemo_asr/) remain available for upstream comparisons.
 
 ## Models
 
-| Checkpoint | Decoder |
-| --- | --- |
-| `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M` | RNN-T; CTC |
-| `nvidia/parakeet-tdt-0.6b-v3` | TDT |
-| `nvidia/parakeet-tdt-0.6b-v2` | TDT |
-| `nvidia/parakeet-ctc-0.6b` | CTC |
-| `nvidia/parakeet-ctc-1.1b` | CTC |
+| Checkpoint | Decoder | Reported as |
+| --- | --- | --- |
+| `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M` | RNN-T | `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M transducer_modified_beam_search` |
+| `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M` | CTC | `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M ctc_greedy_search` |
+| `nvidia/parakeet-tdt-0.6b-v3` | TDT | `nvidia/parakeet-tdt-0.6b-v3 (fast-gpu-asr)` |
+| `nvidia/parakeet-tdt-0.6b-v2` | TDT | `nvidia/parakeet-tdt-0.6b-v2 (fast-gpu-asr)` |
+| `nvidia/parakeet-ctc-0.6b` | CTC | `nvidia/parakeet-ctc-0.6b (fast-gpu-asr)` |
+| `nvidia/parakeet-ctc-1.1b` | CTC | `nvidia/parakeet-ctc-1.1b (fast-gpu-asr)` |
 
 Zipformer RNN-T and CTC are separate configurations. Parakeet RNN-T is not
 supported; export rejects incompatible checkpoint architectures.
+
+The Parakeet checkpoints are also evaluated with the [NeMo runners](../nemo_asr/),
+so their results here carry a `(fast-gpu-asr)` suffix to keep the two backends
+apart in manifests and scoring. The suffix is the last `MODEL_CONFIGS` field and
+is passed to `run_eval.py` as `--report-name`; `--model-id` stays the Hub
+repository used for download, export, and engine caching. The reported name also
+names the result folder, slugified (`nvidia-parakeet-tdt-0.6b-v3-fast-gpu-asr`),
+so it must be unique across `MODEL_CONFIGS`: the two Zipformer rows differ only
+by decoder and use it as their suffix.
 
 ## Local Setup
 
@@ -38,8 +48,9 @@ SoundFile handles audio loading. No NeMo, Icefall, k2, TorchCodec, or separate
 system CUDA toolkit is needed; the requirements file above is sufficient.
 
 Both launchers share [config.sh](config.sh): `MODEL_CONFIGS` sets each model's
-repository, family, checkpoint, decoder, beam, and batch size; `DATASET_CONFIGS`
-selects datasets; `COMMON_ARGS` sets precision, duration profiles, and warm-ups.
+repository, family, checkpoint, decoder, beam, batch size, and optional
+reported-name suffix; `DATASET_CONFIGS` selects datasets; `COMMON_ARGS` sets
+precision, duration profiles, and warm-ups.
 
 ```bash
 bash soundsgoodai/run_models.sh
@@ -51,7 +62,7 @@ Parakeet TDT V2/V3, and **1** for CTC, a **0.1 / 10 / 40-second** duration profi
 dataset splits are LibriSpeech clean/other, AMI, chunked Earnings22, GigaSpeech, SPGISpeech,
 VoxPopuli, and Monsoon English. Reduce batch sizes if needed for GPU memory.
 
-Local suites save to `soundsgoodai/runs/<RUN_ID>/<model>/<decoder>/results/`.
+Local suites save to `soundsgoodai/runs/<RUN_ID>/<reported-name>/results/`.
 Engines are cached in `soundsgoodai/engines/`, overridable with `ENGINE_CACHE`.
 Clear the cache after TensorRT or plugin upgrades: package versions are not
 part of its key. Select the GPU with `--device` in `COMMON_ARGS`, without
@@ -88,20 +99,35 @@ The default matrix runs **six sequential jobs**, one per model/decoder, each
 evaluating all eight splits on **one H200**. The first dataset builds engines
 in `/app/engines`; subsequent datasets reuse them on the same GPU.
 
+- `PARALLEL_DATASETS=1` in `config.sh` submits one job per dataset instead and
+  runs a model's jobs in parallel, so its wall clock is the slowest dataset
+  rather than their sum. Each job then builds its own engines, so the GPU cost
+  is one export per dataset. Models are still handled one at a time, each scored
+  before the next is submitted.
 - `FLAVOR`, `ORG_NAME`, and `TIMEOUT` (default `8h`) control scheduling.
 - `SPACE` selects the image; `RESULTS_BUCKET` must name a bucket you can write to.
 - `ONLY_DATASETS="librispeech spgispeech"` selects clean, other, and SPGISpeech.
-- `USE_LOCAL_SCRIPT=1` and `USE_LOCAL_NORMALIZER=1` inject local copies instead
-  of the image's versions. Dependency changes still require an image rebuild.
+- Local `run_eval.py` and `normalizer/` are injected into each job by default, so
+  runner and normalizer changes take effect without updating the Space. Set
+  `USE_LOCAL_SCRIPT=0` or `USE_LOCAL_NORMALIZER=0` to use the image's versions.
+  Dependency changes still require an image rebuild.
 
 `HF_TOKEN` is passed as a job secret. Each completed dataset's transcripts,
 metadata, and log are saved under
-`hf://buckets/<RESULTS_BUCKET>/<RUN_ID>/<model>/<decoder>/`, surviving later
-evaluation failures. After a successful job, the launcher downloads results to
-`soundsgoodai/results/<RUN_ID>/<model>/<decoder>/`, verifies manifest counts and
-metadata sidecars, and writes aggregate scoring to `scores.log`.
-`RUN_ID` defaults to a UTC timestamp-based name; existing local run directories
-are rejected. Failed jobs are not scored as complete suites.
+`hf://buckets/<RESULTS_BUCKET>/<reported-name>/`, surviving later
+evaluation failures. Once a job ends, the launcher downloads results to
+`soundsgoodai/results/<RUN_ID>/<reported-name>/`, checks manifest counts and
+metadata sidecars, and prints the per-model summary, also written to
+`scores.log`. The job's own output (export and per-dataset progress) is not
+echoed to the terminal; read `<reported-name>/job.log` for it, or
+`job-<dataset>-<split>.log` with `PARALLEL_DATASETS=1`. A failed job or a
+missing dataset is a warning, not an error: the summary covers whatever arrived
+and the remaining models still run.
+`RUN_ID` defaults to a UTC timestamp-based name and groups local results only;
+existing local run directories are rejected. Bucket folders are keyed on the
+reported name alone, so rerunning a configuration overwrites its manifests
+there, and manifests from a previous run over different datasets are downloaded
+alongside the new ones.
 
 ## Measurement and Scoring
 
