@@ -16,7 +16,7 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
   The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
 * **Multilingual Benchmark:**
-  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes FLEURS, MCV and MLS. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used.
+  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes FLEURS, MCV and MLS. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used. The Armenian FLEURS and MCV test sets are hosted under [Metric-AI/open-asr-leaderboard-multilingual-datasets](https://huggingface.co/datasets/Metric-AI/open-asr-leaderboard-multilingual-datasets).
 
 
 * **Private datasets:** 
