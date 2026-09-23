@@ -4,6 +4,8 @@ set -euo pipefail
 # Run one open model, then score its raw transcripts with VoiceCodeBench CTEM.
 # Requires the NeMo evaluation environment and OPENAI_API_KEY for the verifier.
 cd "$(dirname "$0")"
+export PYTHONPATH="$(pwd)/..${PYTHONPATH:+:$PYTHONPATH}"
+: "${OPENAI_API_KEY:?Set OPENAI_API_KEY before running the CTEM verifier}"
 
 MODEL_ID="nvidia/parakeet-tdt-0.6b-v3"
 python run_eval.py \

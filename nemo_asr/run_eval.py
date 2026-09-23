@@ -14,9 +14,6 @@ from nemo.collections.asr.models import ASRModel
 import time
 
 
-wer_metric = evaluate.load("wer")
-
-
 def main(args):
 
     data_cache_root = args.data_cache_root if args.data_cache_root is not None else os.getcwd()
@@ -197,6 +194,7 @@ def main(args):
         references = all_data["references"]
 
     if primary_metric == "wer":
+        wer_metric = evaluate.load("wer")
         norm_references = [data_utils.normalizer(r) for r in references]
         norm_predictions = [data_utils.normalizer(p) for p in predictions]
         wer = wer_metric.compute(references=norm_references, predictions=norm_predictions)

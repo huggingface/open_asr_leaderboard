@@ -69,6 +69,8 @@ def score(args):
     model_id = args.model_id or artifact_model_id
     if not model_id:
         raise ValueError("--model-id is required for a leaderboard manifest.")
+    if artifact_model_id and args.model_id and args.model_id != artifact_model_id:
+        raise ValueError(f"Model ID {args.model_id!r} does not match artifact model {artifact_model_id!r}.")
 
     prediction_by_id = {}
     for row in predictions:
@@ -109,8 +111,10 @@ def score(args):
     aggregate = aggregate_entity_score_rows(scores)
     result = {
         "dataset": DATASET,
+        "dataset_revision": args.revision if args.dataset_root is None else None,
         "model_id": model_id,
         "verifier_id": config.id,
+        "verifier_config_digest": config.digest,
         "ctem": aggregate["entity_capture_rate"],
         "tsr": aggregate["task_success_rate"],
         "aggregate": aggregate,
