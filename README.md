@@ -15,8 +15,8 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
 * **English, long-form:**
   The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
-* **Entity recovery:**
-  [**VoiceCodeBench**](https://huggingface.co/datasets/besimple-ai/voice-code-bench) contains 300 English workplace recordings with annotated structured values. Its primary metric is Canonical Token/Entity Match (CTEM): the fraction of target values recoverable from a model transcript. The dataset is hosted by BeSimple; `normalizer/data_utils.py` attaches its separately stored WAV files to the test metadata. This integration keeps VoiceCodeBench separate from the WER averages above.
+* **VoiceCodeBench (English):**
+  [**VoiceCodeBench**](https://huggingface.co/datasets/besimple-ai/voice-code-bench) contains 300 workplace recordings with annotated structured values. Its primary metric is Canonical Token/Entity Match (CTEM): the fraction of target values recoverable from a model transcript. The dataset is hosted by BeSimple; the shared data loader attaches its separately stored WAV files to the test metadata.
 
 * **Multilingual Benchmark:**
   The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes fleurs, mcv and mls. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used.

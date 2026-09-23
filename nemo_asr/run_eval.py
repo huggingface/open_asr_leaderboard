@@ -45,7 +45,8 @@ def main(args):
     print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
-    is_voice_code_bench = data_utils.is_voice_code_bench_dataset(args.dataset_path)
+    manifest_keys = data_utils.manifest_metadata_keys(args.dataset_path)
+    primary_metric = data_utils.primary_metric(args.dataset_path)
 
     dataset = data_utils.load_data(args)
 
@@ -64,7 +65,7 @@ def main(args):
         durations = []
         file_names = batch.get("file_name", [None] * len(batch["audio"]))
 
-        # Use 'id' column if available, otherwise generate sequential IDs
+        # Use a dataset ID if available, otherwise generate sequential IDs.
         if "audio_id" in batch:
             ids = batch["audio_id"]
         elif "id" in batch:
@@ -125,10 +126,7 @@ def main(args):
         "durations": [],
         "references": [],
     }
-    if is_chunked:
-        all_data.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
-    if is_voice_code_bench:
-        all_data["audio_id"] = []
+    all_data.update({key: [] for key in manifest_keys})
 
     data_itr = iter(dataset)
     for data in tqdm(data_itr, desc="Downloading Samples"):
@@ -170,12 +168,8 @@ def main(args):
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
-    # Preserve VoiceCodeBench IDs so entity annotations can be joined to predictions.
-    extra_fields = None
-    if is_chunked:
-        extra_fields = {key: all_data[key] for key in data_utils.CHUNK_METADATA_KEYS}
-    elif is_voice_code_bench:
-        extra_fields = {"audio_id": all_data["audio_id"]}
+    # Keep dataset metadata needed by its scorer alongside raw predictions.
+    extra_fields = {key: all_data[key] for key in manifest_keys} if manifest_keys else None
 
     # Write raw predictions and timing results.
     manifest_path = data_utils.write_manifest(
@@ -202,7 +196,7 @@ def main(args):
     else:
         references = all_data["references"]
 
-    if not is_voice_code_bench:
+    if primary_metric == "wer":
         norm_references = [data_utils.normalizer(r) for r in references]
         norm_predictions = [data_utils.normalizer(p) for p in predictions]
         wer = wer_metric.compute(references=norm_references, predictions=norm_predictions)
@@ -214,10 +208,10 @@ def main(args):
     rtfx = round(rtfx, 2)
 
     print("RTFX:", rtfx)
-    if is_voice_code_bench:
-        print("Score entity recovery with scripts/score_voice_code_bench.py --input", manifest_path)
-    else:
+    if primary_metric == "wer":
         print("WER:", wer, "%")
+    else:
+        print(f"Score {primary_metric.upper()} from the raw manifest:", manifest_path)
 
 
 if __name__ == "__main__":

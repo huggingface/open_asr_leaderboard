@@ -123,38 +123,66 @@ CHUNKED_DATASETS = {
 
 # Carried into the results manifest so chunks can be reassembled at scoring time.
 CHUNK_METADATA_KEYS = ["parent_id", "chunk_index"]
-VOICE_CODE_BENCH_PATH = "besimple-ai/voice-code-bench"
-VOICE_CODE_BENCH_REVISION = "bef2824f83ef1c796f3e79731a3b0741708730df"
+
+# Dataset-specific schema and metric configuration. The external_audio adapter
+# handles metadata that references audio files stored separately in the Hub repo.
+DATASET_CONFIGS = {
+    "besimple-ai/voice-code-bench": {
+        "revision": "bef2824f83ef1c796f3e79731a3b0741708730df",
+        "external_audio": {
+            "pattern": "data/audio/*",
+            "dir": "data",
+            "file_name_key": "file_name",
+        },
+        "reference_path": ("transcripts", "acoustic"),
+        "manifest_keys": ("audio_id",),
+        "metric": "ctem",
+    },
+}
 
 
 def is_chunked_dataset(dataset_path):
     return str(dataset_path).lower() in CHUNKED_DATASETS
 
 
-def is_voice_code_bench_dataset(dataset_path):
-    return str(dataset_path).lower() == VOICE_CODE_BENCH_PATH
+def manifest_metadata_keys(dataset_path):
+    if is_chunked_dataset(dataset_path):
+        return CHUNK_METADATA_KEYS
+    config = DATASET_CONFIGS.get(str(dataset_path).lower(), {})
+    return config.get("manifest_keys", ())
 
 
-def load_voice_code_bench_data(args):
-    """Attach the WAV files and acoustic references to VoiceCodeBench metadata."""
+def primary_metric(dataset_path):
+    config = DATASET_CONFIGS.get(str(dataset_path).lower(), {})
+    return config.get("metric", "wer")
+
+
+def load_external_audio_data(args, config):
+    """Attach separately stored audio and nested reference text to metadata."""
     if args.streaming:
-        raise ValueError("VoiceCodeBench audio loading does not support streaming.")
+        raise ValueError("External audio loading does not support streaming.")
     dataset = load_dataset(
-        args.dataset_path, split=args.split, revision=VOICE_CODE_BENCH_REVISION
+        args.dataset_path, split=args.split, revision=config.get("revision")
     )
+    audio_config = config["external_audio"]
     audio_root = snapshot_download(
         repo_id=args.dataset_path,
         repo_type="dataset",
-        revision=VOICE_CODE_BENCH_REVISION,
-        allow_patterns=["data/audio/*"],
+        revision=config.get("revision"),
+        allow_patterns=[audio_config["pattern"]],
     )
 
     def attach_audio_and_text(sample):
-        audio_path = os.path.join(audio_root, "data", sample["file_name"])
+        audio_path = os.path.join(
+            audio_root, audio_config["dir"], sample[audio_config["file_name_key"]]
+        )
         if not os.path.isfile(audio_path):
             raise FileNotFoundError(audio_path)
         sample["audio"] = audio_path
-        sample["text"] = sample["transcripts"]["acoustic"]
+        reference = sample
+        for key in config["reference_path"]:
+            reference = reference[key]
+        sample["text"] = reference
         return sample
 
     dataset = dataset.map(attach_audio_and_text, load_from_cache_file=False)
@@ -202,8 +230,9 @@ def load_chunked_data(args):
 def load_data(args):
     if is_chunked_dataset(args.dataset_path):
         return load_chunked_data(args)
-    if is_voice_code_bench_dataset(args.dataset_path):
-        return load_voice_code_bench_data(args)
+    config = DATASET_CONFIGS.get(str(args.dataset_path).lower())
+    if config is not None and "external_audio" in config:
+        return load_external_audio_data(args, config)
 
     dataset = load_dataset(
         args.dataset_path,
