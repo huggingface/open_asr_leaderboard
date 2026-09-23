@@ -15,6 +15,9 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
 * **English, long-form:**
   The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
+* **Entity recovery:**
+  [**VoiceCodeBench**](https://huggingface.co/datasets/besimple-ai/voice-code-bench) contains 300 English workplace recordings with annotated structured values. Its primary metric is Canonical Token/Entity Match (CTEM): the fraction of target values recoverable from a model transcript. The dataset is hosted by BeSimple; `normalizer/data_utils.py` attaches its separately stored WAV files to the test metadata. This integration keeps VoiceCodeBench separate from the WER averages above.
+
 * **Multilingual Benchmark:**
   The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes fleurs, mcv and mls. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used.
 
@@ -80,6 +83,19 @@ ORG_NAME="<org-name>" RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/s
 For contributors who want to test locally or evaluate multilingual/long-form models before HF Jobs support is added, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
 
 Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
+
+### VoiceCodeBench CTEM example
+
+The released Parakeet predictions provide a credential-free check of the scoring path:
+
+```bash
+python scripts/score_voice_code_bench.py --released-parakeet-baseline
+# CTEM=78.6100% (1,165 / 1,482 entities); TSR=37.3333%
+```
+
+To generate new predictions with NeMo Parakeet and score them, run `bash nemo_asr/run_voice_code_bench.sh` with `OPENAI_API_KEY` set. The script writes raw transcripts with `audio_id` in a JSONL manifest, then calls `scripts/score_voice_code_bench.py` to produce `nemo_asr/results/parakeet_voice_code_bench_ctem.json`. The scorer fetches the benchmark's own versioned verifier prompt and scoring code from the dataset repo, checks that all 300 test recordings are present, and reports CTEM, task success rate (TSR), and entity counts. Dataset loading and scoring use the same pinned dataset revision; `--dataset-root` can use a local checkout for scoring. New predictions require the verifier API; the published baseline already contains its verifier decisions.
+
+This is a one-model integration example. Adding CTEM to the leaderboard's published results and UI is follow-up work.
 
 # Trade-off plots
 

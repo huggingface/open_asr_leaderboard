@@ -21,7 +21,7 @@ def main(args):
 
     data_cache_root = args.data_cache_root if args.data_cache_root is not None else os.getcwd()
     DATA_CACHE_DIR = os.path.join(data_cache_root, "audio_cache")
-    DATASET_NAME = args.dataset
+    DATASET_NAME = args.dataset or args.dataset_path.replace("/", "-")
     SPLIT_NAME = args.split
 
     CACHE_DIR = os.path.join(DATA_CACHE_DIR, DATASET_NAME, SPLIT_NAME)
@@ -45,6 +45,7 @@ def main(args):
     print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    is_voice_code_bench = data_utils.is_voice_code_bench_dataset(args.dataset_path)
 
     dataset = data_utils.load_data(args)
 
@@ -64,7 +65,9 @@ def main(args):
         file_names = batch.get("file_name", [None] * len(batch["audio"]))
 
         # Use 'id' column if available, otherwise generate sequential IDs
-        if "id" in batch:
+        if "audio_id" in batch:
+            ids = batch["audio_id"]
+        elif "id" in batch:
             ids = batch["id"]
         else:
             # Generate IDs based on index
@@ -124,6 +127,8 @@ def main(args):
     }
     if is_chunked:
         all_data.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    if is_voice_code_bench:
+        all_data["audio_id"] = []
 
     data_itr = iter(dataset)
     for data in tqdm(data_itr, desc="Downloading Samples"):
@@ -165,7 +170,14 @@ def main(args):
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
-    # Write manifest results (WER and RTFX)
+    # Preserve VoiceCodeBench IDs so entity annotations can be joined to predictions.
+    extra_fields = None
+    if is_chunked:
+        extra_fields = {key: all_data[key] for key in data_utils.CHUNK_METADATA_KEYS}
+    elif is_voice_code_bench:
+        extra_fields = {"audio_id": all_data["audio_id"]}
+
+    # Write raw predictions and timing results.
     manifest_path = data_utils.write_manifest(
         all_data["references"],
         predictions,
@@ -176,9 +188,7 @@ def main(args):
         audio_length=all_data["durations"],
         transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
         audio_filepaths=all_data["original_audio_filepaths"],
-        extra_fields={key: all_data[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields=extra_fields,
     )
 
     print("Results saved at path:", os.path.abspath(manifest_path))
@@ -192,10 +202,11 @@ def main(args):
     else:
         references = all_data["references"]
 
-    norm_references = [data_utils.normalizer(r) for r in references]
-    norm_predictions = [data_utils.normalizer(p) for p in predictions]
-    wer = wer_metric.compute(references=norm_references, predictions=norm_predictions)
-    wer = round(100 * wer, 2)
+    if not is_voice_code_bench:
+        norm_references = [data_utils.normalizer(r) for r in references]
+        norm_predictions = [data_utils.normalizer(p) for p in predictions]
+        wer = wer_metric.compute(references=norm_references, predictions=norm_predictions)
+        wer = round(100 * wer, 2)
 
     # transcription_time = sum(all_results["transcription_time"])
     audio_length = sum(all_data["durations"])
@@ -203,7 +214,10 @@ def main(args):
     rtfx = round(rtfx, 2)
 
     print("RTFX:", rtfx)
-    print("WER:", wer, "%")
+    if is_voice_code_bench:
+        print("Score entity recovery with scripts/score_voice_code_bench.py --input", manifest_path)
+    else:
+        print("WER:", wer, "%")
 
 
 if __name__ == "__main__":

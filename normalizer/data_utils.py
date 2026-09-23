@@ -123,10 +123,42 @@ CHUNKED_DATASETS = {
 
 # Carried into the results manifest so chunks can be reassembled at scoring time.
 CHUNK_METADATA_KEYS = ["parent_id", "chunk_index"]
+VOICE_CODE_BENCH_PATH = "besimple-ai/voice-code-bench"
+VOICE_CODE_BENCH_REVISION = "bef2824f83ef1c796f3e79731a3b0741708730df"
 
 
 def is_chunked_dataset(dataset_path):
     return str(dataset_path).lower() in CHUNKED_DATASETS
+
+
+def is_voice_code_bench_dataset(dataset_path):
+    return str(dataset_path).lower() == VOICE_CODE_BENCH_PATH
+
+
+def load_voice_code_bench_data(args):
+    """Attach the WAV files and acoustic references to VoiceCodeBench metadata."""
+    if args.streaming:
+        raise ValueError("VoiceCodeBench audio loading does not support streaming.")
+    dataset = load_dataset(
+        args.dataset_path, split=args.split, revision=VOICE_CODE_BENCH_REVISION
+    )
+    audio_root = snapshot_download(
+        repo_id=args.dataset_path,
+        repo_type="dataset",
+        revision=VOICE_CODE_BENCH_REVISION,
+        allow_patterns=["data/audio/*"],
+    )
+
+    def attach_audio_and_text(sample):
+        audio_path = os.path.join(audio_root, "data", sample["file_name"])
+        if not os.path.isfile(audio_path):
+            raise FileNotFoundError(audio_path)
+        sample["audio"] = audio_path
+        sample["text"] = sample["transcripts"]["acoustic"]
+        return sample
+
+    dataset = dataset.map(attach_audio_and_text, load_from_cache_file=False)
+    return dataset.cast_column("audio", Audio())
 
 
 def load_chunked_data(args):
@@ -170,6 +202,8 @@ def load_chunked_data(args):
 def load_data(args):
     if is_chunked_dataset(args.dataset_path):
         return load_chunked_data(args)
+    if is_voice_code_bench_dataset(args.dataset_path):
+        return load_voice_code_bench_data(args)
 
     dataset = load_dataset(
         args.dataset_path,
