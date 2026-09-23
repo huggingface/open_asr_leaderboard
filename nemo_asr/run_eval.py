@@ -62,10 +62,8 @@ def main(args):
         durations = []
         file_names = batch.get("file_name", [None] * len(batch["audio"]))
 
-        # Use a dataset ID if available, otherwise generate sequential IDs.
-        if "audio_id" in batch:
-            ids = batch["audio_id"]
-        elif "id" in batch:
+        # Use 'id' column if available, otherwise generate sequential IDs
+        if "id" in batch:
             ids = batch["id"]
         else:
             # Generate IDs based on index
