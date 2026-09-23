@@ -9,13 +9,13 @@ MODEL_ID="nvidia/parakeet-tdt-0.6b-v3"
 python run_eval.py \
     --model_id="$MODEL_ID" \
     --dataset_path="besimple-ai/voice-code-bench" \
-    --dataset="" \
+    --dataset="voice_code_bench" \
     --split="test" \
     --device=0 \
     --batch_size=16 \
     --max_eval_samples=-1
 
-MANIFEST="results/MODEL_nvidia-parakeet-tdt-0.6b-v3_DATASET_besimple-ai-voice-code-bench__test.jsonl"
+MANIFEST="results/MODEL_nvidia-parakeet-tdt-0.6b-v3_DATASET_besimple-ai-voice-code-bench_voice_code_bench_test.jsonl"
 python ../scripts/score_voice_code_bench.py \
     --input "$MANIFEST" \
     --model-id "$MODEL_ID" \

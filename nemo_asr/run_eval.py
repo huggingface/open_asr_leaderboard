@@ -21,7 +21,7 @@ def main(args):
 
     data_cache_root = args.data_cache_root if args.data_cache_root is not None else os.getcwd()
     DATA_CACHE_DIR = os.path.join(data_cache_root, "audio_cache")
-    DATASET_NAME = args.dataset or args.dataset_path.replace("/", "-")
+    DATASET_NAME = args.dataset
     SPLIT_NAME = args.split
 
     CACHE_DIR = os.path.join(DATA_CACHE_DIR, DATASET_NAME, SPLIT_NAME)
