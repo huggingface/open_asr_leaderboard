@@ -493,6 +493,15 @@ def score_results(
         manifest = merge_chunked_manifest(read_manifest(result_file))
         model_id_of_file, dataset_id = parse_filepath(result_file)
 
+        if "besimple-ai-voice-code-bench" in dataset_id.lower() or any(
+            "voice_code_bench_revision" in row for row in manifest
+        ):
+            raise ValueError(
+                "VoiceCodeBench uses CTEM, not WER. Score this manifest separately with "
+                "python -m normalizer.voice_code_bench --manifest " + result_file
+                + " --verifier-cache <cache.json>. Keep it outside WER result directories."
+            )
+
         time = [datum["time"] for datum in manifest]
         duration = [datum["duration"] for datum in manifest]
         compute_rtfx = all(time) and all(duration)
