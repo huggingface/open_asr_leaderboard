@@ -129,6 +129,49 @@ reported name alone, so rerunning a configuration overwrites its manifests
 there, and manifests from a previous run over different datasets are downloaded
 alongside the new ones.
 
+## Multilingual
+
+`nvidia/parakeet-tdt-0.6b-v3` is the only multilingual checkpoint here; V2, the
+Parakeet CTC models, and Zipformer are English-only. Its own launcher,
+[config_ml.sh](config_ml.sh), [run_eval_ml.py](run_eval_ml.py), and
+[submit_jobs_ml.sh](submit_jobs_ml.sh), mirrors the English ones and evaluates
+**FLEURS, Mozilla Common Voice, and Multilingual LibriSpeech** in the six
+languages the leaderboard reports (`de`, `fr`, `it`, `es`, `pt`, `nl`), sixteen
+dataset/language combinations from
+[open-asr-leaderboard-multilingual-datasets](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets):
+
+```bash
+HF_TOKEN=hf_... bash soundsgoodai/submit_jobs_ml.sh
+HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash soundsgoodai/submit_jobs_ml.sh
+HF_TOKEN=hf_... ONLY_DATASETS="fleurs mcv" ONLY_LANGUAGES="nl de" bash soundsgoodai/submit_jobs_ml.sh
+```
+
+Dataset configuration names are `<dataset>_<language>`, such as `fleurs_de`. The
+launcher takes the language from that suffix for `ONLY_LANGUAGES`, for
+`--language`, and for the summaries, and `run_eval_ml.py` derives it the same
+way when `--language` is absent. `ONLY_DATASETS` accepts either the full
+configuration name (`mls_pt`) or the dataset alone (`mls`).
+
+`config_ml.sh` sources `config.sh`, so decoders, precision, warm-ups, and
+`PARALLEL_DATASETS` are shared; it replaces the models, the datasets, the
+duration profile, and the batch size. The profile goes to **60 seconds**
+because FLEURS reaches 53 and overlong clips fail rather than being truncated,
+and the batch size drops to **128** to pay for it: the feature plugin stages
+one TensorRT workspace proportional to `batch_size * max_audio_seconds`, the
+English 256 x 40 s already uses 98.8% of its signed 32-bit limit, and exceeding
+it fails the export before any audio is read. At 60 seconds the ceiling is 172.
+Raising either one means lowering the other. `RESULTS_BUCKET` defaults to
+`hf-audio/asr_leaderboard_multilingual`, so multilingual manifests never share a
+bucket folder with the English ones despite the identical reported name.
+Everything else, injection of the local runner and normalizer, bucket sync,
+manifest and metadata checks, and the `RUN_ID` layout, works as described above.
+
+Scoring uses `ml_normalizer` for the evaluated language rather than the English
+normalizer: it also spells out digits, so `tien uur` and `10 uur` agree. Compound
+word boundaries are aligned before the compound-aware WER. `submit_jobs_ml.sh`
+calls `score_results` once per language, each restricted to its own `ml_<lang>`
+family, so every summary is normalized for the language it covers.
+
 ## Measurement and Scoring
 
 - **Preparation:** use upstream reference filtering and mono 16 kHz float32 audio.
