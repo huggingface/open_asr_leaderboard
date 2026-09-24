@@ -31,7 +31,9 @@ RUN pip install --no-cache-dir \
     tqdm \
     python-dotenv \
     kaldialign==0.12.0 \
-    voi_oiwer
+    voi_oiwer \
+    opencc==1.4.2 \
+    wetext==0.1.8
 
 # ── Provider-specific SDKs ────────────────────────────────────────────────────
 RUN pip install --no-cache-dir \
