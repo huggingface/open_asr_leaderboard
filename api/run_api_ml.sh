@@ -31,11 +31,13 @@ MODEL_CONFIGS=(
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
+CHINESE_DATASET_PATH="${CHINESE_DATASET_PATH:-steven0226/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Chinese, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# "fleurs zh" is a config of ${CHINESE_DATASET_PATH};
 # all others are configs of ${DATASET_PATH}. Hindi is scored with voi_oiwer over
 # the dataset's reference lattice (see OIWER_LANGUAGES in normalizer/eval_utils.py).
 DATASET_CONFIGS=(
@@ -45,6 +47,7 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -129,6 +132,7 @@ resolve_dataset() {
         CONFIG_NAME=""
     else
         DS_PATH="${DATASET_PATH}"
+        [[ "$language" == "zh" ]] && DS_PATH="${CHINESE_DATASET_PATH}"
         CONFIG_NAME="${dataset}_${language}"
     fi
 }

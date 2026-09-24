@@ -16,10 +16,11 @@ DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
+CHINESE_DATASETS="steven0226/open-asr-leaderboard-multilingual-datasets"
 
-# # German, French, Italian, Spanish, Portuguese, Dutch
+# # German, French, Italian, Spanish, Portuguese, Dutch, Chinese
 DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl"
+DATASET_LANGS_fleurs="de fr it es pt nl zh"
 DATASET_LANGS_mcv="de es fr it nl"
 DATASET_LANGS_mls="es fr it pt nl"
 
@@ -29,6 +30,8 @@ run_evaluation() {
     local dataset=$2
     local language=$3
     local config_name="${dataset}_${language}"
+    local dataset_path="$DATASETS"
+    [[ "$language" == "zh" ]] && dataset_path="$CHINESE_DATASETS"
 
     echo ""
     echo "Running evaluation: $config_name"
@@ -44,7 +47,7 @@ run_evaluation() {
     # To force a language, add: --language="$language"
     python run_eval_ml.py \
         --model_id="$model_id" \
-        --dataset="$DATASETS" \
+        --dataset="$dataset_path" \
         --config_name="$config_name" \
         --split="test" \
         --device="$DEVICE_ID" \

@@ -227,7 +227,8 @@ def main(args):
             # Multilingual RNNT models accept a language prompt;
             # English-only models (e.g. nemotron-speech-streaming-en) do not.
             if "-en" not in args.model_id.lower():
-                rnnt_processor_kwargs["language"] = norm_language
+                # The processor keys Mandarin by locale ("zh-CN"); it has no "zh" entry.
+                rnnt_processor_kwargs["language"] = "zh-CN" if norm_language == "zh" else norm_language
             inputs = processor(audios, **rnnt_processor_kwargs)
         elif is_cohere:
             # Cohere ASR requires an explicit language and does not use apply_transcription_request
@@ -464,7 +465,10 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    from normalizer.eval_utils import OIWER_LANGUAGES, score_oiwer
+    from normalizer.eval_utils import CER_LANGUAGES, OIWER_LANGUAGES, print_ml_cer, score_oiwer
+    if norm_language in CER_LANGUAGES:
+        print_ml_cer(all_results, norm_language)
+        return
     if norm_language in OIWER_LANGUAGES:
         # Lattice-based, orthography-aware scoring (voi_oiwer applies its own
         # normalization internally).
