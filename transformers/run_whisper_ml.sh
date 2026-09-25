@@ -6,9 +6,12 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
-MODEL_IDs=(
-    "openai/whisper-large-v3"
-    "openai/whisper-large-v3-turbo"
+# The language list after each model ID limits that model's evaluations.
+MODEL_CONFIGS=(
+    "openai/whisper-large-v3 de fr it es pt nl hy"
+    "openai/whisper-large-v3-turbo de fr it es pt nl"
+    "facebook/mms-1b-all hy"
+    "facebook/seamless-m4t-v2-large hy"
 )
 
 BATCH_SIZE=64
@@ -16,11 +19,12 @@ DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
+ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 
-# # German, French, Italian, Spanish, Portuguese, Dutch
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian
 DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl"
-DATASET_LANGS_mcv="de es fr it nl"
+DATASET_LANGS_fleurs="de fr it es pt nl hy"
+DATASET_LANGS_mcv="de es fr it nl hy"
 DATASET_LANGS_mls="es fr it pt nl"
 
 # Function to run evaluation
@@ -29,6 +33,8 @@ run_evaluation() {
     local dataset=$2
     local language=$3
     local config_name="${dataset}_${language}"
+    local dataset_path="$DATASETS"
+    [[ "$language" == "hy" ]] && dataset_path="$ARMENIAN_DATASETS"
 
     echo ""
     echo "Running evaluation: $config_name"
@@ -44,7 +50,7 @@ run_evaluation() {
     # To force a language, add: --language="$language"
     python run_eval_ml.py \
         --model_id="$model_id" \
-        --dataset="$DATASETS" \
+        --dataset="$dataset_path" \
         --config_name="$config_name" \
         --split="test" \
         --device="$DEVICE_ID" \
@@ -71,7 +77,8 @@ echo "Device: $DEVICE_ID"
 echo ""
 
 # Run evaluations for all models
-for MODEL_ID in "${MODEL_IDs[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID MODEL_LANGUAGES <<< "$model_cfg"
     echo ""
     echo "Processing Model: $MODEL_ID"
     echo "========================================================"
@@ -87,6 +94,9 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         echo ""
 
         for language in $languages; do
+            if [[ " $MODEL_LANGUAGES " != *" $language "* ]]; then
+                continue
+            fi
             run_evaluation "$MODEL_ID" "$dataset" "$language"
         done
     done

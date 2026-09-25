@@ -4,7 +4,11 @@ import re
 import num2words
 from datasets import Audio, IterableDataset, load_dataset
 from huggingface_hub import snapshot_download
-from normalizer import BasicMultilingualTextNormalizer, EnglishTextNormalizer
+from normalizer import (
+    ArmenianTextNormalizer,
+    BasicMultilingualTextNormalizer,
+    EnglishTextNormalizer,
+)
 
 from .eval_utils import (
     merge_chunked_manifest,
@@ -37,6 +41,7 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
 
     def __init__(self, remove_diacritics: bool = True):
         super().__init__(remove_diacritics)
+        self._language_normalizers = {"hy": ArmenianTextNormalizer()}
         # Pre-compile filler patterns. Each filler word is passed through the
         # base normalization itself, so the pattern matches the normalized
         # text exactly (base normalization may strip punctuation such as "…"
@@ -76,6 +81,10 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
         return re.sub(r"\d+", _replace, text)
 
     def __call__(self, s, lang=None):
+        language_normalizer = self._language_normalizers.get(lang)
+        if language_normalizer is not None:
+            return language_normalizer(s)
+
         s = super().__call__(s)
         if lang is not None:
             s = self._remove_fillers(s, lang)

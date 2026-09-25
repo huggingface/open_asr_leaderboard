@@ -16,6 +16,18 @@ import numpy as np
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision('high')
 
+MODEL_LANGUAGE_CODES = {
+    "en": "eng",
+    "de": "deu",
+    "fr": "fra",
+    "it": "ita",
+    "es": "spa",
+    "pt": "por",
+    "nl": "nld",
+    "hy": "hye",
+    "hi": "hin",
+}
+
 
 def remove_brackets(text):
     """
@@ -70,6 +82,7 @@ def main(args):
     torch_dtype = getattr(torch, args.dtype)
 
     config = AutoConfig.from_pretrained(args.model_id, revision=args.revision)
+    is_seamless_m4t_v2 = config.model_type == "seamless_m4t_v2"
     if type(config) in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING:
         cls_model = AutoModelForSpeechSeq2Seq
     elif type(config) in MODEL_FOR_MULTIMODAL_LM_MAPPING:
@@ -81,6 +94,17 @@ def main(args):
     else:
         raise ValueError(f"Model config of type {type(config)} not recognized in Transformers mappings.")
     is_ctc = cls_model == AutoModelForCTC
+
+    # Determine language before loading language-specific model components such
+    # as the MMS tokenizer and adapter.
+    if args.language is not None:
+        norm_language = args.language
+    else:
+        source = args.config_name if args.config_name else os.path.basename(args.dataset)
+        lang_match = re.search(r"_([a-z]{2})(?:_test)?$", source)
+        norm_language = lang_match.group(1) if lang_match else "en"
+        print(f"Language not specified, extracted '{norm_language}' from '{source}'")
+    model_language = MODEL_LANGUAGE_CODES.get(norm_language, norm_language)
 
     if "vibevoice" in args.model_id.lower():
         model = cls_model.from_pretrained(
@@ -99,15 +123,23 @@ def main(args):
             revision=args.revision,
             attn_implementation=args.attn_implementation,
         )
-    model.to(args.device)
-    model.eval()
-
     # set small chunk size to avoid OOM
     if "vibevoice" in args.model_id.lower():
         model.config.acoustic_tokenizer_chunk_size = args.vibevoice_tokenizer_chunk_size
 
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
-    processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
+    is_mms = args.model_id.lower() == "facebook/mms-1b-all"
+    if is_mms:
+        model.load_adapter(model_language)
+        processor = AutoProcessor.from_pretrained(
+            args.model_id, revision=args.revision, target_lang=model_language
+        )
+    else:
+        processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
+    # MMS adapter loading replaces language-specific parameters, so move the
+    # complete model only after the adapter has been selected.
+    model.to(args.device)
+    model.eval()
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
     is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
     is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
@@ -134,7 +166,9 @@ def main(args):
             gen_kwargs["max_new_tokens"] = args.max_new_tokens
 
         # For multilingual models, set task to transcribe and pass language (None = auto-detect)
-        if getattr(model.generation_config, "is_multilingual", False):
+        if is_seamless_m4t_v2:
+            gen_kwargs["tgt_lang"] = model_language
+        elif getattr(model.generation_config, "is_multilingual", False):
             gen_kwargs["task"] = "transcribe"
             if args.language is not None:
                 gen_kwargs["language"] = args.language
@@ -151,16 +185,6 @@ def main(args):
 
     CONFIG_NAME = args.config_name  # None for single-config dataset repos (e.g. VoiceArena/Monsoon_hi_test)
     SPLIT_NAME = args.split
-
-    # Determine language for normalization: use --language if provided, otherwise
-    # extract from config_name (e.g. "fleurs_de") or from the dataset name
-    if args.language is not None:
-        norm_language = args.language
-    else:
-        source = CONFIG_NAME if CONFIG_NAME else os.path.basename(args.dataset)
-        lang_match = re.search(r"_([a-z]{2})(?:_test)?$", source)
-        norm_language = lang_match.group(1) if lang_match else "en"
-        print(f"Language not specified, extracted '{norm_language}' from '{source}'")
 
     if args.torch_compile is not None:
         if model.can_generate():
@@ -281,6 +305,16 @@ def main(args):
             else:
                 inputs = processor.apply_transcription_request(audios)
             prompt_len = inputs["input_ids"].shape[1]
+        elif is_seamless_m4t_v2:
+            # SeamlessM4T's first positional processor argument is text, so
+            # audio must be passed explicitly by keyword.
+            inputs = processor(
+                audio=audios,
+                sampling_rate=sampling_rate,
+                return_tensors="pt",
+                padding=True,
+                return_attention_mask=True,
+            )
         elif not model.can_generate():
             # CTC pre-processing: normalize to mean 0, std 1
             inputs = processor(

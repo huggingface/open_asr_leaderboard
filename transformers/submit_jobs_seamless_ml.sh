@@ -1,29 +1,33 @@
 #!/bin/bash
-# Local script to submit HF Jobs for multilingual NeMo ASR evaluation.
+# Local script to submit HF Jobs for multilingual SeamlessM4T ASR evaluation.
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
-# Usage: HF_TOKEN=hf_... bash submit_jobs_ml.sh
-#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_ml.sh
+# Usage: HF_TOKEN=hf_... bash submit_jobs_seamless_ml.sh
+#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_seamless_ml.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-nemo}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 ARMENIAN_DATASET_PATH="${ARMENIAN_DATASET_PATH:-Metric-AI/open-asr-leaderboard-multilingual-datasets}"
+MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Set USE_LOCAL_SCRIPT=1 to run your local run_eval_ml.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
 USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOCAL_SCRIPT_INJECT=""
 if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    LOCAL_SCRIPT_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_ml.py")
-    LOCAL_SCRIPT_INJECT="echo '${LOCAL_SCRIPT_B64}' | base64 -d > /app/run_eval_ml.py &&"
+    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_ml.py")
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval_ml.py &&"
 fi
 
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
 USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
 LOCAL_NORMALIZER_INJECT=""
 if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
@@ -31,16 +35,16 @@ if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
     LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
 fi
 
-# ── Models: "model_id batch_size" ───────────────────────────────────────────
-# Each model entry also lists the languages selected for benchmark jobs.
+# ── Models: "model_id batch_size languages..." ──────────────────────────────
+# Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "nvidia/parakeet-tdt-0.6b-v3      64 de fr it es pt nl"
-    "nvidia/canary-1b-v2              64 de fr it es pt nl"
-    "nvidia/stt_hy_fastconformer_hybrid_large_pc 64 hy"
+    "facebook/seamless-m4t-v2-large 16 de fr it es pt nl hy hi"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Armenian
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
+# "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -60,6 +64,7 @@ DATASET_CONFIGS=(
     "mls it"
     "mls pt"
     "mls nl"
+    "monsoon hi"
 )
 
 # Optional: restrict this run to specific datasets and/or languages, matched
@@ -97,7 +102,7 @@ fi
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID BATCH_SIZE MODEL_LANGUAGES <<< "$model_cfg"
-    # Sanitize model ID for use as a folder name (e.g. "nvidia/parakeet" -> "nvidia-parakeet")
+    # Sanitize model ID for use as a folder name (e.g. "openai/whisper" -> "openai-whisper")
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     MODEL_DATASET_CONFIGS=()
@@ -118,9 +123,17 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
-        CONFIG_NAME="${DATASET}_${LANGUAGE}"
-        JOB_DATASET="${DATASET_PATH}"
-        [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
+        if [[ "$DATASET" == "monsoon" ]]; then
+            # Standalone single-config dataset repo — no --config_name.
+            JOB_DATASET="${MONSOON_DATASET_PATH}"
+            CONFIG_ARG="--language=${LANGUAGE}"
+            CONFIG_NAME="(none)"
+        else
+            JOB_DATASET="${DATASET_PATH}"
+            [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
+            CONFIG_NAME="${DATASET}_${LANGUAGE}"
+            CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
+        fi
         echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
@@ -139,15 +152,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
                     --dataset=${JOB_DATASET} \
-                    --config_name=${CONFIG_NAME} \
-                    --language=${LANGUAGE} \
+                    ${CONFIG_ARG} \
                     --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
                     --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
-            " > /dev/null 2>&1 &
+            " > /dev/null 2>&1 &    # suppress output and run in background
     done
     if [ -n "$ORG_NAME" ]; then
         echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"

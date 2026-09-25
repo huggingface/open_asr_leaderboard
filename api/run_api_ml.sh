@@ -32,6 +32,7 @@ MODEL_CONFIGS=(
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
+ARMENIAN_DATASET_PATH="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
@@ -130,6 +131,7 @@ resolve_dataset() {
         CONFIG_NAME=""
     else
         DS_PATH="${DATASET_PATH}"
+        [[ "$language" == "hy" ]] && DS_PATH="${ARMENIAN_DATASET_PATH}"
         CONFIG_NAME="${dataset}_${language}"
     fi
 }
