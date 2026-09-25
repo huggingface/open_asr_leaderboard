@@ -5,8 +5,9 @@ Scores the bucket exactly the way `scripts/score_bucket_results.py` does, turns 
 CSV summary block into one row, upserts that row into the target dataset's CSV, and
 opens a pull request on the Hub.
 
-Nothing is pushed unless --open_pr is passed: the default is a dry run that prints
-the row and the diff.
+Nothing is pushed unless --open_pr or --merge is passed: the default is a dry run
+that prints the row and the diff. --merge opens the PR and merges it straight away,
+and is refused up front unless the token can write to every target repo.
 
 Usage:
     # dry run (default): show the row that would be added
@@ -33,6 +34,9 @@ Usage:
 
     # re-run a model and replace its row outright (blank what was not re-scored)
     python scripts/open_results_pr.py --target english --model_id my-org/my-model --overwrite
+
+    # open the PR and merge it into main immediately (needs write access)
+    python scripts/open_results_pr.py --target english --model_id my-org/my-model --merge
 
     # re-use results already synced locally
     python scripts/open_results_pr.py --target english --model_id my-org/my-model --skip_sync
@@ -181,6 +185,57 @@ def build_targets(language=None):
     return targets
 
 
+# Org roles that may push to an existing repo. "contributor" is left out: it can
+# only write to repos the member created, which none of the results repos are.
+WRITE_ORG_ROLES = {"write", "admin"}
+
+
+def check_write_access(api, repo_id, repo_type, token):
+    """Return (ok, reason) for whether `token` can push to `repo_id`.
+
+    Decided from whoami() rather than by attempting a write, so --merge fails before
+    any bucket is synced or PR opened. Two things must both hold: the token itself
+    grants write (a "write" token, or a fine-grained token scoped with repo.write on
+    the repo or its namespace), and the account has write rights in that namespace
+    (it is the owning user, or holds a write/admin role in the owning org).
+    """
+    try:
+        info = api.whoami(token=token)
+    except Exception as exc:
+        return False, f"could not authenticate ({exc})"
+
+    namespace = repo_id.split("/")[0]
+    user = info.get("name")
+    if namespace == user:
+        account_ok = True
+    else:
+        roles = {o.get("name"): o.get("roleInOrg") for o in info.get("orgs", [])}
+        account_ok = roles.get(namespace) in WRITE_ORG_ROLES
+        if not account_ok:
+            return False, (
+                f"{user} has role {roles.get(namespace) or 'none'!r} in {namespace}; "
+                f"need one of {sorted(WRITE_ORG_ROLES)}"
+            )
+
+    token_info = info.get("auth", {}).get("accessToken", {})
+    role = token_info.get("role")
+    if role == "write":
+        return True, f"{user} ({role} token)"
+    if role == "fineGrained":
+        scoped = (token_info.get("fineGrained") or {}).get("scoped", [])
+        for entry in scoped:
+            entity = entry.get("entity", {})
+            covers = (
+                entity.get("name") == repo_id and entity.get("type") == repo_type
+            ) or (
+                entity.get("name") == namespace and entity.get("type") in ("user", "org")
+            )
+            if covers and "repo.write" in entry.get("permissions", []):
+                return True, f"{user} (fine-grained token, repo.write on {entity['name']})"
+        return False, f"fine-grained token has no repo.write on {repo_id} or {namespace}"
+    return False, f"token role is {role!r}; need a write or fine-grained token"
+
+
 def parse_csv_block(text):
     """Pull {column: value} out of the CSV summary block score_results prints.
 
@@ -199,6 +254,11 @@ def parse_csv_block(text):
                 break
             values = next(csv.reader([data_line]))
             if len(values) != len(header):
+                print(
+                    f"WARNING: skipping a summary row with {len(values)} fields "
+                    f"(header has {len(header)}): {data_line[:80]}",
+                    file=sys.stderr,
+                )
                 continue
             rows[values[0]] = dict(zip(header, values))
     return rows
@@ -435,8 +495,8 @@ def process(target, args, api, synced):
         print(f"  (blank: {', '.join(blanks)})")
 
     content = write_csv(header, rows)
-    if not args.open_pr:
-        print("\nDry run - not opening a PR. Re-run with --open_pr to submit.")
+    if not (args.open_pr or args.merge):
+        print("\nDry run - not opening a PR. Re-run with --open_pr (or --merge) to submit.")
         if args.out:
             with open(args.out, "w", encoding="utf-8") as fh:
                 fh.write(content)
@@ -460,6 +520,17 @@ def process(target, args, api, synced):
     finally:
         os.unlink(tmp)
     print(f"\nPR opened: {getattr(pr, 'pr_url', pr)}")
+    if args.merge:
+        # Merged through the PR rather than committed to main directly, so the
+        # change keeps a discussion page on the Hub to link to and revert from.
+        api.merge_pull_request(
+            target.repo_id,
+            pr.pr_num,
+            token=args.hf_token,
+            comment="Merged by open_results_pr.py --merge",
+            repo_type="dataset",
+        )
+        print(f"PR #{pr.pr_num} merged into main.")
     return True
 
 
@@ -499,6 +570,13 @@ def main():
     parser.add_argument("--skip_sync", action="store_true", help="Score already-downloaded results.")
     parser.add_argument("--hf_token", default=os.environ.get("HF_TOKEN"), help="Defaults to $HF_TOKEN.")
     parser.add_argument("--open_pr", action="store_true", help="Actually open the PR (default: dry run).")
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        help="Open the PR and merge it into main immediately (implies --open_pr). "
+             "Only allowed when the token can write to every target repo; checked "
+             "before anything is synced or uploaded.",
+    )
     parser.add_argument("--commit_message", default=None, help="PR title.")
     parser.add_argument("--out", default=None, help="Dry run: also write the updated CSV here.")
     parser.add_argument(
@@ -572,6 +650,22 @@ def main():
         else:
             plan.append((key, None))
 
+    if args.merge:
+        repos = sorted({build_targets(language)[key].repo_id for key, language in plan})
+        denied = []
+        for repo_id in repos:
+            ok, reason = check_write_access(api, repo_id, "dataset", args.hf_token)
+            print(f"--merge: {repo_id}: {'write access' if ok else 'DENIED'} - {reason}")
+            if not ok:
+                denied.append(repo_id)
+        if denied:
+            print(
+                f"ERROR: --merge needs write access to {', '.join(denied)}. "
+                f"Use --open_pr to open a PR for a maintainer to merge instead.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     synced = set()
     outcomes = []
     for key, language in plan:
@@ -582,7 +676,7 @@ def main():
     skipped = [name for name, done in outcomes if not done]
     if len(plan) > 1:
         print(f"\n{'=' * 78}\nSummary\n{'=' * 78}")
-        verb = "submitted" if args.open_pr else "would submit"
+        verb = "merged" if args.merge else "submitted" if args.open_pr else "would submit"
         print(f"  {verb}: {', '.join(submitted) if submitted else '(none)'}")
         print(f"  no results: {', '.join(skipped) if skipped else '(none)'}")
     sys.exit(0 if submitted else 1)
