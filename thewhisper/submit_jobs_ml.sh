@@ -14,7 +14,7 @@ MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"  # compiled engines are published for H200 (and H100, A100, L40S, RTX 4090/5090)
 ORG_NAME="${ORG_NAME:-}"
 # TheStage AI token for downloading the compiled engines; passed to every job as a secret.
-export THESTAGE_AUTH_TOKEN="${THESTAGE_AUTH_TOKEN:-PASTE_THESTAGE_AUTH_TOKEN_HERE}"
+export THESTAGE_AUTH_TOKEN="${THESTAGE_AUTH_TOKEN:-th_Har1cDb3EWLfNLtrfXaPwBc9cev6BtSNNUYiZd8r}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
