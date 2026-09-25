@@ -18,6 +18,7 @@ torch.set_float32_matmul_precision("high")
 
 def main(args):
     torch_dtype = torch.float16
+    device = torch.device("cuda", args.device)
 
     # TheStage AI compiled engines (TensorRT). The same revision pins the configs and the engines;
     # without it elastic_models falls back to the latest tag of the model repo.
@@ -28,7 +29,7 @@ def main(args):
         chunk_length=args.chunk_length,
         revision=args.revision,
         elastic_revision=args.revision,
-    ).to(args.device)
+    ).to(device)
     model.eval()
     # The encoder and decoder layers run as TensorRT engines rather than PyTorch parameters, so the total
     # number of parameters is read from the checkpoint of the same revision.
@@ -41,18 +42,17 @@ def main(args):
         tokenizer=AutoTokenizer.from_pretrained(args.model_id, revision=args.revision, use_fast=True),
     )
     sampling_rate = processor.feature_extractor.sampling_rate
-    # TheStage AI ASR pipeline, as in run_eval_longform.py: log-Mel features are computed on the GPU; inputs
-    # longer than the `chunk_length` window are split at pauses by Silero VAD and the pieces joined.
-    cuda_device = torch.device("cuda", args.device)
-    asr_pipeline = TheStageASRPipelineVAD(model, processor, cuda_device, feature_extractor_device=cuda_device)
 
     # The generation config of the checkpoint (suppress_tokens included) is used as shipped.
-    # forced_decoder_ids would override the language passed to the pipeline below.
     model.generation_config.forced_decoder_ids = None
     model.generation_config.cache_implementation = "flexi-static"
     gen_kwargs = {"num_beams": 1, "do_sample": False, "disable_compile": True}
     if args.max_new_tokens is not None:
         gen_kwargs["max_new_tokens"] = args.max_new_tokens
+
+    # Long-form: Silero VAD splits each recording at pauses, speech regions are packed into
+    # `chunk_length`-second windows and decoded in batches; the log-Mel features stay on the GPU.
+    asr_pipeline = TheStageASRPipelineVAD(model, processor, device, feature_extractor_device=device)
 
     def benchmark(batch):
         # Load audio inputs
@@ -62,14 +62,14 @@ def main(args):
         batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
-        torch.cuda.synchronize(device=args.device)
+        torch.cuda.synchronize(device=device)
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
         start_event.record()
 
         outputs = asr_pipeline(
             list(audios),
-            batch_size=args.batch_size,
+            batch_size=args.pipeline_batch_size,
             chunk_length_s=args.chunk_length,
             generate_kwargs=gen_kwargs,
             lang_ids=["en"] * minibatch_size,
@@ -78,7 +78,7 @@ def main(args):
 
         # END TIMING
         end_event.record()
-        torch.cuda.synchronize(device=args.device)
+        torch.cuda.synchronize(device=device)
         runtime = start_event.elapsed_time(end_event) / 1000.0
 
         # normalize by minibatch size since we want the per-sample time
@@ -88,17 +88,14 @@ def main(args):
         batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
-    if args.warmup_steps is not None:
+    if args.warmup_steps is not None and args.warmup_steps > 0:
         dataset = data_utils.load_data(args)
         dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
-
-        num_warmup_samples = args.warmup_steps * args.batch_size
         if args.streaming:
-            warmup_dataset = dataset.take(num_warmup_samples)
+            warmup_dataset = dataset.take(args.warmup_steps)
         else:
-            warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
-
+            warmup_dataset = dataset.select(range(min(args.warmup_steps, len(dataset))))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=1, batched=True))
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
 
@@ -118,8 +115,6 @@ def main(args):
         remove_columns=["audio"],
     )
 
-    is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
-
     all_results = {
         "audio_length_s": [],
         "transcription_time_s": [],
@@ -127,15 +122,12 @@ def main(args):
         "references": [],
         "audio_filepath": [],
     }
-    if is_chunked:
-        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
             all_results[key].append(result[key])
 
     # Write manifest results (WER and RTFX)
-    # Filtering of empty references is handled inside write_manifest.
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],
@@ -146,22 +138,11 @@ def main(args):
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
-        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    if is_chunked:
-        sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))
-        references = [session["text"] for session in sessions]
-        predictions = [session["pred_text"] for session in sessions]
-    else:
-        references = all_results["references"]
-        predictions = all_results["predictions"]
-
-    norm_refs = [data_utils.normalizer(r) for r in references]
-    norm_preds = [data_utils.normalizer(p) for p in predictions]
+    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
+    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
     wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
     wer = round(100 * wer, 2)
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
@@ -199,20 +180,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="hf-audio/open-asr-leaderboard",
-        help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`",
+        default="hf-audio/asr-leaderboard-longform",
+        help="Dataset path, e.g. `hf-audio/asr-leaderboard-longform` or `bezzam/coraal`.",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
-        help="Dataset name, e.g. `voxpopuli_cleaned_aa`.",
+        help="Dataset name, e.g. `earnings21` or a CORAAL subset such as `ATL`.",
     )
     parser.add_argument(
         "--split",
         type=str,
         default="test",
-        help="Split of the dataset. *E.g.* `'validation`' for the dev split, or `'test'` for the test split.",
+        help="Split of the dataset.",
     )
     parser.add_argument(
         "--device",
@@ -223,31 +204,38 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size",
         type=int,
+        default=32,
+        help="Number of recordings handed to the pipeline per call.",
+    )
+    parser.add_argument(
+        "--pipeline_batch_size",
+        type=int,
         default=128,
-        help="Number of samples to go through each streamed batch.",
+        help="Number of speech windows decoded together.",
     )
     parser.add_argument(
         "--max_eval_samples",
         type=int,
         default=None,
-        help="Number of samples to be evaluated. Put a lower number e.g. 64 for testing this script.",
+        help="Number of recordings to evaluate. Put a lower number e.g. 2 for testing this script.",
     )
     parser.add_argument(
         "--streaming",
         action="store_true",
-        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. "
+        "Needed for hour-long recordings: prepare_data rewrites the decoded audio otherwise, which overflows an Arrow block.",
     )
     parser.add_argument(
         "--max_new_tokens",
         type=int,
         default=None,
-        help="Maximum number of tokens to generate (for auto-regressive models).",
+        help="Maximum number of tokens to generate per window.",
     )
     parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=2,
-        help="Number of warm-up steps to run before launching the timed runs.",
+        default=1,
+        help="Number of recordings transcribed before the timed run.",
     )
     args = parser.parse_args()
     parser.set_defaults(streaming=False)
