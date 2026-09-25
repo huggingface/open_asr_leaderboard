@@ -8,13 +8,11 @@ import soundfile
 
 from tqdm import tqdm
 from normalizer import data_utils
+from normalizer import voice_code_bench
 import numpy as np
 
 from nemo.collections.asr.models import ASRModel
 import time
-
-
-wer_metric = evaluate.load("wer")
 
 
 def main(args):
@@ -45,6 +43,11 @@ def main(args):
     print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     dataset = data_utils.load_data(args)
 
@@ -53,7 +56,7 @@ def main(args):
         dataset = dataset.take(args.max_eval_samples)
 
     # Prepare data FIRST - this casts audio to proper format with "array" and "sampling_rate" keys
-    dataset = data_utils.prepare_data(dataset)
+    dataset = data_utils.prepare_data(dataset, normalize_text=not is_vcb)
 
     def download_audio_files(batch):
 
@@ -122,8 +125,7 @@ def main(args):
         "durations": [],
         "references": [],
     }
-    if is_chunked:
-        all_data.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    all_data.update({key: [] for key in metadata_keys})
 
     data_itr = iter(dataset)
     for data in tqdm(data_itr, desc="Downloading Samples"):
@@ -176,12 +178,16 @@ def main(args):
         audio_length=all_data["durations"],
         transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
         audio_filepaths=all_data["original_audio_filepaths"],
-        extra_fields={key: all_data[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: all_data[key] for key in metadata_keys},
     )
 
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if is_vcb:
+        print("RTFX:", round(sum(all_data["durations"]) / total_time, 2))
+        print("Score CTEM with python -m normalizer.voice_code_bench --manifest", manifest_path,
+              "--verifier-cache results/voice_code_bench.verifier-cache.json --verifier-mode live-fill")
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(
@@ -194,6 +200,7 @@ def main(args):
 
     norm_references = [data_utils.normalizer(r) for r in references]
     norm_predictions = [data_utils.normalizer(p) for p in predictions]
+    wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(references=norm_references, predictions=norm_predictions)
     wer = round(100 * wer, 2)
 

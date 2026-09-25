@@ -15,6 +15,9 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
 * **English, long-form:**
   The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
+* **Structured entity recovery (CTEM):**
+  [**VoiceCodeBench**](https://huggingface.co/datasets/besimple-ai/voice-code-bench) evaluates exact entity recovery on 300 English workplace recordings. Its CTEM score is higher-is-better and is reported separately from WER. See the [Parakeet harness and scoring instructions](voice_code_bench.md) for this initial integration.
+
 * **Multilingual Benchmark:**
   The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes fleurs, mcv and mls. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used.
 
