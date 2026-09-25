@@ -641,6 +641,10 @@ def score_results(
             csv_model_label = (
                 original_model_id if original_model_id is not None else model_key
             )
+            # Labels such as "org/model (fast-gpu-asr, ctc_greedy_search)" carry a
+            # comma; quote them so the row keeps the header's field count.
+            if any(ch in csv_model_label for ch in ',"\n'):
+                csv_model_label = '"' + csv_model_label.replace('"', '""') + '"'
             wer_vals = {
                 col: find_wer_in(model_key, col, col_map) for col in csv_columns
             }
