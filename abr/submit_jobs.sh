@@ -8,7 +8,7 @@ RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
-BATCH_SIZE=512
+BATCH_SIZE=2048
 WARMUP_STEPS=5
 SUBBATCH_SAMPLES=30000000
 
@@ -35,8 +35,10 @@ fi
 
 # ── Models: "model_id revision" ──────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "abr-ai/niagara-19m-batch.en dab6545337495482f2fc05455432a7a05c88d3cc"
-    "abr-ai/niagara-38m-batch.en 4f3ec18d377b1fd01e94d15dc9b9db0a8cd74bd2"
+    "abr-ai/niagara-9m-batch.en 1521edf95a146d06e3c7c1ad18a7209a899bc570"
+    "abr-ai/niagara-19m-batch.en d0276b85317389bc679d0206f60d88779cfbd15a"
+    "abr-ai/niagara-38m-batch.en 7bfe48fb7fb065484419b1860c6b3d4e4f817c0c"
+    "abr-ai/niagara-84m-batch.en ed93390475b146ad5412c668f680609a3ffca1b0"
 )
 
 # ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
@@ -105,8 +107,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND=soundfile \
+            --secrets HF_TOKEN \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
