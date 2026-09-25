@@ -28,6 +28,7 @@ MODEL_CONFIGS=(
     # "soniox/stt-async-v5           20"
     # "meta/muse-voice-transcribe    8"
     # "meta/muse-voice-transcribe-streaming    8"
+    # "sprag/symphony                8"
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
@@ -193,6 +194,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
+            -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e META_API_KEY="${META_API_KEY:-}" \
             -e META_FILE_MODE="${META_FILE_MODE:-}" \

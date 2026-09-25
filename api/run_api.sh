@@ -33,6 +33,7 @@ MODEL_CONFIGS=(
     # "meta/muse-voice-transcribe-streaming    8"
     # "soniox/stt-async-v5           20"
     # "sophea/asr-k1                 16"
+    # "sprag/symphony                8"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -115,6 +116,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
+            -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
