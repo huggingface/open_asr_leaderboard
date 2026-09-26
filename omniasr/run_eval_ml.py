@@ -23,6 +23,7 @@ NLLB_LANGUAGE_CODES = {
     "it": "ita_Latn",
     "es": "spa_Latn",
     "pt": "por_Latn",
+    "zh": "cmn_Hans",
     "hi": "hin_Deva",
 }
 
@@ -204,7 +205,10 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    from normalizer.eval_utils import OIWER_LANGUAGES, score_oiwer
+    from normalizer.eval_utils import CER_LANGUAGES, OIWER_LANGUAGES, print_ml_cer, score_oiwer
+    if LANGUAGE in CER_LANGUAGES:
+        print_ml_cer(all_results, LANGUAGE)
+        return
     if LANGUAGE in OIWER_LANGUAGES:
         # Lattice-based, orthography-aware scoring (voi_oiwer applies its own
         # normalization internally).

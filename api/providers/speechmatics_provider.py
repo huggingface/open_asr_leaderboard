@@ -8,6 +8,11 @@ from requests_toolbelt import MultipartEncoder
 
 from . import APIProvider, PermanentError, register
 
+# Speechmatics codes that differ from the 2-letter codes used by the datasets.
+LANGUAGE_CODES = {
+    "zh": "cmn",
+}
+
 
 @register("speechmatics")
 class SpeechmaticsProvider(APIProvider):
@@ -28,7 +33,7 @@ class SpeechmaticsProvider(APIProvider):
         )
         with BatchClient(settings) as client:
             config = BatchTranscriptionConfig(
-                language=language,
+                language=LANGUAGE_CODES.get(language, language),
                 enable_entities=True,
                 operating_point=model_variant,
             )

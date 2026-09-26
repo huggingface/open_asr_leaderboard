@@ -23,6 +23,7 @@ class MicrosoftAzureProvider(APIProvider):
         "it": "it-IT",
         "pt": "pt-PT",
         "nl": "nl-NL",
+        "zh": "zh-CN",
         "hi": "hi-IN",
     }
 

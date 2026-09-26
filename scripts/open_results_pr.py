@@ -59,6 +59,7 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, SCRIPT_DIR)
 
 from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
 
 from normalizer.eval_utils import score_results
 from score_bucket_results import ML_LANGUAGES, sync_bucket
@@ -401,7 +402,16 @@ def process(target, args, api, synced):
         print(f"No scored columns for {args.model_id}; nothing to submit.")
         return False
 
-    header, rows = fetch_csv(target.repo_id, target.filename, args.hf_token)
+    try:
+        header, rows = fetch_csv(target.repo_id, target.filename, args.hf_token)
+    except EntryNotFoundError as exc:
+        # A new language's file (e.g. multilingual_zh.csv) has to be created on
+        # the Hub before the first results PR can update it. Offline / cache
+        # misses (LocalEntryNotFoundError) still fail as before.
+        if isinstance(exc, LocalEntryNotFoundError):
+            raise
+        print(f"Skipping: {target.filename} not found in {target.repo_id}.")
+        return False
     metadata = {col: getattr(args, arg) for col, arg in METADATA_ARGS.items()}
     # Guarded on the column existing so --api does not warn about a License
     # column on the sheets that have none (appen / dataocean / multilingual).
