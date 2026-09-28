@@ -1,0 +1,181 @@
+{
+ "purpose": "evidence that our meter reproduces the Open ASR Leaderboard: teacher anchors, our full seven-column rows for the shipped file, the board's own row for the teacher at commit d2c5b384",
+ "scorer": "open_asr_leaderboard normalizer/eval_utils.py score_results, repository pinned at 6fec425b, kaldialign 0.12.0, compound merge on; full test populations",
+ "anchor_teacher_librispeech": {
+  "published_leaderboard": {
+   "test.clean": 1.52,
+   "test.other": 3.13
+  },
+  "ours_bf16_cuda": {
+   "test.clean": 1.53,
+   "test.other": 3.134
+  },
+  "ours_mlx_fp32": {
+   "test.clean": 1.494,
+   "test.other": 3.134
+  },
+  "delta_vs_published": {
+   "test.clean": 0.01,
+   "test.other": 0.004
+  },
+  "receipt": "local_stt/bench/official_meter/results/official_populations.json (keys nvidia/parakeet-tdt-0.6b-v3-*|librispeech|*), reports/speech_meter_official_20260922.md anchor table"
+ },
+ "teacher_full_rows_ours": {
+  "p0a_base|earnings22_chunked": {
+   "wer": 5.826,
+   "n": 6,
+   "ref_words": 15396
+  },
+  "p0a_base|gigaspeech_cleaned": {
+   "wer": 7.996,
+   "n": 18768,
+   "ref_words": 397143
+  },
+  "p0a_base|spgispeech_full": {
+   "wer": 3.725,
+   "n": 39341,
+   "ref_words": 968595
+  },
+  "p0a_base|voxpopuli_cleaned_aa": {
+   "wer": 3.043,
+   "n": 628,
+   "ref_words": 17781
+  }
+ },
+ "teacher_board_row_d2c5b384": {
+  "LS Clean WER": "1.52",
+  "LS Other WER": "3.13",
+  "AMI-Cleaned WER": "9.42",
+  "Earnings22-Cleaned-AA-chunked WER": "5.85",
+  "Gigaspeech-Cleaned WER": "7.99",
+  "SPGISpeech WER": "3.63",
+  "Voxpopuli-AA-Cleaned WER": "3.19",
+  "avg": "4.85875",
+  "RTFx": "6076.07",
+  "Size (B)": "0.6",
+  "License": "cc-by-4.0"
+ },
+ "shipped_file_rows_ours": {
+  "c4c_int6|ami_cleaned": {
+   "wer": 9.372,
+   "n": 7805,
+   "ref_words": 82348,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|earnings22": {
+   "wer": 10.648,
+   "n": 2741,
+   "ref_words": 48686,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|earnings22_chunked": {
+   "wer": 6.956,
+   "n": 6,
+   "ref_words": 15396,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|gigaspeech_cleaned": {
+   "wer": 8.354,
+   "n": 18768,
+   "ref_words": 397143,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|librispeech_test-clean": {
+   "wer": 1.719,
+   "n": 2620,
+   "ref_words": 53000,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|librispeech_test-other": {
+   "wer": 3.925,
+   "n": 2939,
+   "ref_words": 52841,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|librispeech_testother_snr0": {
+   "wer": 10.164,
+   "n": 2939,
+   "ref_words": 52841,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|librispeech_testother_snr10": {
+   "wer": 5.021,
+   "n": 2939,
+   "ref_words": 52841,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|librispeech_testother_snr5": {
+   "wer": 6.609,
+   "n": 2939,
+   "ref_words": 52841,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|spgispeech_full": {
+   "wer": 3.701,
+   "n": 39341,
+   "ref_words": 968595,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  },
+  "c4c_int6|voxpopuli_cleaned_aa": {
+   "wer": 2.463,
+   "n": 628,
+   "ref_words": 17781,
+   "gpu": "NVIDIA A100-SXM4-80GB"
+  }
+ },
+ "checkpoint_rows_ours": {
+  "c4c_final|ami_cleaned": {
+   "wer": 9.314,
+   "n": 7805
+  },
+  "c4c_final|earnings22": {
+   "wer": 10.67,
+   "n": 2741
+  },
+  "c4c_final|earnings22_chunked": {
+   "wer": 7.099,
+   "n": 6
+  },
+  "c4c_final|gigaspeech_cleaned": {
+   "wer": 8.304,
+   "n": 18768
+  },
+  "c4c_final|librispeech_test-clean": {
+   "wer": 1.7,
+   "n": 2620
+  },
+  "c4c_final|librispeech_test-other": {
+   "wer": 3.823,
+   "n": 2939
+  },
+  "c4c_final|librispeech_testother_snr0": {
+   "wer": 10.047,
+   "n": 2939
+  },
+  "c4c_final|librispeech_testother_snr10": {
+   "wer": 4.972,
+   "n": 2939
+  },
+  "c4c_final|librispeech_testother_snr5": {
+   "wer": 6.508,
+   "n": 2939
+  },
+  "c4c_final|spgispeech_full": {
+   "wer": 3.717,
+   "n": 39341
+  },
+  "c4c_final|voxpopuli_cleaned_aa": {
+   "wer": 2.385,
+   "n": 628
+  }
+ },
+ "torch_reference_receipt": {},
+ "pop_keys_teacher": [
+  "nvidia/parakeet-tdt-0.6b-v3-mlxfp32|librispeech|test.clean",
+  "nvidia/parakeet-tdt-0.6b-v3-mlxfp32|librispeech|test.other",
+  "nvidia/parakeet-tdt-0.6b-v3-mlx4bit|librispeech|test.clean",
+  "nvidia/parakeet-tdt-0.6b-v3-mlx4bit|librispeech|test.other",
+  "nvidia/parakeet-tdt-0.6b-v3-cuda|librispeech|test.clean",
+  "nvidia/parakeet-tdt-0.6b-v3-cuda|librispeech|test.other"
+ ]
+}
