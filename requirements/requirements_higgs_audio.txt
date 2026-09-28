@@ -1,0 +1,10 @@
+evaluate
+datasets
+librosa
+jiwer
+packaging
+soundfile
+torchaudio
+torch>=2.1
+transformers>=4.51.0,<=4.57.6
+accelerate

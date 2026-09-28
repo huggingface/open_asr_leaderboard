@@ -4,3 +4,8 @@ evaluate
 datasets
 librosa
 jiwer
+num2words
+peft
+soundfile
+kaldialign
+voi_oiwer

@@ -1,22 +1,31 @@
 import argparse
 import os
-import time
 
 import evaluate
 import numpy as np
+import torch
 from normalizer import data_utils
 from tqdm import tqdm
 from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
+from huggingface_hub import snapshot_download
 
 wer_metric = evaluate.load("wer")
 
 
 def main(args):
+    model_source = args.model_id
+    if args.revision is not None:
+        model_source = snapshot_download(repo_id=args.model_id, revision=args.revision)
+
     feature_extractor = AutoFeatureExtractor.from_pretrained(
-        args.model_id, trust_remote_code=True
+        model_source, trust_remote_code=True
     ).cuda()
-    model = AutoModel.from_pretrained(args.model_id, trust_remote_code=True).cuda()
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        model_source, trust_remote_code=True
+    ).cuda()
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_source, trust_remote_code=True
+    )
 
     def get_sub_batch_output(sub_batch):
         """Get output from model on sub batch."""
@@ -39,9 +48,15 @@ def main(args):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
+        sampling_rate = batch["audio"][0]["sampling_rate"]
+        batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
+        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
-        start_time = time.time()
+        torch.cuda.synchronize()
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
 
         # Divide data into sub-batches that maximize the total audio length
         # that can fit within the specified limit
@@ -84,19 +99,20 @@ def main(args):
         pred_text = all_out
 
         # END TIMING
-        runtime = time.time() - start_time
+        end_event.record()
+        torch.cuda.synchronize()
+        runtime = start_event.elapsed_time(end_event) / 1000.0
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
-        # normalize transcriptions with English normalizer
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in pred_text]
-        batch["references"] = batch["norm_text"]
+        batch["predictions"] = pred_text  # raw; normalization applied at scoring time
+        batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
     if args.warmup_steps is not None:
         dataset = data_utils.load_data(args)
-        dataset = data_utils.prepare_data(dataset)
+        dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate)
 
         num_warmup_samples = args.warmup_steps * args.batch_size
         if args.streaming:
@@ -119,7 +135,7 @@ def main(args):
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset)
+    dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate)
 
     dataset = dataset.map(
         benchmark,
@@ -128,12 +144,21 @@ def main(args):
         remove_columns=["audio"],
     )
 
+    # The weights live in the exported graph, which is loaded on the first forward pass,
+    # so count them only now.
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.3f}B parameters")
+
+    is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+
     all_results = {
         "audio_length_s": [],
         "transcription_time_s": [],
         "predictions": [],
         "references": [],
+        "audio_filepath": [],
     }
+    if is_chunked:
+        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
@@ -149,11 +174,25 @@ def main(args):
         args.split,
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
+        audio_filepaths=all_results["audio_filepath"],
+        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        if is_chunked
+        else None,
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
+    if is_chunked:
+        sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))
+        references = [session["text"] for session in sessions]
+        predictions = [session["pred_text"] for session in sessions]
+    else:
+        references = all_results["references"]
+        predictions = all_results["predictions"]
+
+    norm_refs = [data_utils.normalizer(r) for r in references]
+    norm_preds = [data_utils.normalizer(p) for p in predictions]
     wer = wer_metric.compute(
-        references=all_results["references"], predictions=all_results["predictions"]
+        references=norm_refs, predictions=norm_preds
     )
     wer = round(100 * wer, 2)
     rtfx = round(
@@ -174,15 +213,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="esb/datasets",
-        help="Dataset path. By default, it is `esb/datasets`",
+        default="hf-audio/open-asr-leaderboard",
+        help="Dataset path. By default, it is `hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         required=True,
         help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/esb/datasets`",
+        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
     )
     parser.add_argument(
         "--split",
@@ -220,6 +259,16 @@ if __name__ == "__main__":
         default=int(1e6),
         help="Maximum number of audio samples per sub batch (set based on available GPU memory).",
     )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Model revision to use (branch, tag, or commit hash). Defaults to the model's default revision.",
+    )
     args = parser.parse_args()
+
+    print("*" * 100)
+    print(f"Evaluating {args.model_id} on {args.dataset_path} / {args.dataset} / {args.split}")
+    print("*" * 100)
 
     main(args)

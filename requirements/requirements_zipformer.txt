@@ -1,0 +1,10 @@
+# Shared Fast GPU ASR runner for Zipformer and Parakeet.
+# Install CPU-only PyTorch first; see soundsgoodai/README.md.
+fast-gpu-asr
+audioop-lts; python_version >= "3.13"
+datasets
+soundfile
+librosa
+kaldialign>=0.12.0
+num2words
+regex

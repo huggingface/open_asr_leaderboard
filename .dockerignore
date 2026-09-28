@@ -1,0 +1,11 @@
+.git
+.pytest_cache
+.vscode/
+.idea/
+.DS_Store
+*.log
+**/.ipynb_checkpoints/
+**/results/
+*.wav
+**/__pycache__/
+**/*.pyc
