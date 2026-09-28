@@ -33,8 +33,8 @@ fi
 MODEL_CONFIGS=(
     "ibm-granite/granite-4.0-1b-speech speculative 256"
     "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
-    "ibm-granite/granite-speech-5.0-470m-turboctc ctc 256 78b07c8e131eede3d59b95545efc8506b45a505b"
-    "ibm-granite/granite-speech-5.0-470m-turboctc-nc ctc 256 05b33f57fe08aae7a0365c7e096a42658f8a28ac"
+    "ibm-granite/granite-speech-5.0-470m-turboctc ctc 128 78b07c8e131eede3d59b95545efc8506b45a505b"
+    "ibm-granite/granite-speech-5.0-470m-turboctc-nc ctc 128 05b33f57fe08aae7a0365c7e096a42658f8a28ac"
 )
 
 # ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
@@ -111,7 +111,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             EXTRA_ARGS=""
         elif [[ "$MODEL_TYPE" == "ctc" ]]; then
             EVAL_SCRIPT="run_eval_ctc.py"
-            EXTRA_ARGS="--warmup_steps=2"
+            EXTRA_ARGS=""
         else
             echo "ERROR: Unknown model type: ${MODEL_TYPE}" >&2
             exit 1
