@@ -1,6 +1,6 @@
 """Export the Phonon-2 container to an exact dense NeMo checkpoint (.nemo) of nvidia/parakeet-tdt-0.6b-v3's architecture.
 
-The container's five-value / int6 / fp16 records are expanded exactly to fp32 (fermion_container.read_container), renamed from the
+The container's low-bit encoder, int6 and fp16 records are expanded exactly to fp32 (fermion_container.read_container), renamed from the
 HF ParakeetForTDT names back to NeMo's with the INVERSE of transformers' convert_nemo_to_hf.py mapping (pure renames; no tensor
 transform except the kernel-1 pointwise convs, stored [O, I] and restored to [O, I, 1] as both frameworks expect), loaded strict
 into the base model restored from the Hub, and saved with `save_to`. Only the preprocessor's featurizer buffers (window, fb) come

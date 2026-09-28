@@ -1,6 +1,6 @@
 """Open ASR Leaderboard evaluation for Phonon-2 (FermionResearch/Phonon-2 placeholder id).
 
-The model is a five-value (sub-2-bit) Parakeet-TDT-0.6B encoder with int6 dense tables, shipped as a
+The model is an under-2-bit Parakeet-TDT-0.6B encoder with int6 dense tables, shipped as a
 `fermion-five-value-parakeet-v1` container. This script expands the container to a dense state dict (exact:
 five-value -> {0, +-lo, +-hi}; int6 -> q*scale; fp16 as stored) and runs it through the stock `transformers`
 ParakeetForTDT graph -- the same correctness path the model card's numbers were measured on. It follows the

@@ -23,6 +23,6 @@ Same decoding hyper-parameters on every dataset (greedy, no penalties). `run_eva
 | License | cc-by-4.0 (inherited from nvidia/parakeet-tdt-0.6b-v3) |
 | Size (B) | 0.6 (609 M parameters; encoder stored at < 2 bits/weight) |
 | # Languages | 1 (English) |
-| Encoder | FastConformer (five-value weights) |
+| Encoder | FastConformer, trained at under 2 bits per weight |
 | Decoder | TDT / RNN-T |
 | Training data disclosure | model card, "Training data" |
