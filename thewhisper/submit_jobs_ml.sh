@@ -7,7 +7,7 @@
 #        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_ml.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-TheStageAI/open-asr-leaderboard-thewhisper}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-thewhisper}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"

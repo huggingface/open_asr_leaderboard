@@ -292,7 +292,7 @@ def score_results(
                   Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
                   voi_oiwer over a reference lattice instead of plain WER.
         families: Optional list of family keys ("appen", "dataocean", "voicearena_private",
-                  "voicearena_private_hi", "public", "extra", "ml_de", "ml_fr", "ml_it", "ml_es",
+                  "voicearena_private_hi", "public", "extra", "longform", "ml_de", "ml_fr", "ml_it", "ml_es",
                   "ml_pt", "ml_nl") restricting which CSV summary blocks are printed.
                   None prints all detected families.
 
@@ -335,6 +335,9 @@ def score_results(
         ds_fp = fp[ds_index:]
         dataset_id = ds_fp.replace("DATASET_", "").removesuffix(".jsonl")
         return model_id, dataset_id
+
+    # CORAAL subsets (bezzam/coraal), macro-averaged into a single long-form column.
+    CORAAL_SPLITS = ["ATL", "DCA", "DCB", "DTA", "LES", "PRV", "ROC", "VLD"]
 
     # ── Family definitions ────────────────────────────────────────────────────
     # Each entry: (family_key, presence_substring, header, col_map)
@@ -434,6 +437,20 @@ def score_results(
                 "earnings22_test": ("Earnings22 WER", None),
                 "gigaspeech_test": ("Gigaspeech WER", None),
                 "voxpopuli_test": ("Voxpopuli WER", None),
+            },
+        ),
+        (
+            "longform",
+            None,
+            "model,avg,RTFx,earnings21,earnings22,coraal_avg,"
+            + ",".join(f"coraal_{split}" for split in CORAAL_SPLITS),
+            {
+                "asr-leaderboard-longform_earnings21_test": ("earnings21", None),
+                "asr-leaderboard-longform_earnings22_test": ("earnings22", None),
+                **{
+                    f"coraal_{split}_test": (f"coraal_{split}", None)
+                    for split in CORAAL_SPLITS
+                },
             },
         ),
     ]
@@ -598,6 +615,20 @@ def score_results(
     def find_wer_in(model_key, col_label, col_map):
         return find_metric_in(model_key, col_label, col_map, "wer")
 
+    def longform_averages(wer_vals):
+        """Return (coraal_avg, avg) for the longform family, over the columns present."""
+        coraal = [
+            v for lbl, v in wer_vals.items() if lbl.startswith("coraal_") and v is not None
+        ]
+        coraal_avg = round(sum(coraal) / len(coraal), 2) if coraal else None
+        parts = [
+            v
+            for v in (wer_vals.get("earnings21"), wer_vals.get("earnings22"), coraal_avg)
+            if v is not None
+        ]
+        avg = round(sum(parts) / len(parts), 2) if parts else None
+        return coraal_avg, avg
+
     def print_csv_block(
         header, col_map, family_key=None, family_name=None, per_dataset_rtfx=False
     ):
@@ -624,10 +655,13 @@ def score_results(
 
         if len(composite_wer) == 1:
             for model_key in composite_wer:
-                wer_vals = [find_wer_in(model_key, col, col_map) for col in csv_columns]
-                wer_vals = [v for v in wer_vals if v is not None]
-                if wer_vals:
-                    avg = round(sum(wer_vals) / len(wer_vals), 2)
+                wer_vals = {col: find_wer_in(model_key, col, col_map) for col in csv_columns}
+                if family_key == "longform":
+                    avg = longform_averages(wer_vals)[1]
+                else:
+                    present = [v for v in wer_vals.values() if v is not None]
+                    avg = round(sum(present) / len(present), 2) if present else None
+                if avg is not None:
                     label = (
                         original_model_id
                         if original_model_id is not None
@@ -690,7 +724,7 @@ def score_results(
                     + ",".join(wer_cols)
                 )
             else:
-                if family_key == "public" or (family_key or "").startswith("ml_"):
+                if family_key in ("public", "longform") or (family_key or "").startswith("ml_"):
                     family_audio = sum(
                         results[rk]["audio_length"]
                         for ds_substr in col_map
@@ -710,6 +744,18 @@ def score_results(
                     rtfx_val = (
                         round(family_audio / family_time, 2) if family_time else ""
                     )
+                if family_key == "longform":
+                    coraal_avg, avg = longform_averages(wer_vals)
+                    cols = [avg, rtfx_val, wer_vals["earnings21"], wer_vals["earnings22"], coraal_avg]
+                    cols += [wer_vals[f"coraal_{split}"] for split in CORAAL_SPLITS]
+                    print(
+                        ",".join(
+                            [csv_model_label]
+                            + ["" if v is None else str(v) for v in cols]
+                        )
+                    )
+                    continue
+                if family_key == "public" or (family_key or "").startswith("ml_"):
                     # Fill the prefix columns by name, not by position: the
                     # families do not share a prefix layout (ml_* is just
                     # "model,RTFx,...", public also carries avg and the metadata
@@ -744,7 +790,11 @@ def score_results(
             has_public = any(ds_substr in all_dataset_ids for ds_substr in col_map)
             if has_public:
                 print_csv_block(
-                    header, col_map, family_key, family_name, per_dataset_rtfx=True
+                    header,
+                    col_map,
+                    family_key,
+                    family_name,
+                    per_dataset_rtfx=(family_key == "public"),
                 )
         else:
             if presence_substr in all_dataset_ids:

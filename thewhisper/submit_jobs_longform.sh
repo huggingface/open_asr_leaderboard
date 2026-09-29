@@ -6,7 +6,7 @@
 # The TheStage AI token for the compiled engines is set below (THESTAGE_AUTH_TOKEN).
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-TheStageAI/open-asr-leaderboard-thewhisper}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-thewhisper}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_longform}"      # HF bucket repo for saving results
 FLAVOR="${FLAVOR:-h200}"  # compiled engines are published for H200 (and H100, A100, L40S, RTX 4090/5090)
 ORG_NAME="${ORG_NAME:-}"
@@ -150,13 +150,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     # Long-form average as on the leaderboard: mean of earnings21, earnings22 and the CORAAL average
     PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-_, results = score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
-wer = {key.split(' | ')[1]: value['wer'] for key, value in results.items()}
-earnings = [w for name, w in wer.items() if 'earnings21' in name or 'earnings22' in name]
-coraal = [w for name, w in wer.items() if 'coraal' in name]
-if len(earnings) == 2 and coraal:
-    print(f'Long-form average WER (earnings21, earnings22, CORAAL avg over {len(coraal)} subsets): '
-          f'{(sum(earnings) + sum(coraal) / len(coraal)) / 3:.2f}')
+score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', families=['longform'])
 "
 
 done

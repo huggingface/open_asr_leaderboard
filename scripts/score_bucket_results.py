@@ -10,6 +10,10 @@ Usage:
     python scripts/score_bucket_results.py --family voicearena_private_hi  # Hindi private set (voi_oiwer)
     python scripts/score_bucket_results.py --family all  # every detected family
 
+    # Long-form (earnings21, earnings22, CORAAL) results, as on the leaderboard's
+    # Long-form tab. Defaults to the hf-audio/asr_leaderboard_longform bucket.
+    python scripts/score_bucket_results.py --family longform
+
     # Multilingual (FLEURS/MCV/MLS) results. Defaults to the
     # hf-audio/asr_leaderboard_multilingual bucket, and scores each language
     # separately (each with its own normalizer).
@@ -36,7 +40,7 @@ ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hi"]
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
 # 'hi' routes through voi_oiwer (see OIWER_LANGUAGES in normalizer/eval_utils.py).
-FAMILIES = ["appen", "dataocean", "public", "extra", "voicearena_private_hi", "voicearena_private"]
+FAMILIES = ["appen", "dataocean", "public", "extra", "longform", "voicearena_private_hi", "voicearena_private"]
 FAMILY_LANGUAGES = {"voicearena_private_hi": "hi"}
 
 # Columns of the combined multilingual CSV summary: (column label, dataset substring).
@@ -126,7 +130,8 @@ def main():
         default=None,
         help="HF bucket name (without the hf://buckets/ prefix). Defaults to "
              "hf-audio/asr_leaderboard_multilingual if --multilingual is set, "
-             "otherwise hf-audio/asr_leaderboard_h200.",
+             "hf-audio/asr_leaderboard_longform if --family longform is the only "
+             "family, otherwise hf-audio/asr_leaderboard_h200.",
     )
     parser.add_argument(
         "--local_dir",
@@ -198,9 +203,14 @@ def main():
             file=sys.stderr,
         )
 
-    bucket = args.bucket or (
-        "hf-audio/asr_leaderboard_multilingual" if args.multilingual else "hf-audio/asr_leaderboard_h200"
-    )
+    if args.bucket:
+        bucket = args.bucket
+    elif args.multilingual:
+        bucket = "hf-audio/asr_leaderboard_multilingual"
+    elif args.family == ["longform"]:
+        bucket = "hf-audio/asr_leaderboard_longform"
+    else:
+        bucket = "hf-audio/asr_leaderboard_h200"
     local_dir = args.local_dir or os.path.join(REPO_ROOT, "results")
 
     if not args.skip_sync:

@@ -5,7 +5,7 @@
 # The TheStage AI token for the compiled engines is set below (THESTAGE_AUTH_TOKEN).
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-TheStageAI/open-asr-leaderboard-thewhisper}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-thewhisper}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"      # HF bucket repo for saving results
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"  # compiled engines are published for H200 (and H100, A100, L40S, RTX 4090/5090)
