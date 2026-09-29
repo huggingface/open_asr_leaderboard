@@ -1,0 +1,44 @@
+{
+ "want_plane_gate": true,
+ "container": "model.fermion",
+ "container_bytes": 177438361,
+ "records": 723,
+ "packed": true,
+ "substituted": 264,
+ "dtype": "mlx.core.bfloat16",
+ "scale_dtype": "mlx.core.float32",
+ "read_s": 3.993,
+ "load_s": 9.646,
+ "name_map_check": {
+  "n_ref": 697,
+  "n_ours": 697,
+  "missing": [],
+  "unexpected": [],
+  "shape_mismatch": [],
+  "pass": true
+ },
+ "plane_gate": {
+  "modules": 264,
+  "max_abs_delta": 0.0
+ },
+ "plane_gate_per_module_worst": [
+  {
+   "module": "encoder.layers.0.feed_forward1.linear1",
+   "max_abs_delta": 0.0,
+   "distinct_abs_values_in_module": 2268
+  },
+  {
+   "module": "encoder.layers.0.feed_forward1.linear2",
+   "max_abs_delta": 0.0,
+   "distinct_abs_values_in_module": 1084
+  },
+  {
+   "module": "encoder.layers.0.self_attn.q_proj",
+   "max_abs_delta": 0.0,
+   "distinct_abs_values_in_module": 1431
+  }
+ ],
+ "load_wall_s": 10.51,
+ "mlx_active_after_load_gb": 0.467,
+ "mlx_peak_after_load_gb": 0.562
+}
