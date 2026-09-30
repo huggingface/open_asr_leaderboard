@@ -147,10 +147,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         echo "All ${ACTUAL} result files present."
     fi
 
-    # Long-form average as on the leaderboard: mean of earnings21, earnings22 and the CORAAL average
-    PYTHONPATH="${REPO_ROOT}" python -c "
-from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', families=['longform'])
-"
+    # Long-form average as on the leaderboard: mean of earnings21, earnings22 and the CORAAL average.
+    python "${REPO_ROOT}/scripts/score_bucket_results.py" \
+        --family longform \
+        --model_id "${MODEL_ID}" \
+        --bucket "${RESULTS_BUCKET}" \
+        --local_dir "$(pwd)/results" \
+        --skip_sync
 
 done

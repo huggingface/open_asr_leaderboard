@@ -1,7 +1,6 @@
 import argparse
 import os
 
-import evaluate
 import torch
 from huggingface_hub import get_safetensors_metadata
 from normalizer import data_utils
@@ -12,7 +11,6 @@ from elastic_models.transformers import WhisperForConditionalGeneration
 from elastic_models.transformers.pipelines.asr_vad_chunked import TheStageASRPipelineVAD
 
 
-wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision("high")
 
 
@@ -141,13 +139,10 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
-    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
-    wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
-    wer = round(100 * wer, 2)
+    # WER is not computed here: aligning the hour-long transcripts needs no GPU, so
+    # submit_jobs_longform.sh scores the manifests locally once the job is done.
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
-    print("WER:", wer, "%", "RTFx:", rtfx)
-
+    print("RTFx:", rtfx)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

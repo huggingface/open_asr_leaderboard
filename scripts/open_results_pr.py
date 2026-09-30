@@ -20,6 +20,9 @@ Usage:
         --training_data_disclosure https://huggingface.co/my-org/my-model#training-data \
         --open_pr
 
+    # long-form (earnings21, earnings22, CORAAL); the per-split CORAAL WERs are not published
+    python scripts/open_results_pr.py --target longform --model_id my-org/my-model
+
     # private sets (each lives in its own dataset repo)
     python scripts/open_results_pr.py --target appen      --model_id my-org/my-model
     python scripts/open_results_pr.py --target dataocean  --model_id my-org/my-model
@@ -41,7 +44,7 @@ Usage:
     # re-use results already synced locally
     python scripts/open_results_pr.py --target english --model_id my-org/my-model --skip_sync
 
-    # every target the model has results for (syncs each bucket once)
+    # every target the model has results for
     python scripts/open_results_pr.py --model_id my-org/my-model
 """
 
@@ -61,19 +64,24 @@ sys.path.insert(0, SCRIPT_DIR)
 from huggingface_hub import HfApi, hf_hub_download
 
 from normalizer.eval_utils import score_results
-from score_bucket_results import ML_LANGUAGES, sync_bucket
+from score_bucket_results import ML_LANGUAGES, sync_bucket, upload_scores
+
+# The splits the `longform` family scores (see FAMILY_CONFIGS in
+# normalizer/eval_utils.py); only their average is published.
+CORAAL_SPLITS = ["ATL", "DCA", "DCB", "DTA", "LES", "PRV", "ROC", "VLD"]
 
 # Buckets the results are read from, per target.
 ENGLISH_BUCKET = "hf-audio/asr_leaderboard_h200"
 PRIVATE_BUCKET = "hf-audio/asr_leaderboard_private"
 MULTILINGUAL_BUCKET = "hf-audio/asr_leaderboard_multilingual"
+LONGFORM_BUCKET = "hf-audio/asr_leaderboard_longform"
 
 # Language files that mark an API model's RTFx as -1 rather than leaving it blank
 # (multilingual_hi.csv and the English sheet use blank).
 RTFX_MINUS_ONE_LANGUAGES = {"de", "fr", "it", "es", "pt", "nl"}
 
 # Tried in this order when --target is omitted.
-ALL_TARGETS = ["english", "appen", "dataocean", "voicearena", "multilingual"]
+ALL_TARGETS = ["english", "longform", "appen", "dataocean", "voicearena", "multilingual"]
 
 # What --api writes into the License column when --license is not given: every
 # one of the 14 API rows in english_short_latest.csv uses exactly this.
@@ -100,21 +108,24 @@ class Target:
     renames: generated CSV label -> column name in the published file. No target
         needs this now that normalizer/eval_utils.py emits the published labels;
         kept as the escape hatch for the next time a sheet diverges.
+    averages: derived column -> the columns it is the mean of. Recomputed on the
+        *merged* row: without this, re-running a single dataset would overwrite the
+        published average with the mean of just that dataset. An empty source list
+        means every " WER" column in the file.
+    ignore: scored columns the published file deliberately leaves out; dropped
+        without the "absent from the published header" warning.
     """
 
     def __init__(self, name, repo_id, filename, bucket, passes, renames=None,
-                 avg_column=None, avg_sources=None, api_rtfx=""):
+                 averages=None, ignore=(), api_rtfx=""):
         self.name = name
         self.repo_id = repo_id
         self.filename = filename
         self.bucket = bucket
         self.passes = passes
         self.renames = renames or {}
-        # avg_column is recomputed from avg_sources on the *merged* row. Without
-        # this, re-running a single dataset would overwrite the published average
-        # with the mean of just that dataset.
-        self.avg_column = avg_column
-        self.avg_sources = avg_sources or []
+        self.averages = averages or {}
+        self.ignore = set(ignore)
         # What --api writes into the RTFx columns. The published sheets disagree:
         # english_short_latest.csv and multilingual_hi.csv leave them blank for API
         # models, multilingual_{de,fr,it,es,pt,nl}.csv use -1. Each target keeps its
@@ -133,17 +144,35 @@ def build_targets(language=None):
             "english_short_latest.csv",
             ENGLISH_BUCKET,
             passes=[(["public"], "en"), (["extra"], "en")],
-            avg_column="avg",
-            avg_sources=[
-                "AMI-Cleaned WER",
-                "Earnings22-Cleaned-AA-chunked WER",
-                "Gigaspeech-Cleaned WER",
-                "LS Clean WER",
-                "LS Other WER",
-                "SPGISpeech WER",
-                "Voice Arena Monsoon WER",
-                "Voxpopuli-AA-Cleaned WER",
-            ],
+            averages={
+                "avg": [
+                    "AMI-Cleaned WER",
+                    "Earnings22-Cleaned-AA-chunked WER",
+                    "Gigaspeech-Cleaned WER",
+                    "LS Clean WER",
+                    "LS Other WER",
+                    "SPGISpeech WER",
+                    "Voice Arena Monsoon WER",
+                    "Voxpopuli-AA-Cleaned WER",
+                ],
+            },
+        ),
+        # The `longform` family scores earnings21, earnings22 and the eight CORAAL
+        # splits; the sheet publishes only their macro-average (coraal_avg). The
+        # sheet's tedlium column is no longer reported (license limitations), so it
+        # is left out of both averages and never written.
+        "longform": Target(
+            "longform",
+            "hf-audio/leaderboard_longform",
+            "longform_latest.csv",
+            LONGFORM_BUCKET,
+            passes=[(["longform"], "en")],
+            averages={
+                "Average": ["earnings21", "earnings22", "coraal_avg"],
+                "Avg (without CORAAL)": ["earnings21", "earnings22"],
+            },
+            ignore=["avg"] + [f"coraal_{split}" for split in CORAAL_SPLITS],
+            api_rtfx="-1",
         ),
         "dataocean": Target(
             "dataocean",
@@ -179,7 +208,7 @@ def build_targets(language=None):
             # No multilingual_*.csv carries an `avg` column at present, so this is
             # inert; leaving the sources empty derives them from whatever WER
             # columns the file has, so it fills in if one ever gains the column.
-            avg_column="avg",
+            averages={"avg": []},
             api_rtfx="-1" if language in RTFX_MINUS_ONE_LANGUAGES else "",
         )
     return targets
@@ -264,8 +293,13 @@ def parse_csv_block(text):
     return rows
 
 
-def score_one(local_dir, model_id, families, language):
-    """Run score_results for one family group and return {model: {column: value}}."""
+def score_one(local_dir, model_id, families, language, recompute=False, written_scores=None,
+              num_workers=None):
+    """Run score_results for one family group and return {model: {column: value}}.
+
+    Per-manifest scores are read from, and written to, the `.score.json` files next
+    to the manifests (see score_bucket_results.py).
+    """
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
@@ -275,6 +309,10 @@ def score_one(local_dir, model_id, families, language):
                 csv_only=True,
                 language=language,
                 families=families,
+                use_cache=True,
+                recompute=recompute,
+                written_scores=written_scores,
+                num_workers=num_workers,
             )
     except ValueError as exc:
         # No manifests for this family -- normal when a model was not run on it.
@@ -283,11 +321,14 @@ def score_one(local_dir, model_id, families, language):
     return parse_csv_block(buf.getvalue())
 
 
-def collect_row(target, local_dir, model_id):
+def collect_row(target, local_dir, model_id, recompute=False, written_scores=None,
+                num_workers=None):
     """Merge every pass for `target` into one {column: value} row."""
     merged = {}
     for families, language in target.passes:
-        rows = score_one(local_dir, model_id, families, language)
+        rows = score_one(
+            local_dir, model_id, families, language, recompute, written_scores, num_workers
+        )
         if not rows:
             continue
         # score_results labels the row with the model id it was given; fall back
@@ -320,7 +361,9 @@ def fetch_csv(repo_id, filename, hf_token):
 def upsert(header, rows, model_id, values, metadata, sort, overwrite=False):
     """Insert or replace `model_id`'s row. Returns (rows, action, new_row, cleared).
 
-    An existing row is always replaced in place, keeping its position in the file.
+    The first header column is the model key ("model", or "model_id" on the
+    long-form sheet). An existing row is always replaced in place, keeping its
+    position in the file.
     What happens to a column this run produced no value for depends on `overwrite`:
 
     merge (default)
@@ -334,7 +377,7 @@ def upsert(header, rows, model_id, values, metadata, sort, overwrite=False):
     """
     new_row = []
     for column in header:
-        if column == "model":
+        if column == header[0]:
             new_row.append(model_id)
         elif column in metadata and metadata[column] is not None:
             new_row.append(str(metadata[column]))
@@ -377,8 +420,9 @@ def process(target, args, api, synced):
     print(f"\n{'=' * 78}\n{target.repo_id}/{target.filename}\n{'=' * 78}")
 
     local_dir = args.local_dir or os.path.join(REPO_ROOT, "results")
-    # Targets read from different buckets; sync each one once per run. `hf buckets
-    # sync` defaults to --no-delete, so several buckets can share one directory.
+    # Targets read from different buckets; sync each one once per run, and only this
+    # model's results. `hf buckets sync` defaults to --no-delete, so several buckets
+    # can share one directory.
     # API models are evaluated on the private infrastructure and every one of their
     # runs lands in PRIVATE_BUCKET, whatever sheet the row is destined for, so --api
     # overrides the target's own bucket. An explicit --bucket still wins.
@@ -390,13 +434,20 @@ def process(target, args, api, synced):
     else:
         bucket = target.bucket
     if not args.skip_sync and bucket not in synced:
-        sync_bucket(bucket, local_dir, hf_token=args.hf_token)
+        sync_bucket(bucket, local_dir, hf_token=args.hf_token, model_ids=[args.model_id])
         synced.add(bucket)
     if not os.path.isdir(local_dir):
         print(f"ERROR: results directory not found: {local_dir}", file=sys.stderr)
         return False
 
-    values = collect_row(target, local_dir, args.model_id)
+    written_scores = []
+    scored = collect_row(
+        target, local_dir, args.model_id, args.recompute_scores, written_scores,
+        args.num_workers,
+    )
+    if not args.no_upload_scores:
+        upload_scores(bucket, local_dir, written_scores, hf_token=args.hf_token)
+    values = {c: v for c, v in scored.items() if c not in target.ignore}
     if not values:
         print(f"No scored columns for {args.model_id}; nothing to submit.")
         return False
@@ -431,8 +482,8 @@ def process(target, args, api, synced):
         stale = [
             c
             for c, v in zip(header, new_row)
-            if v.strip() and c not in values and c not in METADATA_ARGS and c != "model"
-            and c != target.avg_column
+            if v.strip() and c not in values and c not in METADATA_ARGS and c != header[0]
+            and c not in target.averages
         ]
         if stale:
             print(
@@ -441,11 +492,13 @@ def process(target, args, api, synced):
                 f"      Pass --overwrite to blank them instead."
             )
 
-    if target.avg_column and target.avg_column in header:
-        index = {c: i for i, c in enumerate(header)}
+    index = {c: i for i, c in enumerate(header)}
+    for avg_column, sources in target.averages.items():
+        if avg_column not in index:
+            continue
         # English must average only the eight cleaned sets, not the four extra
         # WER columns, so it lists them; elsewhere every WER column counts.
-        avg_sources = target.avg_sources or [c for c in header if c.endswith(" WER")]
+        avg_sources = sources or [c for c in header if c.endswith(" WER")]
         present, missing = [], []
         for column in avg_sources:
             raw = new_row[index[column]] if column in index else ""
@@ -456,17 +509,17 @@ def process(target, args, api, synced):
             print(
                 f"WARNING: {len(missing)} of {len(avg_sources)} datasets have no "
                 f"result ({', '.join(missing)}).\n"
-                f"         '{target.avg_column}' is averaged over the {len(present)} present; "
+                f"         '{avg_column}' is averaged over the {len(present)} present; "
                 f"'RTFx' covers only the datasets this run scored.",
                 file=sys.stderr,
             )
         if present:
             # Unrounded, matching english_short_latest.csv.
-            new_row[index[target.avg_column]] = str(sum(present) / len(present))
-            for i, row in enumerate(rows):
-                if row and row[0].strip() == args.model_id:
-                    rows[i] = new_row
-                    break
+            new_row[index[avg_column]] = str(sum(present) / len(present))
+    for i, row in enumerate(rows):
+        if row and row[0].strip() == args.model_id:
+            rows[i] = new_row
+            break
 
     if args.api:
         placeholder = args.api_rtfx if args.api_rtfx is not None else target.api_rtfx
@@ -595,8 +648,8 @@ def main():
         default=None,
         metavar="VALUE",
         help="Override what --api writes into the RTFx columns. Defaults to the "
-             "convention of the target file (blank for english/hi, -1 for the other "
-             "multilingual languages).",
+             "convention of the target file (blank for english/hi, -1 for longform "
+             "and the other multilingual languages).",
     )
     parser.add_argument(
         "--overwrite",
@@ -605,6 +658,25 @@ def main():
              "blanked instead of keeping the published value. Use when re-running a "
              "model so its row holds one run's results rather than a mix. Metadata "
              "columns are still preserved unless their flag is passed.",
+    )
+    parser.add_argument(
+        "--recompute_scores",
+        action="store_true",
+        help="Re-score every manifest instead of reading its stored .score.json, and "
+             "replace the stored scores. Use after a change to the normalizer.",
+    )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=None,
+        help="Processes used to align the transcripts of a manifest that has no stored "
+             "score. Defaults to every CPU available to this process; 1 aligns serially.",
+    )
+    parser.add_argument(
+        "--no_upload_scores",
+        action="store_true",
+        help="Keep newly written .score.json files local instead of uploading them "
+             "to the bucket.",
     )
     parser.add_argument(
         "--sort",
