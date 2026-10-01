@@ -69,7 +69,8 @@ def resolve_container(model_id: str, revision: str | None) -> str:
     dest = local / "unpacked"
     if not (dest / "model.fermion").exists():
         dest.mkdir(exist_ok=True)
-        proc = subprocess.Popen(["zstd", "-q", "-d", "-c", str(arch)], stdout=subprocess.PIPE)
+        # resolve: Hub cache snapshots are symlinks, which zstd silently skips
+        proc = subprocess.Popen(["zstd", "-q", "-d", "-c", str(arch.resolve())], stdout=subprocess.PIPE)
         with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
             for m in tar:
                 if m.isfile():
@@ -146,7 +147,7 @@ def main(args):
             all_results[key].append(result[key])
 
     manifest_path = data_utils.write_manifest(
-        all_results["references"], all_results["predictions"], args.model_id, args.dataset_path, args.dataset, args.split,
+        all_results["references"], all_results["predictions"], args.model_id, args.dataset_path, args.dataset or "", args.split,
         audio_length=all_results["audio_length_s"], transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
         extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS} if is_chunked else None)
