@@ -1,9 +1,9 @@
 import argparse
 import os
-import time
 
 import evaluate
 import numpy as np
+import torch
 from normalizer import data_utils
 from tqdm import tqdm
 from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
@@ -23,7 +23,6 @@ def main(args):
     model = AutoModel.from_pretrained(
         model_source, trust_remote_code=True
     ).cuda()
-    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
     tokenizer = AutoTokenizer.from_pretrained(
         model_source, trust_remote_code=True
     )
@@ -49,13 +48,15 @@ def main(args):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
-        batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
         sampling_rate = batch["audio"][0]["sampling_rate"]
         batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
         batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
-        start_time = time.time()
+        torch.cuda.synchronize()
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
 
         # Divide data into sub-batches that maximize the total audio length
         # that can fit within the specified limit
@@ -98,7 +99,9 @@ def main(args):
         pred_text = all_out
 
         # END TIMING
-        runtime = time.time() - start_time
+        end_event.record()
+        torch.cuda.synchronize()
+        runtime = start_event.elapsed_time(end_event) / 1000.0
 
         # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
@@ -109,7 +112,7 @@ def main(args):
 
     if args.warmup_steps is not None:
         dataset = data_utils.load_data(args)
-        dataset = data_utils.prepare_data(dataset)
+        dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate)
 
         num_warmup_samples = args.warmup_steps * args.batch_size
         if args.streaming:
@@ -132,7 +135,7 @@ def main(args):
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset)
+    dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate)
 
     dataset = dataset.map(
         benchmark,
@@ -140,6 +143,10 @@ def main(args):
         batched=True,
         remove_columns=["audio"],
     )
+
+    # The weights live in the exported graph, which is loaded on the first forward pass,
+    # so count them only now.
+    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.3f}B parameters")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
 
@@ -259,5 +266,9 @@ if __name__ == "__main__":
         help="Model revision to use (branch, tag, or commit hash). Defaults to the model's default revision.",
     )
     args = parser.parse_args()
+
+    print("*" * 100)
+    print(f"Evaluating {args.model_id} on {args.dataset_path} / {args.dataset} / {args.split}")
+    print("*" * 100)
 
     main(args)

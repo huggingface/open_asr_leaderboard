@@ -43,7 +43,8 @@ RUN pip install --no-cache-dir \
     httpx \
     requests-toolbelt \
     gladiaio-sdk \
-    google-genai
+    google-genai \
+    websockets
 
 # Force soundfile backend for datasets audio decoding
 ENV HF_AUDIO_DECODER_BACKEND=soundfile

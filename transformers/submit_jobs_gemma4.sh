@@ -1,16 +1,20 @@
 #!/bin/bash
-# Local script to submit HF Jobs for ABR ASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# Local script to submit HF Jobs for Gemma 4 ASR evaluation on the public sets.
+# Gemma 4 is a general multimodal LLM, not a dedicated ASR model: run_eval.py
+# prompts it for a transcription through the chat template and forces greedy
+# decoding (its generation_config ships do_sample=True).
+# Usage: HF_TOKEN=hf_... bash submit_jobs_gemma4.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-abr}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
-BATCH_SIZE=2048
-WARMUP_STEPS=5
-SUBBATCH_SAMPLES=30000000
+# 256 covers the longest clips in these sets: verified no truncation on the ~35s
+# LibriSpeech test.clean utterances.
+MAX_NEW_TOKENS=256
+BATCH_SIZE="${BATCH_SIZE:-64}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -33,26 +37,23 @@ if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
     LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
 fi
 
-# ── Models: "model_id revision" ──────────────────────────────────────────────
-MODEL_CONFIGS=(
-    "abr-ai/niagara-9m-batch.en 1521edf95a146d06e3c7c1ad18a7209a899bc570"
-    "abr-ai/niagara-19m-batch.en d0276b85317389bc679d0206f60d88779cfbd15a"
-    "abr-ai/niagara-38m-batch.en 7bfe48fb7fb065484419b1860c6b3d4e4f817c0c"
-    "abr-ai/niagara-84m-batch.en ed93390475b146ad5412c668f680609a3ffca1b0"
+# ── Models (comment / uncomment to select) ──────────────────────────────────
+MODEL_IDs=(
+    # "google/gemma-4-12B-it"
+    "google/gemma-4-E4B-it"
+    # "google/gemma-4-E2B-it"
 )
 
-# ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
-# dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
-# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
-# config name: the first field is only a label for selection and result files.
+# ── Datasets: "name split [dataset_path]" ──────────────────────────
+# batch_size is global, set as BATCH_SIZE above.
 DATASET_CONFIGS=(
     "ami_cleaned test"
-    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test"
+    "voxpopuli_cleaned_aa test"
+    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
-    "voxpopuli_cleaned_aa test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first
@@ -80,8 +81,7 @@ fi
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
-for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID REVISION <<< "$model_cfg"
+for MODEL_ID in "${MODEL_IDs[@]}"; do
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -98,8 +98,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
-
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT}"
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -107,7 +106,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --secrets HF_TOKEN \
+            --env HF_TOKEN="$HF_TOKEN" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
@@ -116,14 +115,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
-                    --revision=${REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
+                    --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --warmup_steps=${WARMUP_STEPS} \
-                    --subbatch_samples=${SUBBATCH_SAMPLES} \
-                    --max_eval_samples=-1 &&
+                    --max_eval_samples=-1 \
+                    --max_new_tokens=${MAX_NEW_TOKENS} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &
