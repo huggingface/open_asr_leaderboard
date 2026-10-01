@@ -105,9 +105,12 @@ def print_multilingual_csv(all_results: dict) -> None:
     print("*" * 80)
 
 
-def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None) -> None:
-    """Sync an HF bucket to a local directory using the `hf` CLI."""
+def sync_bucket(bucket: str, local_dir: str, hf_token: str | None = None, subdir: str | None = None) -> None:
+    """Sync an HF bucket (or one of its subdirectories) to a local directory using the `hf` CLI."""
     bucket_url = f"hf://buckets/{bucket}"
+    if subdir:
+        bucket_url = f"{bucket_url}/{subdir}"
+        local_dir = os.path.join(local_dir, subdir)
     print(f"Syncing {bucket_url}  \u2192  {local_dir} ...")
     os.makedirs(local_dir, exist_ok=True)
     env = os.environ.copy()
@@ -206,7 +209,13 @@ def main():
     local_dir = args.local_dir or os.path.join(REPO_ROOT, "results")
 
     if not args.skip_sync:
-        sync_bucket(bucket, local_dir, hf_token=args.hf_token)
+        if args.model_id:
+            # Results are stored per model under "<org>-<name>/", so only sync
+            # the folders of the requested models.
+            for model_id in args.model_id:
+                sync_bucket(bucket, local_dir, hf_token=args.hf_token, subdir=model_id.replace("/", "-"))
+        else:
+            sync_bucket(bucket, local_dir, hf_token=args.hf_token)
     else:
         print(f"Skipping sync — scoring results in: {local_dir}\n")
 

@@ -149,6 +149,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             bash -c "
                 ${LOCAL_NORMALIZER_INJECT}
                 ${LOCAL_SCRIPT_INJECT}
+                pip install -q sentencepiece protobuf &&
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
                     --dataset=${JOB_DATASET} \

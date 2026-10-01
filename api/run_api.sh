@@ -1,6 +1,6 @@
 #!/bin/bash
 
-RESULTS_BUCKET="${RESULTS_BUCKET:-}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_private}"
 IMAGE_TAG="api-eval"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
 
@@ -30,6 +30,7 @@ MODEL_CONFIGS=(
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"
     # "soniox/stt-async-v5           20"
+    # "gemini/gemini-3.5-transcribe  8"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -116,6 +117,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \

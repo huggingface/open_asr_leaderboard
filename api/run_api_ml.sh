@@ -3,7 +3,7 @@
 # Multilingual API ASR Evaluation Script
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech)
 
-RESULTS_BUCKET="${RESULTS_BUCKET:-}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_private}"
 IMAGE_TAG="api-eval"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
 
@@ -26,6 +26,7 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech        4"
     # "modulate/multilingual         25"
     # "soniox/stt-async-v5           20"
+    # "gemini/gemini-3.5-transcribe  16"
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
@@ -44,11 +45,13 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs hy"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
     "mcv nl"
+    "mcv hy"
     "mls es"
     "mls fr"
     "mls it"
@@ -201,6 +204,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
