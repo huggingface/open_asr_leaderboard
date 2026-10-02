@@ -1,43 +1,48 @@
 #!/bin/bash
-# Local script to submit HF Jobs for Granite ASR evaluation.
+# Local script to submit HF Jobs for ASR evaluation.
+# This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# The TheStage AI token for the compiled engines is set below (THESTAGE_AUTH_TOKEN).
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-granite}"
-RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-thewhisper}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"      # HF bucket repo for saving results
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
-FLAVOR="${FLAVOR:-h200}"
+FLAVOR="${FLAVOR:-h200}"  # compiled engines are published for H200 (and H100, A100, L40S, RTX 4090/5090)
 ORG_NAME="${ORG_NAME:-}"
+# TheStage AI token for downloading the compiled engines; passed to every job as a secret.
+export THESTAGE_AUTH_TOKEN="${THESTAGE_AUTH_TOKEN:-th_Har1cDb3EWLfNLtrfXaPwBc9cev6BtSNNUYiZd8r}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Set USE_LOCAL_SCRIPT=1 to run your local eval script instead of the version
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
-# The script is picked per model type below, so the injection is built there.
 USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+LOCAL_SCRIPT_INJECT=""
+if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+    RUN_EVAL_B64=$(base64 < "${SCRIPT_DIR}/run_eval.py" | tr -d '\n')
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
+fi
 
 # Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
 # job (so normalizer changes take effect without updating the HF Space).
 USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
 LOCAL_NORMALIZER_INJECT=""
 if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
-    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
+    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 | tr -d '\n')
     LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
 fi
 
-# ── Models: "model_id type batch_size [revision]" ─────────────────────────────
-# Types: speculative, speculative_bpe, nar, ctc
-# revision: optional 4th field, a model repo commit/branch/tag. Only the ctc
-# eval script accepts --revision today; omit it for the other types.
-MODEL_CONFIGS=(
-    "ibm-granite/granite-4.0-1b-speech speculative 256"
-    "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
-    "ibm-granite/granite-speech-5.0-470m-turboctc ctc 128 78b07c8e131eede3d59b95545efc8506b45a505b"
-    "ibm-granite/granite-speech-5.0-470m-turboctc-nc ctc 128 05b33f57fe08aae7a0365c7e096a42658f8a28ac"
-)
+# ── Model ────────────────────────────────────────────────────────────────────
+MODEL_ID="TheStageAI/thewhisper-large-v3-turbo"
+REVISION="6592b6933656513345c5e7a65523a0de3e30d5a3"  # pins the configs and the compiled engines
+MODE="XL"             # engine size
+CHUNK_LENGTH=30       # engine input window, seconds
+BATCH_SIZE=256        # largest batch of the H200 engines (built for batches 1-256; the H100 ones for 1-128)
+MODEL_CONFIGS=("${MODEL_ID} ${BATCH_SIZE}")
 
-# ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
+# ── Datasets: "name split [dataset_path]" (comment / uncomment to select) ─────
 # dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
 # An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
 # config name: the first field is only a label for selection and result files.
@@ -52,7 +57,7 @@ DATASET_CONFIGS=(
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first
-# field of each DATASET_CONFIGS entry
+# field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="librispeech spgispeech" bash <this script>
 if [[ -n "${ONLY_DATASETS:-}" ]]; then
@@ -77,13 +82,12 @@ fi
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_TYPE BATCH_SIZE REVISION <<< "$model_cfg"
-    REVISION_ARG=""
-    [[ -n "$REVISION" ]] && REVISION_ARG="--revision=${REVISION}"
+    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
+    # Sanitize model ID for use as a folder name (e.g. "openai/whisper" -> "openai-whisper")
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
-    echo "  Evaluating: ${MODEL_ID} (${MODEL_TYPE}, batch_size=${BATCH_SIZE}${REVISION:+, revision=${REVISION}})"
+    echo "  Evaluating: ${MODEL_ID}"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
@@ -96,36 +100,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
-
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE}"
-
-        # Build command based on model type
-        if [[ "$MODEL_TYPE" == "speculative" ]]; then
-            EVAL_SCRIPT="run_eval_speculative.py"
-            EXTRA_ARGS="--num_beams=2 --max_new_tokens=200 --confidence_threshold=0.2 --ctc_threshold=0.7"
-        elif [[ "$MODEL_TYPE" == "speculative_bpe" ]]; then
-            EVAL_SCRIPT="run_eval_speculative_bpe.py"
-            EXTRA_ARGS="--num_beams=2 --max_new_tokens=200 --confidence_threshold=0.4 --ctc_threshold=0.0"
-        elif [[ "$MODEL_TYPE" == "nar" ]]; then
-            EVAL_SCRIPT="run_eval_nar.py"
-            EXTRA_ARGS=""
-        elif [[ "$MODEL_TYPE" == "ctc" ]]; then
-            EVAL_SCRIPT="run_eval_ctc.py"
-            EXTRA_ARGS=""
-        else
-            echo "ERROR: Unknown model type: ${MODEL_TYPE}" >&2
-            exit 1
-        fi
-
-        LOCAL_SCRIPT_INJECT=""
-        if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-            if [[ ! -f "${SCRIPT_DIR}/${EVAL_SCRIPT}" ]]; then
-                echo "ERROR: ${SCRIPT_DIR}/${EVAL_SCRIPT} not found (needed for type ${MODEL_TYPE})" >&2
-                exit 1
-            fi
-            RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/${EVAL_SCRIPT}")
-            LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/${EVAL_SCRIPT} &&"
-        fi
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -134,27 +109,27 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
-            --env PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
-            --env PYTORCH_ALLOC_CONF="expandable_segments:True" \
+            --secrets THESTAGE_AUTH_TOKEN \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
                 ${LOCAL_NORMALIZER_INJECT}
                 ${LOCAL_SCRIPT_INJECT}
-                PYTHONPATH=/app python ${EVAL_SCRIPT} \
+                PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
-                    ${REVISION_ARG} \
+                    --revision=${REVISION} \
+                    --mode=${MODE} \
+                    --chunk_length=${CHUNK_LENGTH} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --max_eval_samples=-1 \
-                    ${EXTRA_ARGS} &&
+                    --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
-            " > /dev/null 2>&1 &
+            " > /dev/null 2>&1 &    # suppress output and run in background
     done
     if [ -n "$ORG_NAME" ]; then
         echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"
@@ -162,11 +137,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         echo "For live status see: https://huggingface.co/settings/jobs"
     fi
 
+    # Wait for all background job submissions to complete
     wait
-    echo "All jobs finished for ${MODEL_ID}."
+    echo "All jobs finished."
     sleep 10  # allow time for the last results to be flushed to the bucket
 
+    # Download results and score
     mkdir -p "./results/${MODEL_FOLDER}"
+
     hf buckets sync \
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
