@@ -23,6 +23,7 @@ NLLB_LANGUAGE_CODES = {
     "it": "ita_Latn",
     "es": "spa_Latn",
     "pt": "por_Latn",
+    "hy": "hye_Armn",
     "hi": "hin_Deva",
 }
 
