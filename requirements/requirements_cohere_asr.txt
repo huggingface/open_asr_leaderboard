@@ -1,0 +1,4 @@
+# Uses the local `transformers_cohere` checkout when present.
+sentencepiece
+protobuf
+soundfile
