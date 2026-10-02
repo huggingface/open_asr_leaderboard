@@ -1,10 +1,13 @@
 import glob
+import hashlib
 import json
 import os
 from collections import defaultdict
 from difflib import SequenceMatcher
 
-from kaldialign import batch_error_rate
+from concurrent.futures import ProcessPoolExecutor
+
+from kaldialign import edit_distance
 
 # Languages scored with voi_oiwer (Orthographically Informed WER over a
 # reference lattice) instead of plain WER. Maps language code → voi_oiwer
@@ -219,6 +222,180 @@ def write_manifest(
     return manifest_path
 
 
+# Per-manifest score files: `<manifest stem>.score.json`, next to the manifest.
+SCORE_SUFFIX = ".score.json"
+
+
+def score_file_path(manifest_path: str) -> str:
+    return manifest_path.removesuffix(".jsonl") + SCORE_SUFFIX
+
+
+def _sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def read_score_file(manifest_path: str, language: str = "en", multilingual: bool = False):
+    """Return the stored score of `manifest_path`, or None if absent or stale."""
+    path = score_file_path(manifest_path)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            score = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        score.get("language") != language
+        or score.get("multilingual") != multilingual
+        or score.get("manifest_sha256") != _sha256(manifest_path)
+    ):
+        return None
+    return score
+
+
+def write_score_file(manifest_path: str, score: dict, language: str = "en", multilingual: bool = False) -> str:
+    """Store `score` (as returned by score_manifest) next to `manifest_path`."""
+    path = score_file_path(manifest_path)
+    record = {
+        **score,
+        "language": language,
+        "multilingual": multilingual,
+        "manifest_sha256": _sha256(manifest_path),
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2)
+        f.write("\n")
+    return path
+
+
+def available_cpus() -> int:
+    """CPUs this process may run on (respects taskset / cgroup CPU sets on Linux)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # macOS, Windows
+        return os.cpu_count() or 1
+
+
+def _normalize(text: str, language: str) -> str:
+    from normalizer import data_utils  # deferred to avoid circular import
+
+    if language == "en":
+        return data_utils.normalizer(text)
+    return data_utils.ml_normalizer(text, lang=language)
+
+
+def _align_pair(job):
+    """Normalize one (reference, prediction) pair and align it, as score_results scores it."""
+    ref, pred, language, multilingual = job
+    ref, pred = _normalize(ref, language), _normalize(pred, language)
+    if multilingual:
+        # Align compound word boundaries (e.g. German/Italian compounds)
+        # before scoring, so split-vs-joined spelling doesn't count as an error.
+        (ref,), (pred,) = normalize_compound_pairs([ref], [pred])
+    # kaldialign with merge_compounds=True, so that split compounds (e.g.
+    # "white paper" vs "whitepaper") count as 0 errors in either direction.
+    return edit_distance(tuple(ref.split()), tuple(pred.split()), merge_compounds=True)
+
+
+def align_manifests(manifests: list, language: str = "en", multilingual: bool = False,
+                    num_workers: int = None) -> list:
+    """Error counts of each manifest: {"ins", "del", "sub", "total", "ref_len", "err_rate"}.
+
+    The same counts as batch_error_rate(..., merge_compounds=True) over the normalized
+    texts, which just sums edit_distance over the pairs. Here the pairs of *all* the
+    manifests -- normalization included -- go through one process pool: alignment is
+    quadratic in the length of a recording, hour-long transcripts take tens of seconds
+    each, and pooling across manifests means the run waits for its single longest
+    recording rather than for the longest of each manifest in turn.
+
+    num_workers: processes to use; None uses every CPU available to this process, 1
+    works serially in this process. Never more than there are pairs.
+    """
+    jobs = [
+        (m, (datum["text"], datum["pred_text"], language, multilingual))
+        for m, manifest in enumerate(manifests)
+        for datum in manifest
+    ]
+    workers = min(num_workers or available_cpus(), len(jobs))
+    # Longest first, so that a long recording does not start last and hold up the pool.
+    jobs.sort(key=lambda job: len(job[1][0]) * len(job[1][1]), reverse=True)
+    if workers <= 1:
+        results = map(_align_pair, [job for _, job in jobs])
+        pool = None
+    else:
+        pool = ProcessPoolExecutor(max_workers=workers)
+        # chunksize=1: the pairs differ in cost by orders of magnitude, so they are
+        # handed out one at a time for the pool to balance itself.
+        results = pool.map(_align_pair, [job for _, job in jobs], chunksize=1)
+    totals = [{"ins": 0, "del": 0, "sub": 0, "total": 0, "ref_len": 0} for _ in manifests]
+    try:
+        for (m, _), cur in zip(jobs, results):
+            for key in totals[m]:
+                totals[m][key] += cur[key]
+    finally:
+        if pool is not None:
+            pool.shutdown()
+    for t in totals:
+        if t["ref_len"]:
+            t["err_rate"] = t["total"] / t["ref_len"]
+        else:
+            t["err_rate"] = 0.0 if t["total"] == 0 else float("inf")
+    return totals
+
+
+def score_manifests(
+    manifests: list, language: str = "en", multilingual: bool = False, num_workers: int = None
+) -> list:
+    """WER (in %) and RTFx of each manifest, as score_results computes them.
+
+    Each score is {"wer", "ins", "del", "sub", "audio_length", "inference_time", "rtfx"};
+    the last three are None when the manifest has no timing information. The
+    manifests share one process pool (see align_manifests).
+    """
+    manifests = [merge_chunked_manifest(m) for m in manifests]
+    if language in OIWER_LANGUAGES:
+        # Lattice-based, orthography-aware scoring (voi_oiwer). The package
+        # applies its own indicnlp-based normalization internally.
+        counts = [score_oiwer(m, OIWER_LANGUAGES[language]) for m in manifests]
+    else:
+        counts = [
+            (r["err_rate"], r["ins"], r["del"], r["sub"])
+            for r in align_manifests(manifests, language, multilingual, num_workers)
+        ]
+
+    scores = []
+    for manifest, (wer, total_ins, total_del, total_sub) in zip(manifests, counts):
+        time = [datum["time"] for datum in manifest]
+        duration = [datum["duration"] for datum in manifest]
+        if all(time) and all(duration):
+            audio_length = sum(duration)
+            inference_time = sum(time)
+            rtfx = round(audio_length / inference_time, 4)
+        else:
+            audio_length = inference_time = rtfx = None
+        scores.append({
+            "wer": round(100 * wer, 2),
+            "ins": total_ins,
+            "del": total_del,
+            "sub": total_sub,
+            "audio_length": audio_length,
+            "inference_time": inference_time,
+            "rtfx": rtfx,
+        })
+    return scores
+
+
+def score_manifest(
+    manifest: list, language: str = "en", multilingual: bool = False, num_workers: int = None
+) -> dict:
+    """score_manifests for a single manifest."""
+    return score_manifests([manifest], language, multilingual, num_workers)[0]
+
+
 CHUNK_PARENT_KEY = "parent_id"
 CHUNK_INDEX_KEY = "chunk_index"
 
@@ -277,6 +454,10 @@ def score_results(
     csv_only: bool = False,
     language: str = "en",
     families: list = None,
+    use_cache: bool = False,
+    recompute: bool = False,
+    written_scores: list = None,
+    num_workers: int = None,
 ):
     """
     Scores all result files in a directory and returns a composite score over all evaluated datasets.
@@ -292,9 +473,18 @@ def score_results(
                   Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
                   voi_oiwer over a reference lattice instead of plain WER.
         families: Optional list of family keys ("appen", "dataocean", "voicearena_private",
-                  "voicearena_private_hi", "public", "extra", "ml_de", "ml_fr", "ml_it", "ml_es",
+                  "voicearena_private_hi", "public", "extra", "longform", "ml_de", "ml_fr", "ml_it", "ml_es",
                   "ml_pt", "ml_nl") restricting which CSV summary blocks are printed.
                   None prints all detected families.
+        use_cache: If True, read each manifest's score from its `.score.json` file
+                   (see SCORE_SUFFIX) when one matches, and write one when not.
+        recompute: With use_cache, ignore existing score files and rewrite them,
+                   e.g. after a change to the normalizer.
+        written_scores: Optional list; the path of every score file written is
+                   appended to it, so the caller can upload them.
+        num_workers: Processes used to align each manifest; None uses every CPU
+                   available, 1 aligns serially. The manifests without a stored
+                   score share one pool; see align_manifests.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
@@ -335,6 +525,9 @@ def score_results(
         ds_fp = fp[ds_index:]
         dataset_id = ds_fp.replace("DATASET_", "").removesuffix(".jsonl")
         return model_id, dataset_id
+
+    # CORAAL subsets (bezzam/coraal), macro-averaged into a single long-form column.
+    CORAAL_SPLITS = ["ATL", "DCA", "DCB", "DTA", "LES", "PRV", "ROC", "VLD"]
 
     # ── Family definitions ────────────────────────────────────────────────────
     # Each entry: (family_key, presence_substring, header, col_map)
@@ -436,6 +629,20 @@ def score_results(
                 "voxpopuli_test": ("Voxpopuli WER", None),
             },
         ),
+        (
+            "longform",
+            None,
+            "model,avg,RTFx,earnings21,earnings22,coraal_avg,"
+            + ",".join(f"coraal_{split}" for split in CORAAL_SPLITS),
+            {
+                "asr-leaderboard-longform_earnings21_test": ("earnings21", None),
+                "asr-leaderboard-longform_earnings22_test": ("earnings22", None),
+                **{
+                    f"coraal_{split}_test": (f"coraal_{split}", None)
+                    for split in CORAAL_SPLITS
+                },
+            },
+        ),
     ]
 
     # Multilingual families: one per language, covering whichever of
@@ -485,63 +692,36 @@ def score_results(
             )
 
     # Compute WER results per dataset, and RTFx over all datasets
-    from normalizer import data_utils  # deferred to avoid circular import
-
     results = {}
 
+    scores = {}
+    if use_cache and not recompute:
+        for result_file in result_files:
+            score = read_score_file(result_file, language, multilingual)
+            if score is not None:
+                scores[result_file] = score
+    # Everything without a stored score is scored in one go, so that the alignments
+    # of all the manifests share one process pool.
+    to_score = [fp for fp in result_files if fp not in scores]
+    if to_score:
+        fresh = score_manifests(
+            [read_manifest(fp) for fp in to_score], language, multilingual, num_workers
+        )
+        for result_file, score in zip(to_score, fresh):
+            scores[result_file] = score
+            if use_cache:
+                path = write_score_file(result_file, score, language, multilingual)
+                if written_scores is not None:
+                    written_scores.append(path)
+
     for result_file in result_files:
-        manifest = merge_chunked_manifest(read_manifest(result_file))
         model_id_of_file, dataset_id = parse_filepath(result_file)
-
-        time = [datum["time"] for datum in manifest]
-        duration = [datum["duration"] for datum in manifest]
-        compute_rtfx = all(time) and all(duration)
-
-        if language in OIWER_LANGUAGES:
-            # Lattice-based, orthography-aware scoring (voi_oiwer). The package
-            # applies its own indicnlp-based normalization internally.
-            wer, total_ins, total_del, total_sub = score_oiwer(
-                manifest, OIWER_LANGUAGES[language]
-            )
-        else:
-            if language == "en":
-                normalize = data_utils.normalizer
-            else:
-                normalize = lambda t: data_utils.ml_normalizer(t, lang=language)
-            references = [normalize(datum["text"]) for datum in manifest]
-            predictions = [normalize(datum["pred_text"]) for datum in manifest]
-
-            if multilingual:
-                # Align compound word boundaries (e.g. German/Italian compounds)
-                # before scoring, so split-vs-joined spelling doesn't count as an error.
-                references, predictions = normalize_compound_pairs(references, predictions)
-
-            # Use kaldialign batch_error_rate with merge_compounds=True so that
-            # split compounds (e.g. "white paper" vs "whitepaper") count as
-            # 0 errors in either direction.
-            refs_split  = [tuple(r.split()) for r in references]
-            preds_split = [tuple(p.split()) for p in predictions]
-            r = batch_error_rate(refs_split, preds_split, merge_compounds=True)
-            total_ins, total_del, total_sub = r["ins"], r["del"], r["sub"]
-            wer = r["err_rate"]
-
-        extra = {"ins": total_ins, "del": total_del, "sub": total_sub}
-        wer = round(100 * wer, 2)
-
-        if compute_rtfx:
-            audio_length = sum(duration)
-            inference_time = sum(time)
-            rtfx = round(sum(duration) / sum(time), 4)
-        else:
-            audio_length = inference_time = rtfx = None
+        score = scores[result_file]
 
         result_key = f"{model_id_of_file} | {dataset_id}"
         results[result_key] = {
-            "wer": wer,
-            "audio_length": audio_length,
-            "inference_time": inference_time,
-            "rtfx": rtfx,
-            **extra,
+            key: score[key]
+            for key in ("wer", "audio_length", "inference_time", "rtfx", "ins", "del", "sub")
         }
 
     if not csv_only:
@@ -598,6 +778,20 @@ def score_results(
     def find_wer_in(model_key, col_label, col_map):
         return find_metric_in(model_key, col_label, col_map, "wer")
 
+    def longform_averages(wer_vals):
+        """Return (coraal_avg, avg) for the longform family, over the columns present."""
+        coraal = [
+            v for lbl, v in wer_vals.items() if lbl.startswith("coraal_") and v is not None
+        ]
+        coraal_avg = round(sum(coraal) / len(coraal), 2) if coraal else None
+        parts = [
+            v
+            for v in (wer_vals.get("earnings21"), wer_vals.get("earnings22"), coraal_avg)
+            if v is not None
+        ]
+        avg = round(sum(parts) / len(parts), 2) if parts else None
+        return coraal_avg, avg
+
     def print_csv_block(
         header, col_map, family_key=None, family_name=None, per_dataset_rtfx=False
     ):
@@ -624,10 +818,13 @@ def score_results(
 
         if len(composite_wer) == 1:
             for model_key in composite_wer:
-                wer_vals = [find_wer_in(model_key, col, col_map) for col in csv_columns]
-                wer_vals = [v for v in wer_vals if v is not None]
-                if wer_vals:
-                    avg = round(sum(wer_vals) / len(wer_vals), 2)
+                wer_vals = {col: find_wer_in(model_key, col, col_map) for col in csv_columns}
+                if family_key == "longform":
+                    avg = longform_averages(wer_vals)[1]
+                else:
+                    present = [v for v in wer_vals.values() if v is not None]
+                    avg = round(sum(present) / len(present), 2) if present else None
+                if avg is not None:
                     label = (
                         original_model_id
                         if original_model_id is not None
@@ -690,7 +887,7 @@ def score_results(
                     + ",".join(wer_cols)
                 )
             else:
-                if family_key == "public" or (family_key or "").startswith("ml_"):
+                if family_key in ("public", "longform") or (family_key or "").startswith("ml_"):
                     family_audio = sum(
                         results[rk]["audio_length"]
                         for ds_substr in col_map
@@ -710,6 +907,18 @@ def score_results(
                     rtfx_val = (
                         round(family_audio / family_time, 2) if family_time else ""
                     )
+                if family_key == "longform":
+                    coraal_avg, avg = longform_averages(wer_vals)
+                    cols = [avg, rtfx_val, wer_vals["earnings21"], wer_vals["earnings22"], coraal_avg]
+                    cols += [wer_vals[f"coraal_{split}"] for split in CORAAL_SPLITS]
+                    print(
+                        ",".join(
+                            [csv_model_label]
+                            + ["" if v is None else str(v) for v in cols]
+                        )
+                    )
+                    continue
+                if family_key == "public" or (family_key or "").startswith("ml_"):
                     # Fill the prefix columns by name, not by position: the
                     # families do not share a prefix layout (ml_* is just
                     # "model,RTFx,...", public also carries avg and the metadata
@@ -744,7 +953,11 @@ def score_results(
             has_public = any(ds_substr in all_dataset_ids for ds_substr in col_map)
             if has_public:
                 print_csv_block(
-                    header, col_map, family_key, family_name, per_dataset_rtfx=True
+                    header,
+                    col_map,
+                    family_key,
+                    family_name,
+                    per_dataset_rtfx=(family_key == "public"),
                 )
         else:
             if presence_substr in all_dataset_ids:
