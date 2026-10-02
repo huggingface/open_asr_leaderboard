@@ -1,0 +1,9 @@
+torch==2.8.0
+torchaudio==2.8.0
+torchcodec==0.7.0
+liquid-audio @ git+https://github.com/Liquid4All/liquid-audio.git@19e65845923a7f136442c95137884ec61eb386aa
+transformers @ git+https://github.com/huggingface/transformers.git@89a727319005f512aff3714c3838c8c37630b4fa
+datasets==5.0.1
+librosa==0.11.0
+num2words==0.5.14
+kaldialign==0.12.0
