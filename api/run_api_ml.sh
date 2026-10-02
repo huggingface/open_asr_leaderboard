@@ -14,9 +14,7 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    # "openai/gpt-4o-transcribe      16"
-    # "openai/gpt-4o-mini-transcribe 16"
-    # "openai/whisper-1              16"
+    # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
     # "elevenlabs/scribe_v2          8"
