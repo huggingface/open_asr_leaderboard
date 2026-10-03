@@ -13,7 +13,7 @@ import itertools
 from tqdm import tqdm
 from dotenv import load_dotenv
 from normalizer import data_utils
-from normalizer.eval_utils import OIWER_LANGUAGES, normalize_compound_pairs, score_oiwer
+from normalizer.eval_utils import CER_LANGUAGES, OIWER_LANGUAGES, normalize_compound_pairs, print_ml_cer, score_oiwer
 import concurrent.futures
 from providers import get_provider, PermanentError
 
@@ -230,6 +230,10 @@ def transcribe_dataset(
     )
 
     print("Results saved at path:", manifest_path)
+
+    if language in CER_LANGUAGES:
+        print_ml_cer(results, language)
+        return
 
     if language in OIWER_LANGUAGES:
         # Lattice-based, orthography-aware scoring (voi_oiwer applies its own

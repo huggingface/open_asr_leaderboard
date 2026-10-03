@@ -38,10 +38,10 @@ from collections import defaultdict
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from normalizer.eval_utils import SCORE_SUFFIX, score_results
+from normalizer.eval_utils import CER_LANGUAGES, SCORE_SUFFIX, score_results
 
 # Languages covered by the multilingual (FLEURS/MCV/MLS + Hindi Monsoon) benchmarks.
-ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi"]
+ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi", "zh"]
 
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
@@ -70,6 +70,7 @@ ML_CSV_COLUMNS = [
     ("hy_fleurs", "fleurs_hy_test"),
     ("hy_mcv", "mcv_hy_test"),
     ("hi_monsoon", "Monsoon_hi_test"),
+    ("zh_fleurs", "fleurs_zh_test"),
 ]
 
 
@@ -77,6 +78,7 @@ def print_multilingual_csv(all_results: dict) -> None:
     """Print a combined CSV summary across all multilingual results.
 
     Columns: model, RTFx, <one column per language/dataset>, Avg.
+    Avg is over the WER columns only: CER_LANGUAGES columns are left out.
     """
     # Group results per model.
     model_keys = sorted({key.split(" | ")[0].strip() for key in all_results})
@@ -106,7 +108,11 @@ def print_multilingual_csv(all_results: dict) -> None:
                    if v.get("audio_length") and v.get("inference_time"))
         rtfx = str(round(audio / time, 2)) if time else ""
 
-        present = [v for v in wer_vals if v is not None]
+        present = [
+            v
+            for (label, _), v in zip(ML_CSV_COLUMNS, wer_vals)
+            if v is not None and label.split("_")[0] not in CER_LANGUAGES
+        ]
         avg = str(round(sum(present) / len(present), 2)) if present else ""
 
         cols = [model_key, rtfx] + [str(v) if v is not None else "" for v in wer_vals] + [avg]

@@ -10,6 +10,7 @@ SPACE="${SPACE:-hf-audio/open-asr-leaderboard-omniasr}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 ARMENIAN_DATASET_PATH="${ARMENIAN_DATASET_PATH:-Metric-AI/open-asr-leaderboard-multilingual-datasets}"
+CHINESE_DATASET_PATH="${CHINESE_DATASET_PATH:-steven0226/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
@@ -38,14 +39,14 @@ fi
 # ── Models: "model_id batch_size" (conservative batch size due to LLM memory requirements) ──
 # Each model entry also lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "facebook/omniASR-CTC-300M-v2   64 de fr it es pt nl hi hy"
-    "facebook/omniASR-CTC-1B-v2     64 de fr it es pt nl hi hy"
-    "facebook/omniASR-CTC-3B-v2     64 de fr it es pt nl hi hy"
-    "facebook/omniASR-CTC-7B-v2     64 de fr it es pt nl hi hy"
-    "facebook/omniASR-LLM-300M-v2   64 de fr it es pt nl hi hy"
-    "facebook/omniASR-LLM-1B-v2     64 de fr it es pt nl hi hy"
-    "facebook/omniASR-LLM-3B-v2     64 de fr it es pt nl hi hy"
-    "facebook/omniASR-LLM-7B-v2     64 de fr it es pt nl hi hy"
+    "facebook/omniASR-CTC-300M-v2   64 de fr it es pt nl hi hy zh"
+    "facebook/omniASR-CTC-1B-v2     64 de fr it es pt nl hi hy zh"
+    "facebook/omniASR-CTC-3B-v2     64 de fr it es pt nl hi hy zh"
+    "facebook/omniASR-CTC-7B-v2     64 de fr it es pt nl hi hy zh"
+    "facebook/omniASR-LLM-300M-v2   64 de fr it es pt nl hi hy zh"
+    "facebook/omniASR-LLM-1B-v2     64 de fr it es pt nl hi hy zh"
+    "facebook/omniASR-LLM-3B-v2     64 de fr it es pt nl hi hy zh"
+    "facebook/omniASR-LLM-7B-v2     64 de fr it es pt nl hi hy zh"
     # "facebook/omniASR-CTC-300M      64 hy"
     # "facebook/omniASR-CTC-1B        64 hy"
     # "facebook/omniASR-CTC-3B        64 hy"
@@ -58,8 +59,9 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# "fleurs zh" is a config of ${CHINESE_DATASET_PATH};
 # all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
@@ -70,6 +72,7 @@ DATASET_CONFIGS=(
     "fleurs nl"
     "fleurs hy"
     "mcv hy"
+    "fleurs zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -147,6 +150,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         else
             JOB_DATASET="${DATASET_PATH}"
             [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
+            [[ "$LANGUAGE" == "zh" ]] && JOB_DATASET="${CHINESE_DATASET_PATH}"
             CONFIG_NAME="${DATASET}_${LANGUAGE}"
             CONFIG_ARG="--config_name=${CONFIG_NAME}"
         fi

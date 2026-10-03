@@ -9,6 +9,7 @@
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
+CHINESE_DATASET_PATH="${CHINESE_DATASET_PATH:-steven0226/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
@@ -40,9 +41,10 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" ──────────────────────────────────
-# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Chinese, Hindi
 # Note: --language is not passed so the model auto-detects the language.
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# "fleurs zh" is a config of ${CHINESE_DATASET_PATH};
 # all others are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
@@ -51,6 +53,7 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -117,6 +120,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             CONFIG_NAME="(none)"
         else
             JOB_DATASET="${DATASET_PATH}"
+            [[ "$LANGUAGE" == "zh" ]] && JOB_DATASET="${CHINESE_DATASET_PATH}"
             CONFIG_NAME="${DATASET}_${LANGUAGE}"
             CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
         fi

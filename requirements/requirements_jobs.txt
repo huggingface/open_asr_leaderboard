@@ -6,3 +6,5 @@ jiwer
 regex
 num2words
 kaldialign==0.12.0
+opencc==1.4.2
+wetext==0.1.8

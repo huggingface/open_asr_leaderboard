@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 
 from concurrent.futures import ProcessPoolExecutor
 
+import regex
 from kaldialign import edit_distance
 
 # Languages scored with voi_oiwer (Orthographically Informed WER over a
@@ -15,6 +16,10 @@ from kaldialign import edit_distance
 OIWER_LANGUAGES = {
     "hi": "hindi",
 }
+
+# Languages scored with CER instead of WER: they are written without spaces
+# between words, so every character of the normalized text is one token.
+CER_LANGUAGES = {"zh"}
 
 
 def score_oiwer(manifest: list, language_name: str):
@@ -63,6 +68,45 @@ def score_oiwer(manifest: list, language_name: str):
 
     err_rate = (total_ins + total_del + total_sub) / total_ref_words if total_ref_words else 0.0
     return err_rate, total_ins, total_del, total_sub
+
+
+def split_characters(text: str):
+    """Drop all whitespace and return one token per character (grapheme)."""
+    return tuple(regex.findall(r"\X", "".join(text.split())))
+
+
+def score_cer(references: list, predictions: list, language: str):
+    """Score raw references/predictions with CER for a language in CER_LANGUAGES.
+
+    Both sides are normalized with data_utils.ml_normalizer(text, lang=language)
+    and then split into characters (see split_characters), pair by pair in this
+    process, exactly as score_results scores them (see _align_pair).
+
+    Returns (err_rate, total_ins, total_del, total_sub) with err_rate in [0, 1].
+    Raises ImportError if the language's normalizer dependencies are missing
+    (e.g. opencc / wetext for "zh").
+    """
+    manifest = [{"text": r, "pred_text": p} for r, p in zip(references, predictions)]
+    r = align_manifests([manifest], language, num_workers=1)[0]
+    return r["err_rate"], r["ins"], r["del"], r["sub"]
+
+
+def print_ml_cer(results: dict, language: str):
+    """Print CER and RTFx at the end of a run_eval_ml.py job (CER_LANGUAGES only).
+
+    `results` holds the job's raw "references" / "predictions" and its
+    "audio_length_s" / "transcription_time_s". Missing normalizer dependencies
+    (e.g. opencc / wetext for "zh") only print a note: the manifest is already
+    written, and score_results computes the CER from it.
+    """
+    rtfx = round(sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2)
+    try:
+        cer, _ins, _del, _sub = score_cer(results["references"], results["predictions"], language)
+    except ImportError as e:
+        print(f"CER not computed in this job ({e}); score_results computes it from the manifest.")
+        print("RTFx:", rtfx)
+        return
+    print("CER:", round(100 * cer, 2), "%", "RTFx:", rtfx)
 
 
 def normalize_compound_pairs(refs, preds):
@@ -292,6 +336,10 @@ def _align_pair(job):
     """Normalize one (reference, prediction) pair and align it, as score_results scores it."""
     ref, pred, language, multilingual = job
     ref, pred = _normalize(ref, language), _normalize(pred, language)
+    if language in CER_LANGUAGES:
+        # Character-level scoring, one token per character, so compound
+        # word boundaries do not apply.
+        return edit_distance(split_characters(ref), split_characters(pred), merge_compounds=False)
     if multilingual:
         # Align compound word boundaries (e.g. German/Italian compounds)
         # before scoring, so split-vs-joined spelling doesn't count as an error.
@@ -472,9 +520,10 @@ def score_results(
                   When not 'en', ml_normalizer is used instead of the English normalizer.
                   Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
                   voi_oiwer over a reference lattice instead of plain WER.
+                  Languages in CER_LANGUAGES (e.g. 'zh') are scored with CER.
         families: Optional list of family keys ("appen", "dataocean", "voicearena_private",
                   "voicearena_private_hi", "public", "extra", "longform", "ml_de", "ml_fr", "ml_it", "ml_es",
-                  "ml_pt", "ml_nl", "ml_hy") restricting which CSV summary blocks are printed.
+                  "ml_pt", "ml_nl", "ml_hy", "ml_zh") restricting which CSV summary blocks are printed.
                   None prints all detected families.
         use_cache: If True, read each manifest's score from its `.score.json` file
                    (see SCORE_SUFFIX) when one matches, and write one when not.
@@ -657,6 +706,8 @@ def score_results(
         "hy": ["fleurs", "mcv"],
         # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
         "hi": ["Monsoon"],
+        # Chinese (Mandarin): FLEURS cmn_hans_cn (scored with CER, see CER_LANGUAGES)
+        "zh": ["fleurs"],
     }
     ML_DATASET_LABELS = {
         "fleurs": "FLEURS",
@@ -664,13 +715,16 @@ def score_results(
         "mls": "MLS",
         "Monsoon": "Monsoon",
     }
+    # Labels follow how this call scores (`language`), not the dataset. CER
+    # results are stored under "wer" as well.
+    metric_name = "CER" if language in CER_LANGUAGES else "WER"
     for lang, datasets in ML_LANG_DATASETS.items():
         col_map = {
-            f"{dataset}_{lang}_test": (f"{ML_DATASET_LABELS[dataset]} WER", None)
+            f"{dataset}_{lang}_test": (f"{ML_DATASET_LABELS[dataset]} {metric_name}", None)
             for dataset in datasets
         }
         header = "model,RTFx," + ",".join(
-            f"{ML_DATASET_LABELS[dataset]} WER" for dataset in datasets
+            f"{ML_DATASET_LABELS[dataset]} {metric_name}" for dataset in datasets
         )
         FAMILY_CONFIGS.append((f"ml_{lang}", f"_{lang}_test", header, col_map))
 
@@ -736,7 +790,7 @@ def score_results(
         print("*" * 80)
 
         for k, v in results.items():
-            metrics = f"{k}: WER = {v['wer']:0.2f} %"
+            metrics = f"{k}: {metric_name} = {v['wer']:0.2f} %"
             if v["rtfx"] is not None:
                 metrics += f", RTFx = {v['rtfx']:0.2f}"
             print(metrics)
@@ -764,7 +818,7 @@ def score_results(
         print("*" * 80)
         for k, v in composite_wer.items():
             wer = v / count_entries[k]
-            print(f"{k}: WER = {wer:0.2f} %")
+            print(f"{k}: {metric_name} = {wer:0.2f} %")
         for k in composite_audio_length:
             if composite_audio_length[k] is not None:
                 rtfx = composite_audio_length[k] / composite_inference_time[k]
@@ -836,7 +890,7 @@ def score_results(
                         if original_model_id is not None
                         else model_key.strip()
                     )
-                    print(f"avg WER ({label}) = {avg}")
+                    print(f"avg {metric_name} ({label}) = {avg}")
 
         print(header)
 
@@ -949,7 +1003,7 @@ def score_results(
         if families is not None and family_key not in families:
             continue
         if family_key.startswith("ml_"):
-            family_name = family_key[len("ml_") :]  # "de", "fr", "it", "es", "pt", "nl", "hy"
+            family_name = family_key[len("ml_") :]  # "de", "fr", "it", "es", "pt", "nl", "hy", "zh"
         else:
             family_name = (
                 family_key.capitalize()

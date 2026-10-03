@@ -8,6 +8,7 @@
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-qwen}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
+CHINESE_DATASET_PATH="${CHINESE_DATASET_PATH:-steven0226/open-asr-leaderboard-multilingual-datasets}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MAX_NEW_TOKENS=256
@@ -40,8 +41,9 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch
-# Each entry is a config of ${DATASET_PATH}.
+# German, French, Italian, Spanish, Portuguese, Dutch, Chinese
+# "fleurs zh" is a config of ${CHINESE_DATASET_PATH};
+# all others are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -49,6 +51,7 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -74,6 +77,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         CONFIG_NAME="${DATASET}_${LANGUAGE}"
+        JOB_DATASET="${DATASET_PATH}"
+        [[ "$LANGUAGE" == "zh" ]] && JOB_DATASET="${CHINESE_DATASET_PATH}"
         echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
@@ -92,7 +97,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset=${DATASET_PATH} \
+                    --dataset=${JOB_DATASET} \
                     --config_name=${CONFIG_NAME} \
                     --language=${LANGUAGE} \
                     --split=test \

@@ -4,19 +4,20 @@ export PYTHONPATH="..":$PYTHONPATH
 
 # Available omniASR models
 MODEL_CONFIGS=(
-    "facebook/omniASR-CTC-300M hy" "facebook/omniASR-CTC-1B hy" "facebook/omniASR-CTC-3B hy" "facebook/omniASR-CTC-7B de fr it es pt nl"
-    "facebook/omniASR-CTC-300M-v2 de fr it es pt nl" "facebook/omniASR-CTC-1B-v2 de fr it es pt nl" "facebook/omniASR-CTC-3B-v2 de fr it es pt nl" "facebook/omniASR-CTC-7B-v2 de fr it es pt nl"
-    "facebook/omniASR-LLM-300M hy" "facebook/omniASR-LLM-1B hy" "facebook/omniASR-LLM-3B hy" "facebook/omniASR-LLM-7B de fr it es pt nl"
-    "facebook/omniASR-LLM-300M-v2 de fr it es pt nl" "facebook/omniASR-LLM-1B-v2 de fr it es pt nl" "facebook/omniASR-LLM-3B-v2 de fr it es pt nl" "facebook/omniASR-LLM-7B-v2 de fr it es pt nl"
+    "facebook/omniASR-CTC-300M hy zh" "facebook/omniASR-CTC-1B hy zh" "facebook/omniASR-CTC-3B hy zh" "facebook/omniASR-CTC-7B de fr it es pt nl zh"
+    "facebook/omniASR-CTC-300M-v2 de fr it es pt nl zh" "facebook/omniASR-CTC-1B-v2 de fr it es pt nl zh" "facebook/omniASR-CTC-3B-v2 de fr it es pt nl zh" "facebook/omniASR-CTC-7B-v2 de fr it es pt nl zh"
+    "facebook/omniASR-LLM-300M hy zh" "facebook/omniASR-LLM-1B hy zh" "facebook/omniASR-LLM-3B hy zh" "facebook/omniASR-LLM-7B de fr it es pt nl zh"
+    "facebook/omniASR-LLM-300M-v2 de fr it es pt nl zh" "facebook/omniASR-LLM-1B-v2 de fr it es pt nl zh" "facebook/omniASR-LLM-3B-v2 de fr it es pt nl zh" "facebook/omniASR-LLM-7B-v2 de fr it es pt nl zh"
     )
 BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
 
 # Multilingual datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
+CHINESE_DATASETS="steven0226/open-asr-leaderboard-multilingual-datasets"
 
 DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl hy"
+DATASET_LANGS_fleurs="de fr it es pt nl hy zh"
 DATASET_LANGS_mcv="de es fr it nl hy"
 DATASET_LANGS_mls="es fr it pt nl"
 
@@ -28,6 +29,7 @@ run_evaluation() {
     local config_name="${dataset}_${language}"
     local dataset_path="$DATASETS"
     [[ "$language" == "hy" ]] && dataset_path="$ARMENIAN_DATASETS"
+    [[ "$language" == "zh" ]] && dataset_path="$CHINESE_DATASETS"
 
     echo ""
     echo "Running multilingual evaluation: $config_name"
