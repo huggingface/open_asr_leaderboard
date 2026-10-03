@@ -3,21 +3,22 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Available omniASR models
-MODEL_IDs=(
-    "facebook/omniASR-CTC-300M" "facebook/omniASR-CTC-1B" "facebook/omniASR-CTC-3B" "facebook/omniASR-CTC-7B"
-    "facebook/omniASR-CTC-300M-v2" "facebook/omniASR-CTC-1B-v2" "facebook/omniASR-CTC-3B-v2" "facebook/omniASR-CTC-7B-v2"
-    "facebook/omniASR-LLM-300M" "facebook/omniASR-LLM-1B" "facebook/omniASR-LLM-3B" "facebook/omniASR-LLM-7B"
-    "facebook/omniASR-LLM-300M-v2" "facebook/omniASR-LLM-1B-v2" "facebook/omniASR-LLM-3B-v2" "facebook/omniASR-LLM-7B-v2"
+MODEL_CONFIGS=(
+    "facebook/omniASR-CTC-300M hy zh" "facebook/omniASR-CTC-1B hy zh" "facebook/omniASR-CTC-3B hy zh" "facebook/omniASR-CTC-7B de fr it es pt nl zh"
+    "facebook/omniASR-CTC-300M-v2 de fr it es pt nl zh" "facebook/omniASR-CTC-1B-v2 de fr it es pt nl zh" "facebook/omniASR-CTC-3B-v2 de fr it es pt nl zh" "facebook/omniASR-CTC-7B-v2 de fr it es pt nl zh"
+    "facebook/omniASR-LLM-300M hy zh" "facebook/omniASR-LLM-1B hy zh" "facebook/omniASR-LLM-3B hy zh" "facebook/omniASR-LLM-7B de fr it es pt nl zh"
+    "facebook/omniASR-LLM-300M-v2 de fr it es pt nl zh" "facebook/omniASR-LLM-1B-v2 de fr it es pt nl zh" "facebook/omniASR-LLM-3B-v2 de fr it es pt nl zh" "facebook/omniASR-LLM-7B-v2 de fr it es pt nl zh"
     )
 BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
 
 # Multilingual datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
+ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 CHINESE_DATASETS="steven0226/open-asr-leaderboard-multilingual-datasets"
 
 DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl zh"
-DATASET_LANGS_mcv="de es fr it nl"
+DATASET_LANGS_fleurs="de fr it es pt nl hy zh"
+DATASET_LANGS_mcv="de es fr it nl hy"
 DATASET_LANGS_mls="es fr it pt nl"
 
 # Function to run multilingual evaluation
@@ -27,6 +28,7 @@ run_evaluation() {
     local language=$3
     local config_name="${dataset}_${language}"
     local dataset_path="$DATASETS"
+    [[ "$language" == "hy" ]] && dataset_path="$ARMENIAN_DATASETS"
     [[ "$language" == "zh" ]] && dataset_path="$CHINESE_DATASETS"
 
     echo ""
@@ -59,11 +61,11 @@ run_evaluation() {
     return $exit_code
 }
 
-num_models=${#MODEL_IDs[@]}
+num_models=${#MODEL_CONFIGS[@]}
 
 for (( i=0; i<${num_models}; i++ ));
 do
-    MODEL_ID=${MODEL_IDs[$i]}
+    read -r MODEL_ID MODEL_LANGUAGES <<< "${MODEL_CONFIGS[$i]}"
 
     echo "========================================================"
     echo "Model: $MODEL_ID"
@@ -79,6 +81,9 @@ do
             echo ""
 
             for language in $languages; do
+                if [[ " $MODEL_LANGUAGES " != *" $language "* ]]; then
+                    continue
+                fi
                 run_evaluation "$MODEL_ID" "$dataset" "$language"
             done
         fi

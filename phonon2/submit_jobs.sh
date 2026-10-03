@@ -1,9 +1,10 @@
 #!/bin/bash
-# Local script to submit HF Jobs for Granite ASR evaluation.
+# Local script to submit HF Jobs for Phonon-2 (FermionResearch/Phonon-2) ASR evaluation
+# (Transformers path, see README.md).
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-granite}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-phonon2}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
@@ -12,10 +13,16 @@ ORG_NAME="${ORG_NAME:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Set USE_LOCAL_SCRIPT=1 to run your local eval script instead of the version
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
-# The script is picked per model type below, so the injection is built there.
 USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+LOCAL_SCRIPT_INJECT=""
+if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
+    # run_eval.py imports fermion_container from its own directory, so ship it too.
+    FERMION_CONTAINER_B64=$(base64 -w0 "${SCRIPT_DIR}/fermion_container.py")
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py && echo '${FERMION_CONTAINER_B64}' | base64 -d > /app/fermion_container.py &&"
+fi
 
 # Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
 # job (so normalizer changes take effect without updating the HF Space).
@@ -23,18 +30,12 @@ USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
 LOCAL_NORMALIZER_INJECT=""
 if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
     NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
-    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
+    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar --no-same-owner -xzf - -C /app &&"
 fi
 
-# ── Models: "model_id type batch_size [revision]" ─────────────────────────────
-# Types: speculative, speculative_bpe, nar, ctc
-# revision: optional 4th field, a model repo commit/branch/tag. Only the ctc
-# eval script accepts --revision today; omit it for the other types.
+# ── Models: "model_id batch_size" ────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "ibm-granite/granite-4.0-1b-speech speculative 256"
-    "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
-    "ibm-granite/granite-speech-5.0-470m-turboctc ctc 128 78b07c8e131eede3d59b95545efc8506b45a505b"
-    "ibm-granite/granite-speech-5.0-470m-turboctc-nc ctc 128 05b33f57fe08aae7a0365c7e096a42658f8a28ac"
+    "FermionResearch/Phonon-2 64"
 )
 
 # ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
@@ -52,7 +53,7 @@ DATASET_CONFIGS=(
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first
-# field of each DATASET_CONFIGS entry
+# field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="librispeech spgispeech" bash <this script>
 if [[ -n "${ONLY_DATASETS:-}" ]]; then
@@ -77,13 +78,11 @@ fi
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_TYPE BATCH_SIZE REVISION <<< "$model_cfg"
-    REVISION_ARG=""
-    [[ -n "$REVISION" ]] && REVISION_ARG="--revision=${REVISION}"
+    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
-    echo "  Evaluating: ${MODEL_ID} (${MODEL_TYPE}, batch_size=${BATCH_SIZE}${REVISION:+, revision=${REVISION}})"
+    echo "  Evaluating: ${MODEL_ID}"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
@@ -97,35 +96,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_CONFIG="$DATASET"
         fi
 
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE}"
-
-        # Build command based on model type
-        if [[ "$MODEL_TYPE" == "speculative" ]]; then
-            EVAL_SCRIPT="run_eval_speculative.py"
-            EXTRA_ARGS="--num_beams=2 --max_new_tokens=200 --confidence_threshold=0.2 --ctc_threshold=0.7"
-        elif [[ "$MODEL_TYPE" == "speculative_bpe" ]]; then
-            EVAL_SCRIPT="run_eval_speculative_bpe.py"
-            EXTRA_ARGS="--num_beams=2 --max_new_tokens=200 --confidence_threshold=0.4 --ctc_threshold=0.0"
-        elif [[ "$MODEL_TYPE" == "nar" ]]; then
-            EVAL_SCRIPT="run_eval_nar.py"
-            EXTRA_ARGS=""
-        elif [[ "$MODEL_TYPE" == "ctc" ]]; then
-            EVAL_SCRIPT="run_eval_ctc.py"
-            EXTRA_ARGS=""
-        else
-            echo "ERROR: Unknown model type: ${MODEL_TYPE}" >&2
-            exit 1
-        fi
-
-        LOCAL_SCRIPT_INJECT=""
-        if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-            if [[ ! -f "${SCRIPT_DIR}/${EVAL_SCRIPT}" ]]; then
-                echo "ERROR: ${SCRIPT_DIR}/${EVAL_SCRIPT} not found (needed for type ${MODEL_TYPE})" >&2
-                exit 1
-            fi
-            RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/${EVAL_SCRIPT}")
-            LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/${EVAL_SCRIPT} &&"
-        fi
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -134,24 +105,22 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --flavor "$FLAVOR" \
             --timeout 8h \
             --env HF_TOKEN="$HF_TOKEN" \
-            --env PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
-            --env PYTORCH_ALLOC_CONF="expandable_segments:True" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
                 ${LOCAL_NORMALIZER_INJECT}
                 ${LOCAL_SCRIPT_INJECT}
-                PYTHONPATH=/app python ${EVAL_SCRIPT} \
+                PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
-                    ${REVISION_ARG} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --max_eval_samples=-1 \
-                    ${EXTRA_ARGS} &&
+                    --dtype=bfloat16 \
+                    --warmup_steps=5 \
+                    --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &

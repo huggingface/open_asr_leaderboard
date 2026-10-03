@@ -1,5 +1,5 @@
 #!/bin/bash
-# Local script to submit HF Jobs for multilingual ASR evaluation.
+# Local script to submit HF Jobs for multilingual Whisper ASR evaluation.
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_whisper_ml.sh
@@ -9,6 +9,7 @@
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
+ARMENIAN_DATASET_PATH="${ARMENIAN_DATASET_PATH:-Metric-AI/open-asr-leaderboard-multilingual-datasets}"
 CHINESE_DATASET_PATH="${CHINESE_DATASET_PATH:-steven0226/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
@@ -35,17 +36,18 @@ if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
     LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
 fi
 
-# ── Models: "model_id batch_size" ───────────────────────────────────────────
+# ── Models: "model_id batch_size languages..." ──────────────────────────────
+# Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "openai/whisper-large-v3-turbo      64"
-    "openai/whisper-large-v3            64"
+    "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi zh"
+    "openai/whisper-large-v3            64 de fr it es pt nl hy hi zh"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Chinese, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # "fleurs zh" is a config of ${CHINESE_DATASET_PATH};
-# all others are configs of ${DATASET_PATH}.
+# all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
@@ -53,6 +55,8 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs hy"
+    "mcv hy"
     "fleurs zh"
     "mcv de"
     "mcv es"
@@ -101,15 +105,27 @@ fi
 
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
+    read -r MODEL_ID BATCH_SIZE MODEL_LANGUAGES <<< "$model_cfg"
     # Sanitize model ID for use as a folder name (e.g. "openai/whisper" -> "openai-whisper")
     MODEL_FOLDER="${MODEL_ID//\//-}"
+
+    MODEL_DATASET_CONFIGS=()
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r _dataset _language <<< "$cfg"
+        if [[ " $MODEL_LANGUAGES " == *" $_language "* ]]; then
+            MODEL_DATASET_CONFIGS+=("$cfg")
+        fi
+    done
+    if [[ ${#MODEL_DATASET_CONFIGS[@]} -eq 0 ]]; then
+        echo "Skipping ${MODEL_ID}: no configured dataset/language combinations selected."
+        continue
+    fi
 
     echo "████████████████████████████████████████████████████████████████████████████████"
     echo "  Evaluating: ${MODEL_ID}"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
-    for cfg in "${DATASET_CONFIGS[@]}"; do
+    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         if [[ "$DATASET" == "monsoon" ]]; then
             # Standalone single-config dataset repo — no --config_name.
@@ -118,6 +134,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             CONFIG_NAME="(none)"
         else
             JOB_DATASET="${DATASET_PATH}"
+            [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
             [[ "$LANGUAGE" == "zh" ]] && JOB_DATASET="${CHINESE_DATASET_PATH}"
             CONFIG_NAME="${DATASET}_${LANGUAGE}"
             CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
@@ -167,7 +184,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
         "./results/${MODEL_FOLDER}" > /dev/null 2>&1
 
-    EXPECTED=${#DATASET_CONFIGS[@]}
+    EXPECTED=${#MODEL_DATASET_CONFIGS[@]}
     ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
     if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
         echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
@@ -179,7 +196,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
     # Collect the set of languages actually evaluated (across all datasets)
     ALL_LANGUAGES=()
-    for cfg in "${DATASET_CONFIGS[@]}"; do
+    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         if [[ ! " ${ALL_LANGUAGES[*]} " == *" ${LANGUAGE} "* ]]; then
             ALL_LANGUAGES+=("$LANGUAGE")

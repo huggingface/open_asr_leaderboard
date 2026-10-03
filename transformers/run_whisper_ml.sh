@@ -6,9 +6,12 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
-MODEL_IDs=(
-    "openai/whisper-large-v3"
-    "openai/whisper-large-v3-turbo"
+# The language list after each model ID limits that model's evaluations.
+MODEL_CONFIGS=(
+    "openai/whisper-large-v3 de fr it es pt nl hy zh"
+    "openai/whisper-large-v3-turbo de fr it es pt nl zh"
+    "facebook/mms-1b-all hy"
+    "facebook/seamless-m4t-v2-large hy"
 )
 
 BATCH_SIZE=64
@@ -16,12 +19,13 @@ DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
+ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 CHINESE_DATASETS="steven0226/open-asr-leaderboard-multilingual-datasets"
 
-# # German, French, Italian, Spanish, Portuguese, Dutch, Chinese
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese
 DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl zh"
-DATASET_LANGS_mcv="de es fr it nl"
+DATASET_LANGS_fleurs="de fr it es pt nl hy zh"
+DATASET_LANGS_mcv="de es fr it nl hy"
 DATASET_LANGS_mls="es fr it pt nl"
 
 # Function to run evaluation
@@ -31,6 +35,7 @@ run_evaluation() {
     local language=$3
     local config_name="${dataset}_${language}"
     local dataset_path="$DATASETS"
+    [[ "$language" == "hy" ]] && dataset_path="$ARMENIAN_DATASETS"
     [[ "$language" == "zh" ]] && dataset_path="$CHINESE_DATASETS"
 
     echo ""
@@ -74,7 +79,8 @@ echo "Device: $DEVICE_ID"
 echo ""
 
 # Run evaluations for all models
-for MODEL_ID in "${MODEL_IDs[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID MODEL_LANGUAGES <<< "$model_cfg"
     echo ""
     echo "Processing Model: $MODEL_ID"
     echo "========================================================"
@@ -90,6 +96,9 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         echo ""
 
         for language in $languages; do
+            if [[ " $MODEL_LANGUAGES " != *" $language "* ]]; then
+                continue
+            fi
             run_evaluation "$MODEL_ID" "$dataset" "$language"
         done
     done

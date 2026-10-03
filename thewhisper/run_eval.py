@@ -2,105 +2,83 @@ import argparse
 import os
 
 import evaluate
-import numpy as np
 import torch
+from huggingface_hub import get_safetensors_metadata
 from normalizer import data_utils
 from tqdm import tqdm
-from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
-from huggingface_hub import snapshot_download
+from transformers import AutoProcessor, AutoTokenizer
+
+from elastic_models.transformers import WhisperForConditionalGeneration
+from elastic_models.transformers.pipelines.asr_vad_chunked import TheStageASRPipelineVAD
+
 
 wer_metric = evaluate.load("wer")
+torch.set_float32_matmul_precision("high")
 
 
 def main(args):
-    model_source = args.model_id
-    if args.revision is not None:
-        model_source = snapshot_download(repo_id=args.model_id, revision=args.revision)
+    torch_dtype = torch.float16
 
-    feature_extractor = AutoFeatureExtractor.from_pretrained(
-        model_source, trust_remote_code=True
-    ).cuda()
-    model = AutoModel.from_pretrained(
-        model_source, trust_remote_code=True
-    ).cuda()
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_source, trust_remote_code=True
+    # TheStage AI compiled engines (TensorRT). The same revision pins the configs and the engines;
+    # without it elastic_models falls back to the latest tag of the model repo.
+    model = WhisperForConditionalGeneration.from_pretrained(
+        args.model_id,
+        torch_dtype=torch_dtype,
+        mode=args.mode,
+        chunk_length=args.chunk_length,
+        revision=args.revision,
+        elastic_revision=args.revision,
+    ).to(args.device)
+    model.eval()
+    # The encoder and decoder layers run as TensorRT engines rather than PyTorch parameters, so the total
+    # number of parameters is read from the checkpoint of the same revision.
+    num_params = sum(get_safetensors_metadata(args.model_id, revision=args.revision).parameter_count.values())
+    print(f"Model size: {num_params / 1e9:.2f}B parameters")
+    processor = AutoProcessor.from_pretrained(
+        args.model_id,
+        revision=args.revision,
+        chunk_length=args.chunk_length,
+        tokenizer=AutoTokenizer.from_pretrained(args.model_id, revision=args.revision, use_fast=True),
     )
+    sampling_rate = processor.feature_extractor.sampling_rate
+    # TheStage AI ASR pipeline, as in run_eval_longform.py: log-Mel features are computed on the GPU; inputs
+    # longer than the `chunk_length` window are split at pauses by Silero VAD and the pieces joined.
+    cuda_device = torch.device("cuda", args.device)
+    asr_pipeline = TheStageASRPipelineVAD(model, processor, cuda_device, feature_extractor_device=cuda_device)
 
-    def get_sub_batch_output(sub_batch):
-        """Get output from model on sub batch."""
-
-        features = feature_extractor(sub_batch, return_tensors="pt")
-        inputs = features["input_features"]
-
-        if inputs.shape[1] < 8:
-            # Shortcut for inputs too short to process
-            pred_text = ["" for _ in inputs]
-        else:
-            # Get output from model
-            outputs = model(inputs, mask=features["mask"])
-
-            # Decode text
-            pred_text = tokenizer.decode_from_logits(outputs["logits"], outputs["mask"])
-        return pred_text
+    # The generation config of the checkpoint (suppress_tokens included) is used as shipped.
+    # forced_decoder_ids would override the language passed to the pipeline below.
+    model.generation_config.forced_decoder_ids = None
+    model.generation_config.cache_implementation = "flexi-static"
+    gen_kwargs = {"num_beams": 1, "do_sample": False, "disable_compile": True}
+    if args.max_new_tokens is not None:
+        gen_kwargs["max_new_tokens"] = args.max_new_tokens
 
     def benchmark(batch):
         # Load audio inputs
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
-        sampling_rate = batch["audio"][0]["sampling_rate"]
         batch["audio_length_s"] = [len(audio) / sampling_rate for audio in audios]
         batch["audio_filepath"] = data_utils.extract_audio_filepaths_from_batch(batch, minibatch_size)
 
         # START TIMING
-        torch.cuda.synchronize()
+        torch.cuda.synchronize(device=args.device)
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
         start_event.record()
 
-        # Divide data into sub-batches that maximize the total audio length
-        # that can fit within the specified limit
-        sort_idxs = np.argsort([len(x) for x in audios])
-        all_out = [None for _ in audios]
-        sorted_audios = [audios[i] for i in sort_idxs]
-        sub_batch = []
-        sub_batch_idxs = []  # Track which sorted indices are in sub_batch
-
-        for i, audio in enumerate(sorted_audios):
-            n_samples = len(audio) * (len(sub_batch) + 1)
-
-            if n_samples >= args.subbatch_samples:
-                # When we reach the size limit, get output from sub-batch
-                pred_text = get_sub_batch_output(sub_batch)
-
-                # Put sub-batch outputs back into the appropriate spots in the overall
-                # batch
-                for j in range(len(sub_batch)):
-                    target_idx = sort_idxs[sub_batch_idxs[j]]
-                    assert all_out[target_idx] is None
-                    all_out[target_idx] = pred_text[j]
-
-                sub_batch = []
-                sub_batch_idxs = []
-
-            sub_batch.append(audio)
-            sub_batch_idxs.append(i)
-
-        # Process any leftover items
-        if sub_batch:
-            pred_text = get_sub_batch_output(sub_batch)
-
-            for j in range(len(sub_batch)):
-                target_idx = sort_idxs[sub_batch_idxs[j]]
-                assert all_out[target_idx] is None
-                all_out[target_idx] = pred_text[j]
-
-        assert all(x is not None for x in all_out)
-        pred_text = all_out
+        outputs = asr_pipeline(
+            list(audios),
+            batch_size=args.batch_size,
+            chunk_length_s=args.chunk_length,
+            generate_kwargs=gen_kwargs,
+            lang_ids=["en"] * minibatch_size,
+        )
+        pred_text = [output["text"] for output in outputs]
 
         # END TIMING
         end_event.record()
-        torch.cuda.synchronize()
+        torch.cuda.synchronize(device=args.device)
         runtime = start_event.elapsed_time(end_event) / 1000.0
 
         # normalize by minibatch size since we want the per-sample time
@@ -112,18 +90,14 @@ def main(args):
 
     if args.warmup_steps is not None:
         dataset = data_utils.load_data(args)
-        dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate)
+        dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
 
         num_warmup_samples = args.warmup_steps * args.batch_size
         if args.streaming:
             warmup_dataset = dataset.take(num_warmup_samples)
         else:
-            warmup_dataset = dataset.select(
-                range(min(num_warmup_samples, len(dataset)))
-            )
-        warmup_dataset = iter(
-            warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True)
-        )
+            warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
@@ -135,7 +109,7 @@ def main(args):
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate)
+    dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
 
     dataset = dataset.map(
         benchmark,
@@ -143,10 +117,6 @@ def main(args):
         batched=True,
         remove_columns=["audio"],
     )
-
-    # The weights live in the exported graph, which is loaded on the first forward pass,
-    # so count them only now.
-    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.3f}B parameters")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
 
@@ -165,6 +135,7 @@ def main(args):
             all_results[key].append(result[key])
 
     # Write manifest results (WER and RTFX)
+    # Filtering of empty references is handled inside write_manifest.
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],
@@ -191,13 +162,9 @@ def main(args):
 
     norm_refs = [data_utils.normalizer(r) for r in references]
     norm_preds = [data_utils.normalizer(p) for p in predictions]
-    wer = wer_metric.compute(
-        references=norm_refs, predictions=norm_preds
-    )
+    wer = wer_metric.compute(references=norm_refs, predictions=norm_preds)
     wer = round(100 * wer, 2)
-    rtfx = round(
-        sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2
-    )
+    rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
     print("WER:", wer, "%", "RTFx:", rtfx)
 
 
@@ -207,8 +174,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_id",
         type=str,
+        default="TheStageAI/thewhisper-large-v3-turbo",
+        help="Model identifier on the Hugging Face Hub.",
+    )
+    parser.add_argument(
+        "--revision",
+        type=str,
         required=True,
-        help="Model identifier. Should be loadable with 🤗 Transformers",
+        help="Model repo revision (commit hash). Pins both the configs and the compiled engines.",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="XL",
+        choices=["S", "M", "L", "XL"],
+        help="TheStage AI engine size.",
+    )
+    parser.add_argument(
+        "--chunk_length",
+        type=int,
+        default=30,
+        help="Input window of the compiled engines, in seconds.",
     )
     parser.add_argument(
         "--dataset_path",
@@ -220,8 +206,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        help="Dataset name. *E.g.* `'librispeech_asr` for the LibriSpeech ASR dataset, or `'common_voice'` for Common Voice. The full list of dataset names "
-        "can be found at `https://huggingface.co/datasets/hf-audio/open-asr-leaderboard`",
+        help="Dataset name, e.g. `voxpopuli_cleaned_aa`.",
     )
     parser.add_argument(
         "--split",
@@ -230,9 +215,15 @@ if __name__ == "__main__":
         help="Split of the dataset. *E.g.* `'validation`' for the dev split, or `'test'` for the test split.",
     )
     parser.add_argument(
+        "--device",
+        type=int,
+        default=0,
+        help="The GPU to run on.",
+    )
+    parser.add_argument(
         "--batch_size",
         type=int,
-        default=16,
+        default=128,
         help="Number of samples to go through each streamed batch.",
     )
     parser.add_argument(
@@ -243,32 +234,22 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--streaming",
-        dest="streaming",
         action="store_true",
-        help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
+        help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=None,
+        help="Maximum number of tokens to generate (for auto-regressive models).",
     )
     parser.add_argument(
         "--warmup_steps",
         type=int,
-        default=10,
+        default=2,
         help="Number of warm-up steps to run before launching the timed runs.",
     )
-    parser.add_argument(
-        "--subbatch_samples",
-        type=int,
-        default=int(1e6),
-        help="Maximum number of audio samples per sub batch (set based on available GPU memory).",
-    )
-    parser.add_argument(
-        "--revision",
-        type=str,
-        default=None,
-        help="Model revision to use (branch, tag, or commit hash). Defaults to the model's default revision.",
-    )
     args = parser.parse_args()
-
-    print("*" * 100)
-    print(f"Evaluating {args.model_id} on {args.dataset_path} / {args.dataset} / {args.split}")
-    print("*" * 100)
+    parser.set_defaults(streaming=False)
 
     main(args)
