@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+from tqdm import tqdm
+
 DATASET_ID = "besimple-ai/voice-code-bench"
 DATASET_REVISION = "bef2824f83ef1c796f3e79731a3b0741708730df"
 VERIFIER_ID = "openai_gpt_5_5_v1"
@@ -72,7 +74,7 @@ def score_manifest(manifest, metadata, *, cache, cache_mode="replay", allow_part
 
     config = load_verifier_config(VERIFIER_ID)
     details = []
-    for row in manifest:
+    for row in tqdm(manifest, desc="Verifying entities", unit="recording"):
         datapoint = targets[row["audio_id"]]
         # Keep punctuation, case, digits and spacing. WER normalization can
         # destroy the exact values CTEM is intended to measure.
