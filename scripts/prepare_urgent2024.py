@@ -7,6 +7,7 @@
 # ///
 
 import io
+import re
 import sys
 
 import soundfile as sf
@@ -62,13 +63,14 @@ for subset in ["noisy", "clean"]:
         array = audio["array"]
         sampling_rate = audio["sampling_rate"]
         uid = row["id"]
+
         text = row["transcript"]
+        text_orig = text
         if uid in TRANSCRIPT_OVERRIDES:
-            print(
-                f"Utterance {uid}:\n    {text}\n -> {TRANSCRIPT_OVERRIDES[uid]}",
-                file=sys.stderr,
-            )
             text = TRANSCRIPT_OVERRIDES[uid]
+        text = re.sub(r"[()]", "", text)
+        if text != text_orig:
+            print(f"Utterance {uid}:\n    {text_orig}\n -> {text}", file=sys.stderr)
 
         ids.append(uid)
         texts.append(text)
