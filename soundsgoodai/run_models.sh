@@ -15,7 +15,7 @@ export PYTHONPATH=${SCRIPT_DIR}/..:${PYTHONPATH:-}
 ENGINE_CACHE=$(realpath -m "${ENGINE_CACHE:-${SCRIPT_DIR}/engines}")
 RUN_DIR=${SCRIPT_DIR}/runs/${RUN_ID}
 for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE REPORT_SUFFIX <<< ${MODEL_CONFIG}
+    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE WORKERS REPORT_SUFFIX <<< ${MODEL_CONFIG}
     # Reported name; also names the result folder.
     REPORT_NAME=${MODEL_ID}${REPORT_SUFFIX:+ ${REPORT_SUFFIX}}
 
@@ -40,6 +40,7 @@ for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
             --decoder-type="${DECODER_TYPE}" \
             --beam="${BEAM}" \
             --batch-size="${BATCH_SIZE}" \
+            --workers="${WORKERS}" \
             --dataset-path="${DATASET_PATH:-${DEFAULT_DATASET_PATH}}" \
             --dataset="${DATASET}" \
             --split="${SPLIT}"

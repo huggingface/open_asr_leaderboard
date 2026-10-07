@@ -77,7 +77,7 @@ mkdir "${LOCAL_DIR}"  # Do not mix the current run with existing local results.
 # above it; the local DATASET_CONFIGS is what that job evaluates.
 job_command() {
     local -a DATASET_CONFIGS=("$@")
-    declare -p MODEL_ID REPORT_NAME MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE \
+    declare -p MODEL_ID REPORT_NAME MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE WORKERS \
         DEFAULT_DATASET_PATH DATASET_CONFIGS COMMON_ARGS DESTINATION
     echo "${LOCAL_NORMALIZER_INJECT}"
     echo "${LOCAL_SCRIPT_INJECT}"
@@ -91,13 +91,14 @@ for CONFIG in "${DATASET_CONFIGS[@]}"; do
     if [[ -n ${DATASET_PATH} ]]; then
         DATASET_CONFIG=
     fi
-    echo "Evaluating ${REPORT_NAME}: ${DATASET} ${SPLIT}, batch ${BATCH_SIZE}, beam ${BEAM}"
+    echo "Evaluating ${REPORT_NAME}: ${DATASET} ${SPLIT}, batch ${BATCH_SIZE}, workers ${WORKERS}, beam ${BEAM}"
     python /app/run_eval.py "${COMMON_ARGS[@]}" \
         --engine-cache=/app/engines \
         --model-id="${MODEL_ID}" --report-name="${REPORT_NAME}" \
         --model-family="${MODEL_TYPE}" \
         --checkpoint-file="${CHECKPOINT_FILE}" --decoder-type="${DECODER_TYPE}" \
         --beam="${BEAM}" --batch-size="${BATCH_SIZE}" \
+        --workers="${WORKERS}" \
         --dataset-path="${DATASET_PATH:-${DEFAULT_DATASET_PATH}}" \
         --dataset="${DATASET_CONFIG}" --split="${SPLIT}" \
         2>&1 | tee "${DESTINATION}/${DATASET}-${SPLIT}.log"
@@ -130,7 +131,7 @@ submit_job() {
 }
 
 for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE REPORT_SUFFIX <<< ${MODEL_CONFIG}
+    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE WORKERS REPORT_SUFFIX <<< ${MODEL_CONFIG}
     # Reported name; also names the result folder and the bucket path.
     REPORT_NAME=${MODEL_ID}${REPORT_SUFFIX:+ ${REPORT_SUFFIX}}
     MODEL_FOLDER=$(model_folder "${REPORT_NAME}")

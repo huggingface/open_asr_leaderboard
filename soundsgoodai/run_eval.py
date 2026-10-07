@@ -2,8 +2,9 @@
 """Evaluate one English dataset with Fast GPU ASR's TensorRT runtime.
 
 Checkpoints are resolved from the Hub and exported on the selected GPU. Audio
-is resampled and sorted by decreasing length before five warm-ups and one
-measured pass by default. Timings cover the synchronized full ASR call,
+is resampled and sorted by decreasing length before five warm-ups per worker
+and one measured pass. One ASR instance is used by default. Timings cover
+the wall clock of the queue of synchronized full ASR calls,
 including text and timestamps, but exclude loading, export, audio preparation,
 and scoring. RTFx divides real audio duration by total measured inference time.
 
@@ -18,7 +19,7 @@ import json
 import subprocess
 from argparse import ArgumentParser, Namespace
 from audioop import ratecv
-from collections.abc import Iterable
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -135,6 +136,12 @@ def parse_args() -> Namespace:
         help="Fixed engine batch capacity; the final partial batch is included.",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Independent ASR instances on the selected GPU.",
+    )
+    parser.add_argument(
         "--beam",
         type=int,
         required=True,
@@ -205,15 +212,15 @@ def parse_args() -> Namespace:
         "--warmup-steps",
         type=int,
         default=5,
-        help="Calls on the first real batch excluded from reported timings.",
+        help="Calls on the first real batch per worker excluded from reported timings.",
     )
     parser.set_defaults(streaming=False)
     args = parser.parse_args()
 
     if not args.report_name:
         args.report_name = args.model_id
-    if args.batch_size < 1 or args.beam < 1:
-        parser.error("batch_size and beam must be positive.")
+    if args.batch_size < 1 or args.beam < 1 or args.workers < 1:
+        parser.error("batch_size, beam, and workers must be positive.")
     if args.warmup_steps < 0 or args.max_eval_samples == 0 or args.max_eval_samples < -1:
         parser.error(
             "warmup_steps must be nonnegative; max_eval_samples must be -1 or positive."
@@ -408,51 +415,122 @@ def export_bundle(
 
 
 def benchmark(
-    original_text: list[str],
-    audio: Iterable[dict[str, int | list[float] | np.typing.NDArray[np.float32]]],
-    backend: ASR,
-) -> dict[str, list[str | float]]:
-    """Transcribe one real batch and return references, predictions, and timings.
+    dataset: Dataset, backends: list[ASR], batch_size: int, warmup_steps: int
+) -> dict[str, list[str | int | float | None]]:
+    """Transcribe a dataset with independent ASR instances and measure throughput.
 
-    Float32 conversion is excluded from timing. The ASR stream is synchronized
-    before and after the call, so staging, transfers, decoding, text, and word
-    timestamps are included. Real durations exclude padding; elapsed batch time
-    is split equally across rows to preserve summed inference time, not to
-    estimate individual-request latency.
+    Materialize contiguous float32 audio in host memory before timing. Keep one
+    call in flight per instance and synchronize its stream before assigning the
+    next batch. Every batch, including the partial tail, is evaluated once after
+    warmup; completion order does not change the returned row order.
+
+    Queue wall time starts before the first submission and includes scheduling,
+    full ASR calls, stream synchronization, progress updates, and bookkeeping.
+    Audio preparation, warmups, and final result aggregation are excluded. Text
+    and word timestamps are both computed, but timestamps are not returned.
+    Garbage collection is left unchanged.
 
     Parameters
     ----------
-    original_text : list[str]
-        Raw reference transcripts in the same order as the audio.
-    audio : Iterable[dict[str, int | list[float] | np.typing.NDArray[np.float32]]]
-        Prepared mono audio at ``SAMPLE_RATE``, with waveform values under ``array``.
-    backend : ASR
-        Loaded runtime and its synchronization stream.
+    dataset : Dataset
+        Nonempty prepared dataset with mono 16 kHz waveforms in ``audio.array``
+        and reference transcripts in ``original_text``. Rows are batched in
+        their existing order; this function does not sort or resample them.
+    backends : list[ASR]
+        Nonempty list of distinct instances with the same model and decoding
+        settings on the selected GPU. Instances must not be used concurrently
+        elsewhere. At most one instance per batch is activated.
+    batch_size : int
+        Positive number of rows per call, within each engine's batch capacity.
+        The final batch may contain fewer rows.
+    warmup_steps : int
+        Nonnegative number of untimed calls on the first batch for each active
+        instance. Warmup predictions are discarded.
 
     Returns
     -------
-    dict[str, list[str | float]]
-        References, predictions, real durations, and equally divided batch
-        timings, with one entry per input clip.
+    dict[str, list[str | int | float | None]]
+        Lists in dataset order: ``references``, ``predictions``,
+        ``audio_length_s``, ``transcription_time_s``, ``audio_filepaths``, and
+        available chunk metadata. Audio durations exclude padding. Each row's
+        transcription time is an equal share of total queue wall time, not a
+        per-clip latency. Pooled RTFx is the sum of audio durations divided by
+        the sum of these time shares.
+
+    Raises
+    ------
+    ValueError
+        The dataset or backend list is empty.
+    RuntimeError
+        A call returns a different number of transcripts or timestamp lists
+        than input clips. Inference failures also propagate; submitted worker
+        calls return or raise before the executor exits.
     """
 
-    audios = [np.ascontiguousarray(clip["array"], dtype=np.float32) for clip in audio]
+    batches = list(dataset.iter(batch_size=batch_size))
+    if not batches or not backends:
+        raise ValueError("Evaluation requires audio batches and at least one ASR instance.")
 
-    backend.stream.synchronize()
-    start = perf_counter()
-    predictions, timestamps = backend(audios)
-    backend.stream.synchronize()
-    elapsed = perf_counter() - start
+    audios = [
+        [np.ascontiguousarray(clip["array"], dtype=np.float32) for clip in batch["audio"]]
+        for batch in batches
+    ]
 
-    if len(predictions) != len(audios) or len(timestamps) != len(audios):
-        raise RuntimeError("ASR must return one transcript and timestamp list per input.")
+    backends = backends[: len(batches)]
+    for backend in backends:
+        backend.stream.synchronize()
+        for _ in range(warmup_steps):
+            predictions, timestamps = backend(audios[0])
+            backend.stream.synchronize()
+            if len(predictions) != len(audios[0]) or len(timestamps) != len(audios[0]):
+                raise RuntimeError("ASR must return one transcript and timestamp list per input.")
 
-    return {
-        "references": original_text,
-        "predictions": predictions,
-        "audio_length_s": [len(audio) / SAMPLE_RATE for audio in audios],
-        "transcription_time_s": [elapsed / len(audios)] * len(audios),
-    }
+    outputs: dict[int, list[str]] = {}
+    with (
+        ThreadPoolExecutor(max_workers=len(backends)) as pool,
+        tqdm(total=len(batches), desc="Batches", mininterval=1.0) as progress,
+    ):
+        start = perf_counter()
+
+        pending = {
+            pool.submit(backend, audios[index]): (index, backend)
+            for index, backend in enumerate(backends)
+        }
+        next_index = len(pending)
+        while pending:
+            ready, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in ready:
+                index, backend = pending.pop(future)
+                predictions, timestamps = future.result()
+                backend.stream.synchronize()
+
+                if len(predictions) != len(audios[index]) or len(timestamps) != len(audios[index]):
+                    raise RuntimeError(
+                        "ASR must return one transcript and timestamp list per input."
+                    )
+
+                outputs[index] = predictions
+                if next_index < len(batches):
+                    pending[pool.submit(backend, audios[next_index])] = (next_index, backend)
+                    next_index += 1
+                progress.update(1)
+
+        elapsed = perf_counter() - start
+
+    results: dict[str, list[str | int | float | None]] = {}
+    for index, batch in enumerate(batches):
+        rows = {
+            "references": batch["original_text"],
+            "predictions": outputs[index],
+            "audio_length_s": [len(audio) / SAMPLE_RATE for audio in audios[index]],
+            "transcription_time_s": [elapsed / len(dataset)] * len(batch["audio"]),
+            "audio_filepaths": data_utils.extract_audio_filepaths_from_batch(batch),
+            **{key: batch[key] for key in data_utils.CHUNK_METADATA_KEYS if key in batch},
+        }
+        for key, values in rows.items():
+            results.setdefault(key, []).extend(values)
+
+    return results
 
 
 def main() -> None:
@@ -537,24 +615,11 @@ def main() -> None:
             "cuda_runtime": cp.cuda.runtime.runtimeGetVersion(),
         }
         bundle, metadata = export_bundle(args, hardware)
-        backend = ASR(bundle, device_id=args.device)
 
-        if args.warmup_steps:
-            first = next(iter(dataset.iter(batch_size=args.batch_size)))
-            for _ in range(args.warmup_steps):
-                benchmark(first["original_text"], first["audio"], backend)
-            del first
+        workers = min(args.workers, (len(dataset) + args.batch_size - 1) // args.batch_size)
+        backends = [ASR(bundle, device_id=args.device) for _ in range(workers)]
 
-        results: dict[str, list[str | int | float | None]] = {}
-        for batch in tqdm(dataset.iter(batch_size=args.batch_size), desc="Batches"):
-            batch_results = {
-                **benchmark(batch["original_text"], batch["audio"], backend),
-                "audio_filepaths": data_utils.extract_audio_filepaths_from_batch(batch),
-                **{key: batch[key] for key in data_utils.CHUNK_METADATA_KEYS if key in batch},
-            }
-            for key, values in batch_results.items():
-                results.setdefault(key, []).extend(values)
-
+        results = benchmark(dataset, backends, args.batch_size, args.warmup_steps)
         if len(results["predictions"]) != len(dataset):
             raise RuntimeError("Incomplete evaluation: not every sample was transcribed.")
 
@@ -595,8 +660,12 @@ def main() -> None:
             "samples": len(dataset),
             "audio_seconds": sum(lengths) / SAMPLE_RATE,
             "platform": platform(),
+            "active_workers": workers,
             "sort": "descending duration, ascending utterance ID",
-            "timing": "synchronized full ASR call, including text and word timestamps",
+            "timing": (
+                "queue wall time, including scheduling and synchronized full ASR calls, "
+                "including text and word timestamps"
+            ),
         }
         with open(manifest.with_suffix(".metadata.json"), "w", encoding="utf-8") as destination:
             json.dump(metadata, destination, indent=2, sort_keys=True)

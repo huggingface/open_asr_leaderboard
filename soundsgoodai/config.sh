@@ -8,14 +8,14 @@ DEFAULT_DATASET_PATH=${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}
 PARALLEL_DATASETS=${PARALLEL_DATASETS:-1}
 
 # Hub repository, export family, checkpoint filename, decoder, beam, batch size,
-# and an optional suffix appended to the reported model name (no spaces).
+# workers, and an optional suffix appended to the reported model name (no spaces).
 MODEL_CONFIGS=(
-    "soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M zipformer model.pt                  transducer_modified_beam_search 10 256 (fast-gpu-asr, transducer_modified_beam_search)"
-    "soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M zipformer model.pt                  ctc_greedy_search               1 256 (fast-gpu-asr, ctc_greedy_search)"
-    "nvidia/parakeet-tdt-0.6b-v3                      parakeet  parakeet-tdt-0.6b-v3.nemo transducer_modified_beam_search 6 256 (fast-gpu-asr)"
-    "nvidia/parakeet-tdt-0.6b-v2                      parakeet  parakeet-tdt-0.6b-v2.nemo transducer_modified_beam_search 6 256 (fast-gpu-asr)"
-    "nvidia/parakeet-ctc-0.6b                         parakeet  parakeet-ctc-0.6b.nemo    ctc_greedy_search               1 256 (fast-gpu-asr)"
-    "nvidia/parakeet-ctc-1.1b                         parakeet  parakeet-ctc-1.1b.nemo    ctc_greedy_search               1 256 (fast-gpu-asr)"
+    "soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M zipformer model.pt                  transducer_modified_beam_search 10 128 10 (fast-gpu-asr, transducer_modified_beam_search)"
+    "soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M zipformer model.pt                  ctc_greedy_search               1  128 10 (fast-gpu-asr, ctc_greedy_search)"
+    "nvidia/parakeet-tdt-0.6b-v3                      parakeet  parakeet-tdt-0.6b-v3.nemo transducer_modified_beam_search 6  128 8  (fast-gpu-asr)"
+    "nvidia/parakeet-tdt-0.6b-v2                      parakeet  parakeet-tdt-0.6b-v2.nemo transducer_modified_beam_search 6  128 8  (fast-gpu-asr)"
+    "nvidia/parakeet-ctc-0.6b                         parakeet  parakeet-ctc-0.6b.nemo    ctc_greedy_search               1  128 8  (fast-gpu-asr)"
+    "nvidia/parakeet-ctc-1.1b                         parakeet  parakeet-ctc-1.1b.nemo    ctc_greedy_search               1  128 8  (fast-gpu-asr)"
 )
 
 # Dataset label, split, optional repository (which uses its default config).

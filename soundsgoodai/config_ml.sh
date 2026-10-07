@@ -16,7 +16,7 @@ RESULTS_BUCKET=${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}
 RUN_ID=${RUN_ID:-fast-gpu-asr-ml-$(date -u +%Y%m%dT%H%M%S)}
 
 MODEL_CONFIGS=(
-    "nvidia/parakeet-tdt-0.6b-v3 parakeet parakeet-tdt-0.6b-v3.nemo transducer_modified_beam_search 6 128 (fast-gpu-asr)"
+    "nvidia/parakeet-tdt-0.6b-v3 parakeet parakeet-tdt-0.6b-v3.nemo transducer_modified_beam_search 6 128 8 (fast-gpu-asr)"
 )
 
 # Dataset configuration name and split. Configuration names are

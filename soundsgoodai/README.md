@@ -48,7 +48,7 @@ SoundFile handles audio loading. No NeMo, Icefall, k2, TorchCodec, or separate
 system CUDA toolkit is needed; the requirements file above is sufficient.
 
 Both launchers share [config.sh](config.sh): `MODEL_CONFIGS` sets each model's
-repository, family, checkpoint, decoder, beam, batch size, and optional
+repository, family, checkpoint, decoder, beam, batch size, workers, and optional
 reported-name suffix; `DATASET_CONFIGS` selects datasets; `COMMON_ARGS` sets
 precision, duration profiles, and warm-ups.
 
@@ -56,11 +56,15 @@ precision, duration profiles, and warm-ups.
 bash soundsgoodai/run_models.sh
 ```
 
-Defaults are **FP16, batch 256**, beam **10** for Zipformer RNN-T, **6** for
+Defaults are **FP16, batch 128 per worker**, beam **10** for Zipformer RNN-T, **6** for
 Parakeet TDT V2/V3, and **1** for CTC, a **0.1 / 10 / 40-second** duration profile
 (min/opt/max), optimization level **5**, and blank penalty **0.0**. The eight
 dataset splits are LibriSpeech clean/other, AMI, chunked Earnings22, GigaSpeech, SPGISpeech,
-VoxPopuli, and Monsoon English. Reduce batch sizes if needed for GPU memory.
+VoxPopuli, and Monsoon English. Reduce batch sizes or worker counts if needed for GPU memory.
+
+`MODEL_CONFIGS` sets **10 workers for Zipformer** and **8 for Parakeet** after
+the batch-size field. Each worker uses an independent ASR instance on the same
+GPU. Direct `run_eval.py` calls default to one worker; override with `--workers`.
 
 Local suites save to `soundsgoodai/runs/<RUN_ID>/<reported-name>/results/`.
 Engines are cached in `soundsgoodai/engines/`, overridable with `ENGINE_CACHE`.
@@ -156,9 +160,9 @@ configuration name (`mls_pt`) or the dataset alone (`mls`).
 `PARALLEL_DATASETS` are shared; it replaces the models, the datasets, the
 duration profile, and the batch size. The profile goes to **60 seconds**
 because FLEURS reaches 53 and overlong clips fail rather than being truncated,
-and the batch size drops to **128** to pay for it: the feature plugin stages
-one TensorRT workspace proportional to `batch_size * max_audio_seconds`, the
-English 256 x 40 s already uses 98.8% of its signed 32-bit limit, and exceeding
+and the batch size remains **128**: the feature plugin stages
+one TensorRT workspace proportional to `batch_size * max_audio_seconds`. A
+batch of 256 at 40 s uses 98.8% of its signed 32-bit limit, and exceeding
 it fails the export before any audio is read. At 60 seconds the ceiling is 172.
 Raising either one means lowering the other. `RESULTS_BUCKET` defaults to
 `hf-audio/asr_leaderboard_multilingual`, so multilingual manifests never share a
@@ -177,13 +181,14 @@ family, so every summary is normalized for the language it covers.
 - **Preparation:** use upstream reference filtering and mono 16 kHz float32 audio.
   Zipformer resamples through PCM16 `audioop.ratecv`; Parakeet uses `soxr_hq`.
   Sort by descending sample count, breaking ties by ascending utterance ID.
-- **Execution:** five warm-ups on the first batch by default, then one measured
-  pass, including the final partial batch. Inference results are never cached.
-- **Timing:** synchronize the full `ASR` call, including staging, transfers,
-  features, encoding, decoding, text, and timestamps. Exclude loading/export,
-  file I/O, resampling, sorting, and scoring.
+- **Execution:** five warm-ups on the first batch per active worker by default,
+  then one measured pass, including the final partial batch. Inference results are never cached.
+- **Timing:** measure queue wall time across synchronized full `ASR` calls,
+  including scheduling, progress updates, staging, transfers, features, encoding,
+  decoding, text, and timestamps. Exclude loading/export, file I/O, audio preparation,
+  warm-ups, sorting, final result aggregation, and scoring.
 - **RTFx:** total real audio duration / total inference time. Padding does not
-  count as audio. Batch time is shared equally among manifest rows, not measured
+  count as audio. Queue time is shared equally among dataset rows, not measured
   as per-clip latency.
 - **WER:** save raw references/predictions and audio IDs, reconstruct Earnings22
   parents in chunk order, then use the upstream compound-aware English scorer.
