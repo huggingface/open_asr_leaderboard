@@ -107,7 +107,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
+            --secrets HF_TOKEN="$HF_TOKEN" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \

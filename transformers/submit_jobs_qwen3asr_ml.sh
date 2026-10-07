@@ -118,7 +118,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
+            --secrets HF_TOKEN="$HF_TOKEN" \
             --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \

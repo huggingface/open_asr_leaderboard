@@ -137,15 +137,15 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
-            --env OPENAI_API_KEY="$OPENAI_API_KEY" \
-            --env ASSEMBLYAI_API_KEY="$ASSEMBLYAI_API_KEY" \
-            --env ELEVENLABS_API_KEY="$ELEVENLABS_API_KEY" \
-            --env REVAI_API_KEY="$REVAI_API_KEY" \
-            --env SPEECHMATICS_API_KEY="$SPEECHMATICS_API_KEY" \
-            --env AQUAVOICE_API_KEY="$AQUAVOICE_API_KEY" \
-            --env ZOOM_API_KEY="$ZOOM_API_KEY" \
-            --env AZURE_API_KEY="$AZURE_API_KEY" \
+            --secrets HF_TOKEN="$HF_TOKEN" \
+            --secrets OPENAI_API_KEY="$OPENAI_API_KEY" \
+            --secrets ASSEMBLYAI_API_KEY="$ASSEMBLYAI_API_KEY" \
+            --secrets ELEVENLABS_API_KEY="$ELEVENLABS_API_KEY" \
+            --secrets REVAI_API_KEY="$REVAI_API_KEY" \
+            --secrets SPEECHMATICS_API_KEY="$SPEECHMATICS_API_KEY" \
+            --secrets AQUAVOICE_API_KEY="$AQUAVOICE_API_KEY" \
+            --secrets ZOOM_API_KEY="$ZOOM_API_KEY" \
+            --secrets AZURE_API_KEY="$AZURE_API_KEY" \
             --env AZURE_REGION="$AZURE_REGION" \
             --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \

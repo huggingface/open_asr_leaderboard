@@ -133,7 +133,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
+            --secrets HF_TOKEN="$HF_TOKEN" \
             --env PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
             --env PYTORCH_ALLOC_CONF="expandable_segments:True" \
             ${NAMESPACE_ARG} \
