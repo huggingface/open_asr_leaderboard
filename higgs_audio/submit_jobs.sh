@@ -32,7 +32,7 @@ fi
 
 # ── Models: "model_id batch_size" ────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "bosonai/higgs-audio-v3-8b-stt-v2 64"
+    # "bosonai/higgs-audio-v3-8b-stt-v2 64"
     "bosonai/higgs-audio-v3-stt        32"
 )
 
@@ -45,9 +45,9 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test"
     "voxpopuli_cleaned_aa test"
     "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean"
-    "librispeech test.other"
     "spgispeech test"
+    "urgent2024 test"
+    "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

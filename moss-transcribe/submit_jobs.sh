@@ -32,7 +32,7 @@ fi
 
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+    # "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
 )
 
 # Pin the model repo revision for trust_remote_code stability (in case remote code changes).
@@ -47,9 +47,9 @@ DATASET_CONFIGS=(
     "ami_cleaned test 128"
     "earnings22_cleaned_aa_chunked test 128 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test 128"
-    "librispeech test.clean 128"
-    "librispeech test.other 128"
     "spgispeech test 128"
+    "urgent2024 test 128"
+    "urgent2024_clean test 128"
     "monsoon_en_in test 128 VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

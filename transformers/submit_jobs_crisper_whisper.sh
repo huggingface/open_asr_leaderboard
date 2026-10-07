@@ -33,7 +33,7 @@ fi
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
-    "nyrahealth/CrisperWhisper"
+    # "nyrahealth/CrisperWhisper"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
@@ -46,9 +46,9 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 32"
     "voxpopuli_cleaned_aa test 32"
     "earnings22_cleaned_aa_chunked test 32 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean 32"
-    "librispeech test.other 32"
     "spgispeech test 32"
+    "urgent2024 test 32"
+    "urgent2024_clean test 32"
     "monsoon_en_in test 32 VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

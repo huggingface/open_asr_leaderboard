@@ -33,10 +33,10 @@ fi
 
 # ── Models: "model_id batch_size" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    "usefulsensors/moonshine-streaming-tiny   1024"
-    "usefulsensors/moonshine-streaming-small  512"
-    "usefulsensors/moonshine-streaming-medium 512"
-    "usefulsensors/moonshine-tiny              1024"
+    # "usefulsensors/moonshine-streaming-tiny   1024"
+    # "usefulsensors/moonshine-streaming-small  512"
+    # "usefulsensors/moonshine-streaming-medium 512"
+    # "usefulsensors/moonshine-tiny              1024"
     # "usefulsensors/moonshine-base             1024"
 )
 
@@ -49,9 +49,9 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test"
     "voxpopuli_cleaned_aa test"
     "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean"
-    "librispeech test.other"
     "spgispeech test"
+    "urgent2024 test"
+    "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

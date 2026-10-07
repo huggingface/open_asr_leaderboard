@@ -34,11 +34,11 @@ fi
 MODEL_CONFIGS=(
     "nvidia/parakeet-tdt-0.6b-v3 128"
     "nvidia/parakeet-tdt-0.6b-v2 128"
-    "nvidia/parakeet-rnnt-1.1b 128"
-    "nvidia/parakeet-rnnt-0.6b 128"
     "nvidia/parakeet-ctc-1.1b 128"
-    "nvidia/parakeet-ctc-0.6b 128"
-    "nvidia/parakeet-tdt_ctc-110m 128"
+    # "nvidia/parakeet-rnnt-1.1b 128"
+    # "nvidia/parakeet-rnnt-0.6b 128"
+    # "nvidia/parakeet-ctc-0.6b 128"
+    # "nvidia/parakeet-tdt_ctc-110m 128"
     # "nvidia/parakeet-tdt-1.1b 128"
     # "nvidia/stt_en_fastconformer_transducer_large 128"
     # "nvidia/stt_en_fastconformer_ctc_large 128"
@@ -56,9 +56,9 @@ DATASET_CONFIGS=(
     "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test"
     "voxpopuli_cleaned_aa test"
-    "librispeech test.clean"
-    "librispeech test.other"
     "spgispeech test"
+    "urgent2024 test"
+    "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

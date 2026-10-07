@@ -596,7 +596,7 @@ def score_results(
             "public",
             None,  # always printed when public datasets are present
             "model,avg,RTFx,License,Size (B),# Languages,Encoder,Decoder,Training data disclosure,"
-            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER",
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER",
             {
                 "ami_cleaned_test": ("AMI-Cleaned WER", None),
                 # Datasets in their own repo are run without a config name, so their
@@ -611,22 +611,25 @@ def score_results(
                     None,
                 ),
                 "gigaspeech_cleaned_test": ("Gigaspeech-Cleaned WER", None),
-                "librispeech_test.clean": ("LS Clean WER", None),
-                "librispeech_test.other": ("LS Other WER", None),
                 "spgispeech_test": ("SPGISpeech WER", None),
+                "urgent2024_test": ("URGENT2024 WER", None),
                 "Monsoon_en_IN_test__test": ("Voice Arena Monsoon WER", None),
                 "voxpopuli_cleaned_aa_test": ("Voxpopuli-AA-Cleaned WER", None),
             },
         ),
         (
             "extra",
-            "_cleaned",
-            "model,AMI WER,Earnings22 WER,Gigaspeech WER,Voxpopuli WER",
+            None,  # printed when any of its datasets is present
+            "model,AMI WER,Earnings22 WER,Gigaspeech WER,Voxpopuli WER,"
+            "LS Clean WER,LS Other WER,URGENT2024-Clean WER",
             {
                 "ami_test": ("AMI WER", None),
                 "earnings22_test": ("Earnings22 WER", None),
                 "gigaspeech_test": ("Gigaspeech WER", None),
                 "voxpopuli_test": ("Voxpopuli WER", None),
+                "librispeech_test.clean": ("LS Clean WER", None),
+                "librispeech_test.other": ("LS Other WER", None),
+                "urgent2024_clean_test": ("URGENT2024-Clean WER", None),
             },
         ),
         (
@@ -963,7 +966,7 @@ def score_results(
                     col_map,
                     family_key,
                     family_name,
-                    per_dataset_rtfx=(family_key == "public"),
+                    per_dataset_rtfx=(family_key in ("public", "extra")),
                 )
         else:
             if presence_substr in all_dataset_ids:

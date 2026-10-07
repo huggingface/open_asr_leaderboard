@@ -32,7 +32,7 @@ fi
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
-    "facebook/mms-1b-all"
+    # "facebook/mms-1b-all"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
@@ -44,9 +44,9 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 48"
     "voxpopuli_cleaned_aa test 48"
     "earnings22_cleaned_aa_chunked test 48 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean 48"
-    "librispeech test.other 48"
     "spgispeech test 48"
+    "urgent2024 test 48"
+    "urgent2024_clean test 48"
     "monsoon_en_in test 48 VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

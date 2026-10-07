@@ -45,9 +45,9 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 512"
     "voxpopuli_cleaned_aa test 256"
     "earnings22_cleaned_aa_chunked test 256 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean 512"
-    "librispeech test.other 512"
     "spgispeech test 512"
+    "urgent2024 test 512"
+    "urgent2024_clean test 512"
     "monsoon_en_in test 512 VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

@@ -33,8 +33,10 @@ fi
 
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "Qwen/Qwen3-ASR-0.6B"
-    "Qwen/Qwen3-ASR-1.7B"
+    # "Qwen/Qwen3-ASR-0.6B"
+    # "Qwen/Qwen3-ASR-1.7B"
+    # "netease-youdao/Confucius4-R2T2"
+    # "netease-youdao/Confucius4-T3PO"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
@@ -46,9 +48,9 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 128"
     "voxpopuli_cleaned_aa test 128"
     "earnings22_cleaned_aa_chunked test 128 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean 128"
-    "librispeech test.other 128"
     "spgispeech test 128"
+    "urgent2024 test 128"
+    "urgent2024_clean test 128"
     "monsoon_en_in test 128 VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

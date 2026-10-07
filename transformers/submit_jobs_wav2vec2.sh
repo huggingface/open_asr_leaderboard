@@ -32,7 +32,7 @@ fi
 
 # ── Models (comment / uncomment to select) ──────────────────────────────────
 MODEL_IDs=(
-    "facebook/wav2vec2-large-960h-lv60-self"
+    # "facebook/wav2vec2-large-960h-lv60-self"
     # "facebook/wav2vec2-base-960h"
     # "facebook/wav2vec2-large-960h"
     # "facebook/wav2vec2-large-robust-ft-libri-960h"
@@ -47,9 +47,9 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 64"
     "voxpopuli_cleaned_aa test 64"
     "earnings22_cleaned_aa_chunked test 64 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean 64"
-    "librispeech test.other 64"
     "spgispeech test 64"
+    "urgent2024 test 64"
+    "urgent2024_clean test 64"
     "monsoon_en_in test 64 VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first

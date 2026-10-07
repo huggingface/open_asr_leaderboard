@@ -137,7 +137,7 @@ def build_targets(language=None):
     """Targets keyed by --target value. `language` selects the multilingual file."""
     targets = {
         # The English sheet spans two family blocks: `public` supplies the avg /
-        # RTFx / per-dataset columns, `extra` the four non-cleaned WER columns.
+        # RTFx / per-dataset columns, `extra` the remaining WER columns (non-cleaned sets, LibriSpeech, URGENT2024-Clean).
         "english": Target(
             "english",
             "hf-audio/open-asr-leaderboard-results",
@@ -149,13 +149,15 @@ def build_targets(language=None):
                     "AMI-Cleaned WER",
                     "Earnings22-Cleaned-AA-chunked WER",
                     "Gigaspeech-Cleaned WER",
-                    "LS Clean WER",
-                    "LS Other WER",
                     "SPGISpeech WER",
+                    "URGENT2024 WER",
                     "Voice Arena Monsoon WER",
                     "Voxpopuli-AA-Cleaned WER",
                 ],
             },
+            # `extra` prints an RTFx per dataset, but the sheet publishes it only
+            # for LibriSpeech and URGENT2024-Clean.
+            ignore=["AMI RTFx", "Earnings22 RTFx", "Gigaspeech RTFx", "Voxpopuli RTFx"],
         ),
         # The `longform` family scores earnings21, earnings22 and the eight CORAAL
         # splits; the sheet publishes only their macro-average (coraal_avg). The
@@ -496,8 +498,8 @@ def process(target, args, api, synced):
     for avg_column, sources in target.averages.items():
         if avg_column not in index:
             continue
-        # English must average only the eight cleaned sets, not the four extra
-        # WER columns, so it lists them; elsewhere every WER column counts.
+        # English must average only the public sets, not the extra WER columns,
+        # so it lists them; elsewhere every WER column counts.
         avg_sources = sources or [c for c in header if c.endswith(" WER")]
         present, missing = [], []
         for column in avg_sources:

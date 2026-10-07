@@ -32,8 +32,8 @@ fi
 
 # ── Models: "model_id revision" ─────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "AutoArk-AI/ARK-ASR-0.6B  e55e9b8cd6018ee8353007c3136e2fb2e77eef99"
-    "AutoArk-AI/ARK-ASR-3B    379a8f464c04ff11b4627a93721ca9982970bee4"
+    "Edge0/ARK-ASR-0.6B  e55e9b8cd6018ee8353007c3136e2fb2e77eef99"
+    "Edge0/ARK-ASR-3B    379a8f464c04ff11b4627a93721ca9982970bee4"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
@@ -45,9 +45,9 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 64"
     "voxpopuli_cleaned_aa test 64"
     "earnings22_cleaned_aa_chunked test 64 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean 64"
-    "librispeech test.other 64"
     "spgispeech test 64"
+    "urgent2024 test 64"
+    "urgent2024_clean test 64"
     "monsoon_en_in test 64 VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first
