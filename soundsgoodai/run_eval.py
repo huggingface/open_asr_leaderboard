@@ -215,6 +215,7 @@ def parse_args() -> Namespace:
         help="Calls on the first real batch per worker excluded from reported timings.",
     )
     parser.set_defaults(streaming=False)
+
     args = parser.parse_args()
 
     if not args.report_name:
@@ -547,9 +548,7 @@ def main() -> None:
 
     args = parse_args()
     with cp.cuda.Device(args.device):
-        dataset: Dataset = data_utils.load_data(args).cast_column(
-            "audio", Audio(decode=False)
-        )
+        dataset = data_utils.load_data(args).cast_column("audio", Audio(decode=False))
         # Normalize metadata without copying or decoding the encoded audio column.
         metadata = dataset.remove_columns("audio").map(data_utils.normalize)
         indices = [
@@ -642,14 +641,6 @@ def main() -> None:
             )
         )
 
-        sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest))
-        refs = [tuple(data_utils.normalizer(row["text"]).split()) for row in sessions]
-        preds = [tuple(data_utils.normalizer(row["pred_text"]).split()) for row in sessions]
-
-        wer = batch_error_rate(refs, preds, merge_compounds=True)["err_rate"] * 100
-        rtfx = sum(results["audio_length_s"]) / sum(results["transcription_time_s"])
-        print(f"Results: {manifest}\nWER: {wer:.2f}%  RTFx: {rtfx:.2f}")
-
         metadata = {
             **metadata,
             "arguments": {
@@ -669,6 +660,14 @@ def main() -> None:
         }
         with open(manifest.with_suffix(".metadata.json"), "w", encoding="utf-8") as destination:
             json.dump(metadata, destination, indent=2, sort_keys=True)
+
+    sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest))
+    refs = [tuple(data_utils.normalizer(row["text"]).split()) for row in sessions]
+    preds = [tuple(data_utils.normalizer(row["pred_text"]).split()) for row in sessions]
+
+    wer = batch_error_rate(refs, preds, merge_compounds=True)["err_rate"] * 100
+    rtfx = sum(results["audio_length_s"]) / sum(results["transcription_time_s"])
+    print(f"Results: {manifest}\nWER: {wer:.2f}%  RTFx: {rtfx:.2f}")
 
 
 if __name__ == "__main__":
