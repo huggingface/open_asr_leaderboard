@@ -28,6 +28,7 @@ MODEL_CONFIGS=(
     # "meta/muse-voice-transcribe    8"
     # "meta/muse-voice-transcribe-streaming    8"
     # "sprag/symphony                8"
+    # "sophea/asr-k1                 16"   # English + German only (DATASETS="fleurs:de mcv:de")
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
