@@ -20,7 +20,9 @@ SOURCE_CONFIG = "test_nonblind"
 SOURCE_SPLIT = "validation"
 
 HUB_REPO_ID = "hf-audio/open-asr-leaderboard"
-HUB_REVISION = "main"
+# Both configs are pushed to a single Hub PR: the first push opens it, the second
+# pushes to its ref (refs/pr/N). Set to an existing PR ref to push to it instead.
+HUB_REVISION = None
 
 
 # Mapping from utterance id to fixed transcript; original URGENT2024 text in the comment
@@ -46,10 +48,10 @@ for subset in ["noisy", "clean"]:
     }
 
     if subset == "noisy":
-        dataset_name = "urgent2024_nonblind"
+        dataset_name = "urgent2024"
         features["snr_db"] = Value("float32")
     else:
-        dataset_name = f"urgent2024_nonblind_{subset}"
+        dataset_name = f"urgent2024_{subset}"
 
     audio_column = f"{subset}_audio"
 
@@ -99,6 +101,14 @@ for subset in ["noisy", "clean"]:
     ds = Dataset.from_dict(rows, features=Features(features))
     ds = ds.sort("audio_length_s", reverse=True)
 
-    ds.push_to_hub(
-        HUB_REPO_ID, config_name=dataset_name, split="test", revision=HUB_REVISION
+    commit_info = ds.push_to_hub(
+        HUB_REPO_ID,
+        config_name=dataset_name,
+        split="test",
+        revision=HUB_REVISION,
+        create_pr=HUB_REVISION is None,
+        commit_message=f"Add {dataset_name}",
     )
+    if HUB_REVISION is None:
+        HUB_REVISION = commit_info.pr_revision
+        print(f"Opened PR: {commit_info.pr_url}", file=sys.stderr)
