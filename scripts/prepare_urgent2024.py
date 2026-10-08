@@ -27,6 +27,23 @@ HUB_REVISION = None
 
 # Mapping from utterance id to fixed transcript; original URGENT2024 text in the comment
 TRANSCRIPT_OVERRIDES = {
+    # ### Identified fixes but not applied: https://github.com/huggingface/open_asr_leaderboard/pull/196#issuecomment-6023454846
+    # # fileid_419:  doing our own share and our own part in this AI in this AI Revolution ution uh we sort of took our own little space in
+    # "fileid_419": "doing our own share and our own part in this AI in this AI Revolution uh we sort of took our own little space in",
+    # # fileid_422:  Intel this is significant you know industry gamechanging piece I actually just listened to some of your Clips this
+    # "fileid_422": "Intel this is significant you know industry gamechanging piece I actually just listened to some of your clips this morning",
+    # # fileid_832:  hopes in on this oate
+    # "fileid_832": "In on this oblate spheroid?",
+    # # fileid_841:  domestication is the driver of reduced brain sized and domesticated animals dog specifically but by doing a comparative philogenetic
+    # "fileid_841": "domestication is the driver of reduced brain size in domesticated animals dogs specifically but by doing a comparative phylogenetic",
+    # # fileid_841:  vaccine the thing that's going to keep us from getting whatever muuk is going around Corona virus
+    # "fileid_841": "vaccine the thing that's going to keep us from getting whatever muck is going around Coronavirus",
+    # # fileid_880:  disavowed um she's for the the green the green deal like1 trillion dollars over time effectively right talking about
+    # "fileid_880": "disavowed um she's for the the green the green deal like a hundred trillion dollars over time effectively right talking about",
+    # # fileid_885:  oan talk says wit it doesn't know the IV DV of electrostatics is this true wit
+    # "fileid_885": "I was going to talk says: Witsit doesn't know the IV slash DV of electrostatics. Is this true, Witsit?",
+    # # fileid_966:  I would rather see more of that. Yeah. Could it be another, when it comes to Atlus, could it be the Persona
+    # "fileid_966": "Could it, yeah, could it be another, when it comes to Atlas, could it be the persona?",
 }
 
 
