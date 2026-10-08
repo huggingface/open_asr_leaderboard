@@ -4,6 +4,10 @@
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_ml_jobs.sh
 
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
+
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-hojo-asr}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
@@ -13,13 +17,8 @@ ORG_NAME="${ORG_NAME:-}"
 
 # Set USE_LOCAL_SCRIPT=1 to run your local run_eval_ml.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
-USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_SCRIPT_INJECT=""
-if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    LOCAL_SCRIPT_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_ml.py")
-    LOCAL_SCRIPT_INJECT="echo '${LOCAL_SCRIPT_B64}' | base64 -d > /app/run_eval_ml.py &&"
-fi
+LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval_ml.py) || exit 1
 
 # ── Models: "model_id batch_size" ───────────────────────────────────────────
 MODEL_CONFIGS=(
@@ -97,17 +96,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     # Download results and score
     mkdir -p "./results/${MODEL_FOLDER}"
 
-    hf buckets sync \
-        "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
-        "./results/${MODEL_FOLDER}" > /dev/null 2>&1
-
-    EXPECTED=${#DATASET_CONFIGS[@]}
-    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
-    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
-        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
-    else
-        echo "All ${ACTUAL} result files present."
-    fi
+    RUN_RESULTS=$(python "${FETCH_RUN_RESULTS}" \
+        --bucket "${RESULTS_BUCKET}" --model-folder "${MODEL_FOLDER}" \
+        --local-dir "./results/${MODEL_FOLDER}" --since "${RUN_START}" \
+        --expected "${#DATASET_CONFIGS[@]}")
 
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -126,7 +118,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     for LANGUAGE in "${ALL_LANGUAGES[@]}"; do
         PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
+score_results('${RUN_RESULTS}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
 "
     done
 

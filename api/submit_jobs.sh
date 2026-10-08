@@ -13,6 +13,11 @@
 #   bash submit_jobs.sh
 
 # Global defaults (can be left as-is; per-model `max_workers` will override)
+
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
+
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-apis}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
@@ -25,21 +30,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
-USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
-LOCAL_SCRIPT_INJECT=""
-if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
-    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
-fi
+LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval.py) || exit 1
 
 # Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
 # job (so normalizer changes take effect without updating the HF Space).
-USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
-LOCAL_NORMALIZER_INJECT=""
-if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
-    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
-    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
-fi
+LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 
 # ── Models: "model_id max_workers" ──────────────────────────────────────────
@@ -81,24 +76,7 @@ DATASET_CONFIGS=(
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="librispeech spgispeech" bash <this script>
-if [[ -n "${ONLY_DATASETS:-}" ]]; then
-    _selected=()
-    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
-        for _cfg in "${DATASET_CONFIGS[@]}"; do
-            read -r _name _ <<< "$_cfg"
-            for _want in ${ONLY_DATASETS}; do
-                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
-                    _selected+=("$_cfg")
-                fi
-            done
-        done
-    fi
-    if [[ ${#_selected[@]} -eq 0 ]]; then
-        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
-        exit 1
-    fi
-    DATASET_CONFIGS=("${_selected[@]}")
-fi
+filter_only_datasets || exit 1
 
 
 # Datasets that require a lexical-format prompt for microsoft models
@@ -176,20 +154,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     sleep 10  # allow time for the last results to be flushed to the bucket
 
     mkdir -p "./results/${MODEL_FOLDER}"
-    hf buckets sync \
-        "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
-        "./results/${MODEL_FOLDER}" > /dev/null 2>&1
-
-    EXPECTED=${#DATASET_CONFIGS[@]}
-    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
-    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
-        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
-    else
-        echo "All ${ACTUAL} result files present."
-    fi
+    RUN_RESULTS=$(python "${FETCH_RUN_RESULTS}" \
+        --bucket "${RESULTS_BUCKET}" --model-folder "${MODEL_FOLDER}" \
+        --local-dir "./results/${MODEL_FOLDER}" --since "${RUN_START}" \
+        --expected "${#DATASET_CONFIGS[@]}")
 
     PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
+score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 done

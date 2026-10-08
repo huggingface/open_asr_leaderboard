@@ -642,6 +642,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_revision", type=str, default=None, help="Optional Hugging Face dataset revision.")
     parser.add_argument("--dataset", type=str, required=True, help="Dataset name.")
     parser.add_argument("--split", type=str, default="test", help="Dataset split.")
+    parser.add_argument("--streaming", action="store_true", help="Stream the dataset instead of downloading it.")
     parser.add_argument(
         "--local_parquet_dir",
         type=str,
