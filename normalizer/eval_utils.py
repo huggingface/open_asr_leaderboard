@@ -447,6 +447,15 @@ def merge_chunked_manifest(manifest: list):
     return merged
 
 
+def result_key_matches_model(model_key: str, result_key: str) -> bool:
+    """True when ``result_key`` belongs to ``model_key`` and not to a longer id.
+
+    Result keys look like ``"org/model | dataset"``. A substring test treats
+    ``openai/whisper-large-v3`` as a hit on ``openai/whisper-large-v3-turbo``.
+    """
+    return result_key.split("|", 1)[0].strip() == model_key.strip()
+
+
 def score_results(
     directory: str,
     model_id: str = None,
@@ -777,7 +786,7 @@ def score_results(
         for ds_substr, (label, _group) in col_map.items():
             if label == col_label:
                 for result_key, result_val in results.items():
-                    if model_key.rstrip() in result_key and ds_substr in result_key:
+                    if result_key_matches_model(model_key, result_key) and ds_substr in result_key:
                         return result_val[metric]
         return None
 
