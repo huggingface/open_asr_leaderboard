@@ -191,6 +191,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
+            -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
             -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
             -e SPEECHMATICS_API_KEY="${SPEECHMATICS_API_KEY:-}" \
             -e AQUAVOICE_API_KEY="${AQUAVOICE_API_KEY:-}" \
