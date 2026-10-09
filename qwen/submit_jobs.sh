@@ -42,6 +42,8 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 128"
     "voxpopuli_cleaned_aa test 128"
     "earnings22_cleaned_aa_chunked test 128 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
+    "librispeech test.clean 128"
+    "librispeech test.other 128"
     "spgispeech test 128"
     "urgent2024 test 128"
     "urgent2024_clean test 128"

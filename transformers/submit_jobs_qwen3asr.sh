@@ -36,14 +36,16 @@ MODEL_IDs=(
 # An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
 # config name: the first field is only a label for selection and result files.
 DATASET_CONFIGS=(
-    # "ami_cleaned test 256"
-    # "gigaspeech_cleaned test 256"
-    # "voxpopuli_cleaned_aa test 256"
-    # "earnings22_cleaned_aa_chunked test 256 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    # "spgispeech test 256"
+    "ami_cleaned test 256"
+    "gigaspeech_cleaned test 256"
+    "voxpopuli_cleaned_aa test 256"
+    "earnings22_cleaned_aa_chunked test 256 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
+    "librispeech test.clean 256"
+    "librispeech test.other 256"
+    "spgispeech test 256"
     "urgent2024 test 256"
     "urgent2024_clean test 256"
-    # "monsoon_en_in test 256 VoiceArena/Monsoon_en_IN_test"
+    "monsoon_en_in test 256 VoiceArena/Monsoon_en_IN_test"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:

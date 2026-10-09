@@ -50,6 +50,8 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test"
     "voxpopuli_cleaned_aa test"
     "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
+    "librispeech test.clean"
+    "librispeech test.other"
     "spgispeech test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
     "urgent2024 test"
