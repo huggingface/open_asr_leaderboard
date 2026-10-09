@@ -747,9 +747,9 @@ def main(args):
     _warming["on"] = True
     for _, audios, lens in batches():
         s = _shape_of(audios, lens)
+        run_batch(audios, lens)
         if s not in seen_shapes:
             seen_shapes.add(s)
-            run_batch(audios, lens)
             if args.manual_graphs and on_cuda:
                 batch = _assemble(audios, lens)
                 _capture(s, batch.to(device), torch.tensor(lens, device=device))
