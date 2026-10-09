@@ -2,12 +2,15 @@
 # Local script to submit HF Jobs for FUTO asr4all evaluation.
 # Usage: ORG_NAME=<org> RESULTS_BUCKET=<bucket> bash submit_jobs.sh
 
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
+
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-futo-org/open-asr-leaderboard-asr4all}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
-HF_CLI="${HF_CLI:-hf}"
 ORG_NAME="${ORG_NAME:-}"
 REVISION="${REVISION:-open-asr-leaderboard}"  # trust_remote_code: pinned tag on each model repo
 
@@ -23,21 +26,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
-USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
-LOCAL_SCRIPT_INJECT=""
-if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
-    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
-fi
+LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval.py) || exit 1
 
 # Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
 # job (so normalizer changes take effect without updating the HF Space).
-USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
-LOCAL_NORMALIZER_INJECT=""
-if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
-    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
-    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
-fi
+LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
@@ -45,9 +38,14 @@ MODEL_CONFIGS=(
     "futo-org/asr4all-m"
     "futo-org/asr4all-l"
 )
+if [[ -n "${ONLY_MODELS:-}" ]]; then
+    MODEL_CONFIGS=(${ONLY_MODELS})
+fi
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
 # dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
+# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
+# config name: the first field is only a label for selection and result files.
 DATASET_CONFIGS=(
     "ami_cleaned test 256"
     "gigaspeech_cleaned test 256"
@@ -56,6 +54,8 @@ DATASET_CONFIGS=(
     "librispeech test.clean 256"
     "librispeech test.other 256"
     "spgispeech test 1024"
+    "urgent2024 test 256"
+    "urgent2024_clean test 256"
     "monsoon_en_in test 256 VoiceArena/Monsoon_en_IN_test"
 )
 # Per-model batch overrides ("model dataset batch"): the dataset table above is the default for every
@@ -64,21 +64,10 @@ BATCH_OVERRIDES=(
     "futo-org/asr4all-m spgispeech 512"
     "futo-org/asr4all-l spgispeech 512"
 )
-
-if [[ -n "${ONLY_DATASETS:-}" ]]; then
-    _selected=()
-    for _cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r _name _ <<< "$_cfg"
-        for _want in ${ONLY_DATASETS}; do
-            [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]] && _selected+=("$_cfg")
-        done
-    done
-    [[ ${#_selected[@]} -eq 0 ]] && { echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched nothing." >&2; exit 1; }
-    DATASET_CONFIGS=("${_selected[@]}")
-fi
-if [[ -n "${ONLY_MODELS:-}" ]]; then
-    MODEL_CONFIGS=(${ONLY_MODELS})
-fi
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry e.g.:
+#   ONLY_DATASETS="urgent2024 urgent2024_clean" bash <this script>
+filter_only_datasets || exit 1
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
@@ -103,7 +92,7 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
 
-        ${HF_CLI} jobs run \
+        hf jobs run \
             --flavor "$FLAVOR" \
             --name "asr4all-${MODEL_FOLDER##*-}-${DATASET}-${SPLIT//./_}" \
             --timeout 8h \
@@ -128,25 +117,24 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &
     done
-    [ -n "$ORG_NAME" ] && echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"
+    if [ -n "$ORG_NAME" ]; then
+        echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"
+    else
+        echo "For live status see: https://huggingface.co/settings/jobs"
+    fi
 
     wait
     echo "All jobs finished for ${MODEL_ID}."
-    sleep 10
+    sleep 10  # allow time for the last results to be flushed to the bucket
 
     mkdir -p "./results/${MODEL_FOLDER}"
-    ${HF_CLI} buckets sync "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" "./results/${MODEL_FOLDER}" > /dev/null 2>&1
-
-    EXPECTED=${#DATASET_CONFIGS[@]}
-    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
-    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
-        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}."
-    else
-        echo "All ${ACTUAL} result files present."
-    fi
+    RUN_RESULTS=$(python "${FETCH_RUN_RESULTS}" \
+        --bucket "${RESULTS_BUCKET}" --model-folder "${MODEL_FOLDER}" \
+        --local-dir "./results/${MODEL_FOLDER}" --since "${RUN_START}" \
+        --expected "${#DATASET_CONFIGS[@]}")
 
     PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
+score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 done
