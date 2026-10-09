@@ -2,9 +2,7 @@
 """Download one submit run's results for a model from an HF bucket.
 
 The submit_jobs*.sh scripts call this after their jobs finish, instead of
-syncing the model's whole bucket folder: that folder accumulates the results
-of every dataset the model was ever run on, and scoring all of them again
-(alignment is quadratic in transcript length) can take far longer than the run.
+syncing the model's whole bucket folder.
 
 A file belongs to this run if it was uploaded at or after --since (the time the
 submit script started). Those files are downloaded into --local-dir and linked
@@ -14,9 +12,6 @@ to score_results:
     RUN_RESULTS=$(python scripts/fetch_run_results.py \
         --bucket hf-audio/asr_leaderboard_h200 --model-folder openai-whisper-large-v3 \
         --local-dir ./results/openai-whisper-large-v3 --since "$RUN_START" --expected 2)
-
---since 0 takes every file in the folder (the old behaviour). Messages go to
-stderr.
 """
 
 import argparse
