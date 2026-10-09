@@ -51,6 +51,8 @@ Both launchers share [config.sh](config.sh): `MODEL_CONFIGS` sets each model's
 repository, family, checkpoint, decoder, beam, batch size, workers, and optional
 reported-name suffix; `DATASET_CONFIGS` selects datasets; `COMMON_ARGS` sets
 precision, duration profiles, and warm-ups.
+Set `CONFIG` to a filename in `soundsgoodai/`, an absolute path, or a path
+relative to the current working directory to select another configuration.
 
 ```bash
 bash soundsgoodai/run_models.sh
@@ -58,9 +60,10 @@ bash soundsgoodai/run_models.sh
 
 Defaults are **FP16, batch 256 per worker**, beam **10** for Zipformer RNN-T, **6** for
 Parakeet TDT V2/V3, and **1** for CTC, a **0.1 / 10 / 40-second** duration profile
-(min/opt/max), optimization level **5**, and blank penalty **0.0**. The eight
+(min/opt/max), optimization level **5**, and blank penalty **0.0**. The ten
 dataset splits are LibriSpeech clean/other, AMI, chunked Earnings22, GigaSpeech, SPGISpeech,
-VoxPopuli, and Monsoon English. Reduce batch sizes or worker counts if needed for GPU memory.
+VoxPopuli, URGENT2024 noisy/clean, and Monsoon English. Reduce batch sizes or worker
+counts if needed for GPU memory.
 
 `MODEL_CONFIGS` sets **3 workers**, except **2 for Parakeet CTC 1.1B**, after
 the batch-size field. Each worker uses an independent ASR instance on the same
@@ -99,12 +102,12 @@ review `config.sh` before submitting:
 HF_TOKEN=hf_... bash soundsgoodai/submit_jobs.sh
 ```
 
-The default matrix runs **48 H200 jobs**: eight parallel dataset jobs per
+The default matrix runs **60 H200 jobs**: ten parallel dataset jobs per
 model/decoder, handling the six models one at a time. Each job builds its own
 engines; each model is scored before the next is submitted.
 
 - `PARALLEL_DATASETS=0` submits **six sequential jobs**, one per model/decoder,
-  each evaluating all eight splits on one H200. The first dataset builds engines
+  each evaluating all ten splits on one H200. The first dataset builds engines
   in `/app/engines`; subsequent datasets reuse them on the same GPU.
 - `FLAVOR`, `ORG_NAME`, and `TIMEOUT` (default `8h`) control scheduling.
 - `SPACE` selects the image; `RESULTS_BUCKET` must name a bucket you can write to.
@@ -128,8 +131,10 @@ and the remaining models still run.
 `RUN_ID` defaults to a UTC timestamp-based name and groups local results only;
 existing local run directories are rejected. Bucket folders are keyed on the
 reported name alone, so rerunning a configuration overwrites its manifests
-there, and manifests from a previous run over different datasets are downloaded
-alongside the new ones.
+there. By default, only files uploaded since the launcher started are downloaded
+and scored; older manifests are excluded. `RESULTS_SINCE` overrides that cutoff
+with a Unix timestamp; `RESULTS_SINCE=0` includes all files in the model's bucket
+folder, including previous runs.
 
 ## Multilingual
 
@@ -169,7 +174,7 @@ worker, with 3 workers**. The profile goes to **60 seconds**
 because FLEURS reaches 53 seconds. `RESULTS_BUCKET` defaults to
 `hf-audio/asr_leaderboard_multilingual`, so multilingual manifests never share a
 bucket folder with the English ones despite the identical reported name.
-Everything else, injection of the local runner and normalizer, bucket sync,
+Everything else, injection of the local runner and normalizer, result fetching,
 manifest and metadata checks, and the `RUN_ID` layout, works as described above.
 
 Scoring uses `ml_normalizer` for the evaluated language rather than the English

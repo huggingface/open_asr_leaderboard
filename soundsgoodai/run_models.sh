@@ -3,7 +3,12 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-CONFIG=${SCRIPT_DIR}/${CONFIG:-config.sh}
+CONFIG=${CONFIG:-config.sh}
+[[ ${CONFIG} == */* ]] || CONFIG=${SCRIPT_DIR}/${CONFIG}
+if [[ ! -f ${CONFIG} ]]; then
+    echo "Config not found: ${CONFIG}" >&2
+    exit 1
+fi
 source "${CONFIG}"
 
 RUN_ID=${RUN_ID:-fast-gpu-asr-$(date -u +%Y%m%dT%H%M%S)}
