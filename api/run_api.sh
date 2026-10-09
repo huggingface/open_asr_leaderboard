@@ -44,15 +44,15 @@ EVAL_DATASETS=(
     "ami_cleaned:test"
     "earnings22_cleaned_aa_chunked:test:ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned:test"
-    "librispeech:test.clean"
-    "librispeech:test.other"
     "spgispeech:test"
+    "urgent2024:test"
+    "urgent2024_clean:test"
     "voxpopuli_cleaned_aa:test"
     "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
-#   DATASETS="librispeech:test.clean" MODEL="modulate/multilingual 25" bash run_api.sh
+#   DATASETS="urgent2024:test urgent2024_clean:test" MODEL="modulate/multilingual 25" bash run_api.sh
 if [[ -n "${DATASETS:-}" ]]; then
     read -ra EVAL_DATASETS <<< "$DATASETS"
 fi

@@ -41,6 +41,10 @@ Usage:
     # open the PR and merge it into main immediately (needs write access)
     python scripts/open_results_pr.py --target english --model_id my-org/my-model --merge
 
+    # the CSV row is named differently from the model's bucket folder
+    python scripts/open_results_pr.py --target english --model_id omniASR_CTC_7B_v2 \
+        --row_name facebook/omniASR-CTC-7B-v2
+
     # re-use results already synced locally
     python scripts/open_results_pr.py --target english --model_id my-org/my-model --skip_sync
 
@@ -137,7 +141,7 @@ def build_targets(language=None):
     """Targets keyed by --target value. `language` selects the multilingual file."""
     targets = {
         # The English sheet spans two family blocks: `public` supplies the avg /
-        # RTFx / per-dataset columns, `extra` the four non-cleaned WER columns.
+        # RTFx / per-dataset columns, `extra` the remaining WER columns (non-cleaned sets, URGENT2024-Clean).
         "english": Target(
             "english",
             "hf-audio/open-asr-leaderboard-results",
@@ -152,10 +156,12 @@ def build_targets(language=None):
                     "LS Clean WER",
                     "LS Other WER",
                     "SPGISpeech WER",
+                    "URGENT2024 WER",
                     "Voice Arena Monsoon WER",
                     "Voxpopuli-AA-Cleaned WER",
                 ],
             },
+            ignore=["AMI RTFx", "Earnings22 RTFx", "Gigaspeech RTFx", "Voxpopuli RTFx"],
         ),
         # The `longform` family scores earnings21, earnings22 and the eight CORAAL
         # splits; the sheet publishes only their macro-average (coraal_avg). The
@@ -453,6 +459,7 @@ def process(target, args, api, synced):
         return False
 
     header, rows = fetch_csv(target.repo_id, target.filename, args.hf_token)
+    row_name = args.row_name or args.model_id
     metadata = {col: getattr(args, arg) for col, arg in METADATA_ARGS.items()}
     # Guarded on the column existing so --api does not warn about a License
     # column on the sheets that have none (appen / dataocean / multilingual).
@@ -469,7 +476,7 @@ def process(target, args, api, synced):
         print(f"WARNING: {target.filename} has no column(s) {ignored}; those flags are ignored.")
 
     rows, action, new_row, cleared = upsert(
-        header, rows, args.model_id, values, metadata, args.sort, args.overwrite
+        header, rows, row_name, values, metadata, args.sort, args.overwrite
     )
     if cleared:
         print(
@@ -496,8 +503,8 @@ def process(target, args, api, synced):
     for avg_column, sources in target.averages.items():
         if avg_column not in index:
             continue
-        # English must average only the eight cleaned sets, not the four extra
-        # WER columns, so it lists them; elsewhere every WER column counts.
+        # English must average only the public sets, not the extra WER columns,
+        # so it lists them; elsewhere every WER column counts.
         avg_sources = sources or [c for c in header if c.endswith(" WER")]
         present, missing = [], []
         for column in avg_sources:
@@ -517,7 +524,7 @@ def process(target, args, api, synced):
             # Unrounded, matching english_short_latest.csv.
             new_row[index[avg_column]] = str(sum(present) / len(present))
     for i, row in enumerate(rows):
-        if row and row[0].strip() == args.model_id:
+        if row and row[0].strip() == row_name:
             rows[i] = new_row
             break
 
@@ -530,7 +537,7 @@ def process(target, args, api, synced):
         # Applied to the merged row, not just the scored values, so an earlier
         # upload's RTFx is cleared too rather than surviving the merge.
         for i, row in enumerate(rows):
-            if row and row[0].strip() == args.model_id:
+            if row and row[0].strip() == row_name:
                 rows[i] = new_row
                 break
         shown = repr(placeholder) if placeholder else "blank"
@@ -556,7 +563,7 @@ def process(target, args, api, synced):
             print(f"Wrote updated CSV to {args.out}")
         return True
 
-    message = args.commit_message or f"Add {args.model_id} results"
+    message = args.commit_message or f"Add {row_name} results"
     with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as fh:
         fh.write(content)
         tmp = fh.name
@@ -603,6 +610,13 @@ def main():
         "--model_id",
         required=True,
         help="Model id as it should appear in the 'model' column, e.g. my-org/my-model.",
+    )
+    parser.add_argument(
+        "--row_name",
+        default=None,
+        help="Name of the row in the published CSV, when it differs from --model_id "
+             "(which must match the results' bucket folder), e.g. --model_id "
+             "omniASR_CTC_7B_v2 --row_name facebook/omniASR-CTC-7B-v2. Defaults to --model_id.",
     )
     parser.add_argument(
         "--language",

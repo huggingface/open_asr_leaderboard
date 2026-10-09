@@ -27,6 +27,8 @@ DATASET_CONFIGS=(
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
+    "urgent2024 test"
+    "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
 

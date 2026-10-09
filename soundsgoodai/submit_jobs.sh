@@ -1,6 +1,11 @@
 #!/bin/bash
 # Submit HF evaluations, with dataset parallelism controlled by the config.
 # Usage: HF_TOKEN=hf_... bash soundsgoodai/submit_jobs.sh
+
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
+
 set -euo pipefail
 shopt -s nullglob
 
@@ -199,11 +204,13 @@ for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
     fi
 
     sleep 10  # Allow the last results to be flushed to the bucket.
-    hf buckets sync "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" "${MODEL_DIR}"
+    RUN_RESULTS=$(python "${FETCH_RUN_RESULTS}" \
+        --bucket "${RESULTS_BUCKET}" --model-folder "${MODEL_FOLDER}" \
+        --local-dir "${MODEL_DIR}" --since "${RUN_START}")
 
     # Report what is missing but still score what arrived, so the summary prints
     # and the remaining models keep running.
-    MANIFESTS=("${MODEL_DIR}"/*.jsonl)
+    MANIFESTS=("${RUN_RESULTS}"/*.jsonl)
     if (( ${#MANIFESTS[@]} != ${#DATASET_CONFIGS[@]} )); then
         echo "WARNING: expected ${#DATASET_CONFIGS[@]} manifests, found ${#MANIFESTS[@]}; scoring the ones present." >&2
     fi
@@ -220,7 +227,7 @@ for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
     echo "  Summary: ${REPORT_NAME} (${#MANIFESTS[@]}/${#DATASET_CONFIGS[@]} datasets)"
     echo "████████████████████████████████████████████████████████████████████████████████"
-    python - "${MODEL_DIR}" "${REPORT_NAME}" "${LANGUAGES[@]}" <<'PY' 2>&1 | tee "${MODEL_DIR}/scores.log"
+    python - "${RUN_RESULTS}" "${REPORT_NAME}" "${LANGUAGES[@]}" <<'PY' 2>&1 | tee "${MODEL_DIR}/scores.log"
 import sys
 from pathlib import Path
 
