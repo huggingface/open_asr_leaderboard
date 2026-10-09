@@ -697,6 +697,20 @@ def score_results(
                 f"No result files found in {directory} matching families {families}"
             )
 
+    # Validate every selected manifest before reading cached WER scores or
+    # starting batch scoring. CTEM must never enter WER averages, even when a
+    # stale score cache exists or a VoiceCodeBench manifest has been renamed.
+    for result_file in result_files:
+        _, dataset_id = parse_filepath(result_file)
+        if "besimple-ai-voice-code-bench" in dataset_id.lower() or any(
+            "voice_code_bench_revision" in row for row in read_manifest(result_file)
+        ):
+            raise ValueError(
+                "VoiceCodeBench uses CTEM, not WER. Score this manifest separately with "
+                "python -m normalizer.voice_code_bench --manifest " + result_file
+                + " --verifier-cache <cache.json>. Keep it outside WER result directories."
+            )
+
     # Compute WER results per dataset, and RTFx over all datasets
     results = {}
 
