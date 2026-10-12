@@ -14,7 +14,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from normalizer import EnglishTextNormalizer
-from normalizer.english_abbreviations import english_spelling_normalizer
+from asr_normalizer.english.data import english_spelling_normalizer
 
 NORMALIZER = EnglishTextNormalizer()
 REPORTED_CLASSES = ("spelling", "initialism", "number", "lexical")

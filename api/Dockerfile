@@ -18,13 +18,13 @@ WORKDIR /app
 
 # ── Core eval dependencies ────────────────────────────────────────────────────
 # pin datasets to 2.19.0 to avoid torchcodec dependency
+# TODO before merge: switch to asr-normalizer==0.1.0 once published on PyPI
 RUN pip install --no-cache-dir \
     transformers \
     evaluate \
     datasets==2.19.0 \
     jiwer \
-    num2words \
-    regex \
+    "asr-normalizer @ git+https://github.com/MatiasVoldbyDrejer/asr-normalizer@v0.1.0" \
     soundfile \
     librosa \
     requests \

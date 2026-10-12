@@ -50,7 +50,7 @@ Each model family has its own Docker image with the necessary software requireme
 
 2. **One-time local setup**
 
-A local setup is needed to launch the evaluation and score with the repo's normalizer.
+A local setup is needed to launch the evaluation and score with the repo's normalizer. Scoring uses the [`asr-normalizer`](https://github.com/MatiasVoldbyDrejer/asr-normalizer) package, which is the leaderboard's text normalizer extracted as a library; a minor-version bump of the package marks cached scores (`.score.json` files) stale, so they are recomputed (patch releases do not).
 ```bash
 # Clone the repository
 git clone git@github.com:huggingface/open_asr_leaderboard.git
