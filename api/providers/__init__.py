@@ -59,6 +59,7 @@ from . import (
     microsoft_azure_provider,
     modulate_provider,
     openai_provider,
+    otter_provider,
     reson8_provider,
     revai_provider,
     sophea_provider,

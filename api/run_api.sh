@@ -33,6 +33,7 @@ MODEL_CONFIGS=(
     # "gemini/gemini-3.5-transcribe  8"
     # "sophea/asr-k1                 16"
     # "sprag/symphony                8"
+    # "OtterAI/speech-v3.1           128"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -105,6 +106,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
             -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+            -e OTTER_API_KEY -e OTTER_API_URL \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
