@@ -11,12 +11,12 @@ from . import APIProvider, PermanentError, register
 
 
 @register("OtterAI")
-class OtterProvider(APIProvider):
+class OtterAIProvider(APIProvider):
     def __init__(self):
-        self.api_key = os.getenv("OTTER_API_KEY")
-        self.api_url = os.getenv("OTTER_API_URL") or "https://research.otter.ai/v1/service/otter-speech"
+        self.api_key = os.getenv("OTTERAI_API_KEY")
+        self.api_url = os.getenv("OTTERAI_API_URL") or "https://research.otter.ai/v1/service/otter-speech"
         if not self.api_key:
-            raise PermanentError("OTTER_API_KEY environment variable not set")
+            raise PermanentError("OTTERAI_API_KEY environment variable not set")
         url = urlparse(self.api_url)
         if (
             url.scheme != "https"
@@ -27,7 +27,7 @@ class OtterProvider(APIProvider):
             or url.fragment
         ):
             raise PermanentError(
-                "OTTER_API_URL must be an HTTPS URL without credentials, query, or fragment"
+                "OTTERAI_API_URL must be an HTTPS URL without credentials, query, or fragment"
             )
 
     def transcribe(
@@ -50,7 +50,7 @@ class OtterProvider(APIProvider):
             audio_bytes = audio_response.content
         else:
             if not audio_file_path:
-                raise PermanentError("Otter requires an audio file")
+                raise PermanentError("OtterAI requires an audio file")
             with open(audio_file_path, "rb") as audio_file:
                 audio_bytes = audio_file.read()
 
@@ -70,16 +70,16 @@ class OtterProvider(APIProvider):
             allow_redirects=False,
         )
         if 300 <= response.status_code < 400:
-            raise PermanentError("Otter returned a redirect; check OTTER_API_URL")
+            raise PermanentError("OtterAI returned a redirect; check OTTERAI_API_URL")
         if 400 <= response.status_code < 500 and response.status_code not in (408, 429):
             raise PermanentError(
-                f"Otter returned HTTP {response.status_code}; check credentials, model, and request format"
+                f"OtterAI returned HTTP {response.status_code}; check credentials, model, and request format"
             )
         response.raise_for_status()
         try:
             payload = response.json()
         except ValueError as exc:
-            raise PermanentError("Otter returned an invalid JSON response") from exc
+            raise PermanentError("OtterAI returned an invalid JSON response") from exc
         if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
-            raise PermanentError("Otter response must contain a string 'text' field")
+            raise PermanentError("OtterAI response must contain a string 'text' field")
         return payload["text"]

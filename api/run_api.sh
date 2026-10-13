@@ -106,7 +106,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
             -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
-            -e OTTER_API_KEY -e OTTER_API_URL \
+            -e OTTERAI_API_KEY -e OTTERAI_API_URL \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
