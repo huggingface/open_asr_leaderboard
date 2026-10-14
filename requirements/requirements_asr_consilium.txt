@@ -1,0 +1,4 @@
+asr_consilium
+torchcodec
+num2words
+datasets==3.6.0
