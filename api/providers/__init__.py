@@ -53,6 +53,7 @@ from . import (
     aquavoice_provider,
     assemblyai_provider,
     elevenlabs_provider,
+    gemini_provider,
     gladia_provider,
     meta_provider,
     microsoft_azure_provider,

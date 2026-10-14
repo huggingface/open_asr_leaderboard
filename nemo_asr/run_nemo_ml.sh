@@ -6,9 +6,10 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 # Configuration
-MODEL_IDS=(
-    "nvidia/parakeet-tdt-0.6b-v3"
-    "nvidia/canary-1b-v2"
+MODEL_CONFIGS=(
+    "nvidia/parakeet-tdt-0.6b-v3 de fr it es pt nl"
+    "nvidia/canary-1b-v2 de fr it es pt nl"
+    "nvidia/stt_hy_fastconformer_hybrid_large_pc hy"
 )
 
 BATCH_SIZE=64
@@ -17,10 +18,11 @@ DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
+ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 
 DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl"
-DATASET_LANGS_mcv="de es fr it nl"
+DATASET_LANGS_fleurs="de fr it es pt nl hy"
+DATASET_LANGS_mcv="de es fr it nl hy"
 DATASET_LANGS_mls="es fr it pt nl"
 
 # Function to run evaluation
@@ -29,6 +31,8 @@ run_evaluation() {
     local dataset=$2
     local language=$3
     local config_name="${dataset}_${language}"
+    local dataset_path="$DATASETS"
+    [[ "$language" == "hy" ]] && dataset_path="$ARMENIAN_DATASETS"
     
     echo ""
     echo "🚀 Running evaluation: $config_name"
@@ -42,7 +46,7 @@ run_evaluation() {
     
     python run_eval_ml.py \
         --model_id="$model_id" \
-        --dataset="$DATASETS" \
+        --dataset="$dataset_path" \
         --config_name="$config_name" \
         --language="$language" \
         --split="test" \
@@ -65,7 +69,8 @@ run_evaluation() {
 # Main execution
 RUNDIR=$(pwd)
 
-for MODEL_ID in "${MODEL_IDS[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID MODEL_LANGUAGES <<< "$model_cfg"
     echo "========================================================"
     echo "Model: $MODEL_ID"
     echo "Batch Size: $BATCH_SIZE"
@@ -83,6 +88,9 @@ for MODEL_ID in "${MODEL_IDS[@]}"; do
             echo ""
             
             for language in $languages; do
+                if [[ " $MODEL_LANGUAGES " != *" $language "* ]]; then
+                    continue
+                fi
                 run_evaluation "$MODEL_ID" "$dataset" "$language"
             done
         fi

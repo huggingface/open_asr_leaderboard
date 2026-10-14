@@ -27,7 +27,7 @@ from transformers import AutoModelForCausalLM, AutoProcessor, CompileConfig
 from normalizer import data_utils
 
 
-DEFAULT_MODEL_ID = "AutoArk-AI/Audio8-ASR-0.1B"
+DEFAULT_MODEL_ID = "Edge0/Audio8-ASR-0.1B"
 DEFAULT_MODEL_REVISION = "b812eff124893ecd76a1dcde74ee58db5adab59c"
 PROMPT = "Please transcribe this audio."
 

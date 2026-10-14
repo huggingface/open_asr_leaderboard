@@ -3,7 +3,7 @@
 # Multilingual API ASR Evaluation Script
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech)
 
-RESULTS_BUCKET="${RESULTS_BUCKET:-}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_private}"
 IMAGE_TAG="api-eval"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
 
@@ -14,9 +14,7 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    # "openai/gpt-4o-transcribe      16"
-    # "openai/gpt-4o-mini-transcribe 16"
-    # "openai/whisper-1              16"
+    # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
     # "elevenlabs/scribe_v2          8"
@@ -26,12 +24,14 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual         25"
     # "soniox/stt-async-v5           20"
+    # "gemini/gemini-3.5-transcribe  16"
     # "meta/muse-voice-transcribe    8"
     # "meta/muse-voice-transcribe-streaming    8"
     # "sprag/symphony                8"
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
+ARMENIAN_DATASET_PATH="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
@@ -46,11 +46,13 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs hy"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
     "mcv nl"
+    "mcv hy"
     "mls es"
     "mls fr"
     "mls it"
@@ -130,6 +132,7 @@ resolve_dataset() {
         CONFIG_NAME=""
     else
         DS_PATH="${DATASET_PATH}"
+        [[ "$language" == "hy" ]] && DS_PATH="${ARMENIAN_DATASET_PATH}"
         CONFIG_NAME="${dataset}_${language}"
     fi
 }
@@ -194,6 +197,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
             -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
