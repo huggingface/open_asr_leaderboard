@@ -34,8 +34,11 @@ def main(args):
     sampling_params = SamplingParams(temperature=0.0, max_tokens=args.max_new_tokens)
 
     # Same chat template as the vLLM OpenAI server applies to a "<prompt> <|audio|>" user turn
+    messages = [{"role": "user", "content": f"{args.prompt} {AUDIO_LOCATOR_TAG}"}]
+    if args.system_prompt:
+        messages.insert(0, {"role": "system", "content": args.system_prompt})
     prompt = llm.get_tokenizer().apply_chat_template(
-        [{"role": "user", "content": f"{args.prompt} {AUDIO_LOCATOR_TAG}"}],
+        messages,
         tokenize=False,
         add_generation_prompt=True,
     )
@@ -207,8 +210,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--prompt",
         type=str,
-        default="Transcribe in English",
-        help="ASR instruction; the audio locator tag is appended to it.",
+        default="Make a word-for-word transcription in English of the spoken content.",
+        help="ASR instruction; the audio locator tag is appended to it. The default comes from the "
+        "model's training prompts and keeps it from answering questions spoken in the audio.",
+    )
+    parser.add_argument(
+        "--system_prompt",
+        type=str,
+        default=None,
+        help="Optional system message; by default the chat template's own one is used.",
     )
     parser.add_argument(
         "--max_new_tokens",
