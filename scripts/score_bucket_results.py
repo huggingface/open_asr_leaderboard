@@ -16,8 +16,10 @@ Usage:
 
     # Each manifest's WER / RTFx is stored in a `.score.json` file next to it (the
     # long-form eval job writes it; otherwise the first scoring run does, and uploads
-    # it to the bucket), so a manifest is aligned only once. After a change to the
-    # normalizer, re-score everything and replace the stored scores:
+    # it to the bucket), so a manifest is aligned only once. A minor-version bump of
+    # asr-normalizer marks the stored scores stale automatically (they are recomputed
+    # on the next run); patch releases do not. To re-score everything and replace the
+    # stored scores anyway:
     python scripts/score_bucket_results.py --family longform --recompute_scores
 
     # Multilingual (FLEURS/MCV/MLS) results. Defaults to the
@@ -254,8 +256,9 @@ def main():
         "--recompute_scores",
         action="store_true",
         help="Re-score every manifest instead of reading its stored .score.json, and "
-             "replace the stored scores (locally and in the bucket). Use after a "
-             "change to the normalizer.",
+             "replace the stored scores (locally and in the bucket). Not needed after "
+             "a minor-version bump of asr-normalizer, which marks stored scores stale "
+             "automatically (patch releases do not).",
     )
     parser.add_argument(
         "--num_workers",

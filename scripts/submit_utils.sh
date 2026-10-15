@@ -42,13 +42,19 @@ local_script_inject() {
 # local_normalizer_inject [TAR_FLAG]...
 #
 # With USE_LOCAL_NORMALIZER=1 (the default), prints a command prefix that unpacks
-# your local normalizer/ package into /app in the job, so normalizer changes take
-# effect without updating the Space. TAR_FLAGs are added to the extracting tar
-# (e.g. --no-same-owner). Prints nothing with USE_LOCAL_NORMALIZER=0.
+# your local normalizer/ package, and the asr_normalizer package it imports (as
+# installed in your local Python environment), into /app in the job, so normalizer
+# changes take effect without updating the Space. TAR_FLAGs are added to the
+# extracting tar (e.g. --no-same-owner). Prints nothing with USE_LOCAL_NORMALIZER=0.
 local_normalizer_inject() {
     [[ "${USE_LOCAL_NORMALIZER:-1}" == "1" ]] || return 0
-    local b64
-    b64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${SUBMIT_UTILS_REPO_ROOT}" normalizer | base64 | tr -d '\n')
+    local b64 pkg_parent
+    pkg_parent=$(python -c "import asr_normalizer, os; print(os.path.dirname(os.path.dirname(asr_normalizer.__file__)))") || {
+        echo "ERROR: asr-normalizer is not installed locally (pip install -r requirements/requirements_jobs.txt)." >&2
+        return 1
+    }
+    b64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${SUBMIT_UTILS_REPO_ROOT}" normalizer \
+        -C "${pkg_parent}" asr_normalizer | base64 | tr -d '\n')
     printf '%s' "echo '${b64}' | base64 -d | tar ${*:+$* }-xzf - -C /app &&"
 }
 

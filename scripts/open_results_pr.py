@@ -677,7 +677,9 @@ def main():
         "--recompute_scores",
         action="store_true",
         help="Re-score every manifest instead of reading its stored .score.json, and "
-             "replace the stored scores. Use after a change to the normalizer.",
+             "replace the stored scores. Not needed after a minor-version bump of "
+             "asr-normalizer, which marks stored scores stale automatically "
+             "(patch releases do not).",
     )
     parser.add_argument(
         "--num_workers",

@@ -6,5 +6,5 @@ datasets
 soundfile
 librosa
 kaldialign>=0.12.0
-num2words
-regex
+# TODO before merge: switch to asr-normalizer==0.1.0 once published on PyPI
+asr-normalizer @ git+https://github.com/MatiasVoldbyDrejer/asr-normalizer@v0.1.0

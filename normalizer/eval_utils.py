@@ -3,10 +3,11 @@ import hashlib
 import json
 import os
 from collections import defaultdict
-from difflib import SequenceMatcher
 
 from concurrent.futures import ProcessPoolExecutor
 
+import asr_normalizer
+from asr_normalizer.pairs import normalize_compound_pairs
 from kaldialign import edit_distance
 
 # Languages scored with voi_oiwer (Orthographically Informed WER over a
@@ -63,39 +64,6 @@ def score_oiwer(manifest: list, language_name: str):
 
     err_rate = (total_ins + total_del + total_sub) / total_ref_words if total_ref_words else 0.0
     return err_rate, total_ins, total_del, total_sub
-
-
-def normalize_compound_pairs(refs, preds):
-    """Align compound word boundaries between ref/pred pairs.
-
-    When a mismatch region has identical characters ignoring whitespace,
-    normalize both sides to the joined form.
-    """
-    new_refs, new_preds = [], []
-    for ref_text, pred_text in zip(refs, preds):
-        ref_words = ref_text.split()
-        pred_words = pred_text.split()
-
-        sm = SequenceMatcher(None, ref_words, pred_words)
-        new_rw, new_pw = [], []
-
-        for tag, i1, i2, j1, j2 in sm.get_opcodes():
-            if tag == "equal":
-                new_rw.extend(ref_words[i1:i2])
-                new_pw.extend(pred_words[j1:j2])
-            else:
-                rc = "".join(ref_words[i1:i2])
-                pc = "".join(pred_words[j1:j2])
-                if rc == pc:
-                    new_rw.append(rc)
-                    new_pw.append(pc)
-                else:
-                    new_rw.extend(ref_words[i1:i2])
-                    new_pw.extend(pred_words[j1:j2])
-
-        new_refs.append(" ".join(new_rw))
-        new_preds.append(" ".join(new_pw))
-    return new_refs, new_preds
 
 
 def read_manifest(manifest_path: str):
@@ -238,8 +206,27 @@ def _sha256(path: str) -> str:
     return h.hexdigest()
 
 
+def _normalizer_series(version: str) -> str:
+    """The MAJOR.MINOR series of an asr-normalizer version, e.g. "0.1.3" -> "0.1".
+
+    asr-normalizer changes normalized output only in minor (or major) releases;
+    patch releases never do, so scores are comparable within a series. A malformed
+    value (e.g. null) yields a series that matches no release, so the score is stale.
+    """
+    return ".".join(str(version).split(".")[:2])
+
+
 def read_score_file(manifest_path: str, language: str = "en", multilingual: bool = False):
-    """Return the stored score of `manifest_path`, or None if absent or stale."""
+    """Return the stored score of `manifest_path`, or None if absent or stale.
+
+    A score is stale if it was computed for another language / multilingual setting,
+    if the manifest changed since, or if its `normalizer_version` belongs to another
+    MAJOR.MINOR series than the installed asr-normalizer: a minor-version bump of
+    asr-normalizer marks cached scores stale; patch releases do not. A score file
+    without the field counts as written by 0.1.x (the series that introduced the
+    field, and whose output matches the in-repo normalizer it replaced), so it is
+    valid under 0.1.x and stale from 0.2 on.
+    """
     path = score_file_path(manifest_path)
     if not os.path.exists(path):
         return None
@@ -252,19 +239,27 @@ def read_score_file(manifest_path: str, language: str = "en", multilingual: bool
         score.get("language") != language
         or score.get("multilingual") != multilingual
         or score.get("manifest_sha256") != _sha256(manifest_path)
+        or _normalizer_series(score.get("normalizer_version", "0.1.0"))
+        != _normalizer_series(asr_normalizer.__version__)
     ):
         return None
     return score
 
 
 def write_score_file(manifest_path: str, score: dict, language: str = "en", multilingual: bool = False) -> str:
-    """Store `score` (as returned by score_manifest) next to `manifest_path`."""
+    """Store `score` (as returned by score_manifest) next to `manifest_path`.
+
+    Records the full installed asr-normalizer version; read_score_file treats the
+    score as stale once a minor-version bump of asr-normalizer is installed (patch
+    releases do not make it stale).
+    """
     path = score_file_path(manifest_path)
     record = {
         **score,
         "language": language,
         "multilingual": multilingual,
         "manifest_sha256": _sha256(manifest_path),
+        "normalizer_version": asr_normalizer.__version__,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2)
@@ -478,8 +473,11 @@ def score_results(
                   None prints all detected families.
         use_cache: If True, read each manifest's score from its `.score.json` file
                    (see SCORE_SUFFIX) when one matches, and write one when not.
-        recompute: With use_cache, ignore existing score files and rewrite them,
-                   e.g. after a change to the normalizer.
+        recompute: With use_cache, ignore existing score files and rewrite them.
+                   Not needed after a minor-version bump of asr-normalizer: score
+                   files record the normalizer version, and a minor-version bump
+                   marks them stale, so they are recomputed automatically (patch
+                   releases do not).
         written_scores: Optional list; the path of every score file written is
                    appended to it, so the caller can upload them.
         num_workers: Processes used to align each manifest; None uses every CPU
