@@ -81,6 +81,40 @@ For contributors who want to test locally or evaluate multilingual/long-form mod
 
 Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
 
+## Text normalization and score comparability
+
+The English and shared basic/multilingual normalizers preserve ordinary words inside
+parentheses, square brackets and angle brackets, including fullwidth forms. Existing
+punctuation cleanup removes the delimiters; enclosed speech still goes through the
+usual number, spelling and language-specific normalization on both references and
+predictions. Only exact enclosed non-speech tags are removed (case-insensitive, with
+surrounding whitespace ignored): `laugh`, `laughs`, `laughing`, `laughter`, `cough`,
+`coughs`, `coughing`, `unk` and `music`. Longer phrases such as `(cough medicine)`
+remain. Armenian already preserves enclosed text and keeps its existing normalizer;
+Hindi scoring continues to use `voi_oiwer`'s own normalization.
+
+This fixes the general issue identified during [URGENT2024 integration](https://github.com/huggingface/open_asr_leaderboard/pull/196#issuecomment-6023454846).
+Its preparation script already removes parentheses while keeping their contents;
+the converted references do not need another rewrite. Predictions can still contain
+parentheses, so URGENT2024 scores can also change.
+
+Scores from before and after this change are not directly comparable. Recompute all
+models being compared from their raw JSONL references and predictions with the same
+normalizer revision; existing `.score.json` caches do not track normalizer changes.
+No new inference is needed for rescoring. For a local public English comparison
+(this writes local score caches; use a copy if preserving old caches):
+
+```bash
+python scripts/score_bucket_results.py --skip_sync --local_dir results \
+    --family public --recompute_scores --no_upload_scores
+```
+
+Select other English datasets with `--family` (for example, `longform`). For
+multilingual results, use `--multilingual` instead of `--family public`.
+Normalization/scoring regressions use synthetic text and run without model weights:
+`python -m unittest discover -s normalizer/tests -v` (install `regex`, `num2words`,
+`kaldialign` and `datasets`, or use `requirements/requirements_jobs.txt`).
+
 # Trade-off plots
 
 For open-source models, you can plot tradeoff plots like below with `scripts/plot_all.sh`.
