@@ -8,8 +8,8 @@ The [NeMo runners](../nemo_asr/) remain available for upstream comparisons.
 
 | Checkpoint | Decoder | Reported as |
 | --- | --- | --- |
-| `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M` | RNN-T | `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M transducer_modified_beam_search` |
-| `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M` | CTC | `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M ctc_greedy_search` |
+| `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M` | RNN-T | `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M (fast-gpu-asr, transducer_modified_beam_search)` |
+| `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M` | CTC | `soundsgoodai/Zipformer-cr-ctc-transducer-XL-290M (fast-gpu-asr, ctc_greedy_search)` |
 | `nvidia/parakeet-tdt-0.6b-v3` | TDT | `nvidia/parakeet-tdt-0.6b-v3 (fast-gpu-asr)` |
 | `nvidia/parakeet-tdt-0.6b-v2` | TDT | `nvidia/parakeet-tdt-0.6b-v2 (fast-gpu-asr)` |
 | `nvidia/parakeet-ctc-0.6b` | CTC | `nvidia/parakeet-ctc-0.6b (fast-gpu-asr)` |
@@ -48,19 +48,26 @@ SoundFile handles audio loading. No NeMo, Icefall, k2, TorchCodec, or separate
 system CUDA toolkit is needed; the requirements file above is sufficient.
 
 Both launchers share [config.sh](config.sh): `MODEL_CONFIGS` sets each model's
-repository, family, checkpoint, decoder, beam, batch size, and optional
+repository, family, checkpoint, decoder, beam, batch size, workers, and optional
 reported-name suffix; `DATASET_CONFIGS` selects datasets; `COMMON_ARGS` sets
 precision, duration profiles, and warm-ups.
+Set `CONFIG` to a filename in `soundsgoodai/`, an absolute path, or a path
+relative to the current working directory to select another configuration.
 
 ```bash
 bash soundsgoodai/run_models.sh
 ```
 
-Defaults are **FP16, batch 256**, beam **10** for Zipformer RNN-T, **6** for
+Defaults are **FP16, batch 256 per worker**, beam **10** for Zipformer RNN-T, **6** for
 Parakeet TDT V2/V3, and **1** for CTC, a **0.1 / 10 / 40-second** duration profile
-(min/opt/max), optimization level **5**, and blank penalty **0.0**. The eight
+(min/opt/max), optimization level **5**, and blank penalty **0.0**. The ten
 dataset splits are LibriSpeech clean/other, AMI, chunked Earnings22, GigaSpeech, SPGISpeech,
-VoxPopuli, and Monsoon English. Reduce batch sizes if needed for GPU memory.
+VoxPopuli, URGENT2024 noisy/clean, and Monsoon English. Reduce batch sizes or worker
+counts if needed for GPU memory.
+
+`MODEL_CONFIGS` sets **3 workers**, except **2 for Parakeet CTC 1.1B**, after
+the batch-size field. Each worker uses an independent ASR instance on the same
+GPU. Direct `run_eval.py` calls default to one worker; override with `--workers`.
 
 Local suites save to `soundsgoodai/runs/<RUN_ID>/<reported-name>/results/`.
 Engines are cached in `soundsgoodai/engines/`, overridable with `ENGINE_CACHE`.
@@ -87,7 +94,7 @@ Truncated chunked datasets are rejected because scoring needs complete parents.
 ## HF Jobs
 
 **[HF Jobs](https://huggingface.co/docs/huggingface_hub/guides/jobs) are paid.**
-Update the [Space](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-zipformer)
+Update the [Space](https://huggingface.co/spaces/hf-audio/fast-gpu-asr-eval)
 with the runner, normalizer, and dependencies, wait for its build to succeed, and
 review `config.sh` before submitting:
 
@@ -95,19 +102,17 @@ review `config.sh` before submitting:
 HF_TOKEN=hf_... bash soundsgoodai/submit_jobs.sh
 ```
 
-The default matrix runs **six sequential jobs**, one per model/decoder, each
-evaluating all eight splits on **one H200**. The first dataset builds engines
-in `/app/engines`; subsequent datasets reuse them on the same GPU.
+The default matrix runs **60 H200 jobs**: ten parallel dataset jobs per
+model/decoder, handling the six models one at a time. Each job builds its own
+engines; each model is scored before the next is submitted.
 
-- `PARALLEL_DATASETS=1` in `config.sh` submits one job per dataset instead and
-  runs a model's jobs in parallel, so its wall clock is the slowest dataset
-  rather than their sum. Each job then builds its own engines, so the GPU cost
-  is one export per dataset. Models are still handled one at a time, each scored
-  before the next is submitted.
+- `PARALLEL_DATASETS=0` submits **six sequential jobs**, one per model/decoder,
+  each evaluating all ten splits on one H200. The first dataset builds engines
+  in `/app/engines`; subsequent datasets reuse them on the same GPU.
 - `FLAVOR`, `ORG_NAME`, and `TIMEOUT` (default `8h`) control scheduling.
 - `SPACE` selects the image; `RESULTS_BUCKET` must name a bucket you can write to.
 - `ONLY_DATASETS="librispeech spgispeech"` selects clean, other, and SPGISpeech.
-- Local `run_eval.py` and `normalizer/` are injected into each job by default, so
+- Local runners and `normalizer/` are injected into each job by default, so
   runner and normalizer changes take effect without updating the Space. Set
   `USE_LOCAL_SCRIPT=0` or `USE_LOCAL_NORMALIZER=0` to use the image's versions.
   Dependency changes still require an image rebuild.
@@ -126,24 +131,34 @@ and the remaining models still run.
 `RUN_ID` defaults to a UTC timestamp-based name and groups local results only;
 existing local run directories are rejected. Bucket folders are keyed on the
 reported name alone, so rerunning a configuration overwrites its manifests
-there, and manifests from a previous run over different datasets are downloaded
-alongside the new ones.
+there. By default, only files uploaded since the launcher started are downloaded
+and scored; older manifests are excluded. `RESULTS_SINCE` overrides that cutoff
+with a Unix timestamp; `RESULTS_SINCE=0` includes all files in the model's bucket
+folder, including previous runs.
 
 ## Multilingual
 
 `nvidia/parakeet-tdt-0.6b-v3` is the only multilingual checkpoint here; V2, the
-Parakeet CTC models, and Zipformer are English-only. Its own launcher,
-[config_ml.sh](config_ml.sh), [run_eval_ml.py](run_eval_ml.py), and
-[submit_jobs_ml.sh](submit_jobs_ml.sh), mirrors the English ones and evaluates
+Parakeet CTC models, and Zipformer are English-only. Select
+[config_ml.sh](config_ml.sh) with the same [submit_jobs.sh](submit_jobs.sh) launcher
+and the separate [run_eval_ml.py](run_eval_ml.py) runner to evaluate
 **FLEURS, Mozilla Common Voice, and Multilingual LibriSpeech** in the six
-languages the leaderboard reports (`de`, `fr`, `it`, `es`, `pt`, `nl`), sixteen
+configured languages (`de`, `fr`, `it`, `es`, `pt`, `nl`), sixteen
 dataset/language combinations from
 [open-asr-leaderboard-multilingual-datasets](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets):
 
+Run the full multilingual suite locally with the shared engine cache:
+
 ```bash
-HF_TOKEN=hf_... bash soundsgoodai/submit_jobs_ml.sh
-HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash soundsgoodai/submit_jobs_ml.sh
-HF_TOKEN=hf_... ONLY_DATASETS="fleurs mcv" ONLY_LANGUAGES="nl de" bash soundsgoodai/submit_jobs_ml.sh
+CONFIG=config_ml.sh bash soundsgoodai/run_models.sh
+```
+
+Or submit HF Jobs:
+
+```bash
+CONFIG=config_ml.sh HF_TOKEN=hf_... bash soundsgoodai/submit_jobs.sh
+CONFIG=config_ml.sh HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash soundsgoodai/submit_jobs.sh
+CONFIG=config_ml.sh HF_TOKEN=hf_... ONLY_DATASETS="fleurs mcv" ONLY_LANGUAGES="nl de" bash soundsgoodai/submit_jobs.sh
 ```
 
 Dataset configuration names are `<dataset>_<language>`, such as `fleurs_de`. The
@@ -154,21 +169,17 @@ configuration name (`mls_pt`) or the dataset alone (`mls`).
 
 `config_ml.sh` sources `config.sh`, so decoders, precision, warm-ups, and
 `PARALLEL_DATASETS` are shared; it replaces the models, the datasets, the
-duration profile, and the batch size. The profile goes to **60 seconds**
-because FLEURS reaches 53 and overlong clips fail rather than being truncated,
-and the batch size drops to **128** to pay for it: the feature plugin stages
-one TensorRT workspace proportional to `batch_size * max_audio_seconds`, the
-English 256 x 40 s already uses 98.8% of its signed 32-bit limit, and exceeding
-it fails the export before any audio is read. At 60 seconds the ceiling is 172.
-Raising either one means lowering the other. `RESULTS_BUCKET` defaults to
+duration profile, and the batch size. Multilingual defaults are **batch 192 per
+worker, with 3 workers**. The profile goes to **60 seconds**
+because FLEURS reaches 53 seconds. `RESULTS_BUCKET` defaults to
 `hf-audio/asr_leaderboard_multilingual`, so multilingual manifests never share a
 bucket folder with the English ones despite the identical reported name.
-Everything else, injection of the local runner and normalizer, bucket sync,
+Everything else, injection of the local runner and normalizer, result fetching,
 manifest and metadata checks, and the `RUN_ID` layout, works as described above.
 
 Scoring uses `ml_normalizer` for the evaluated language rather than the English
 normalizer: it also spells out digits, so `tien uur` and `10 uur` agree. Compound
-word boundaries are aligned before the compound-aware WER. `submit_jobs_ml.sh`
+word boundaries are aligned before the compound-aware WER. `submit_jobs.sh`
 calls `score_results` once per language, each restricted to its own `ml_<lang>`
 family, so every summary is normalized for the language it covers.
 
@@ -177,16 +188,18 @@ family, so every summary is normalized for the language it covers.
 - **Preparation:** use upstream reference filtering and mono 16 kHz float32 audio.
   Zipformer resamples through PCM16 `audioop.ratecv`; Parakeet uses `soxr_hq`.
   Sort by descending sample count, breaking ties by ascending utterance ID.
-- **Execution:** five warm-ups on the first batch by default, then one measured
-  pass, including the final partial batch. Inference results are never cached.
-- **Timing:** synchronize the full `ASR` call, including staging, transfers,
-  features, encoding, decoding, text, and timestamps. Exclude loading/export,
-  file I/O, resampling, sorting, and scoring.
+- **Execution:** five warm-ups on the first batch per active worker by default,
+  then one measured pass, including the final partial batch. Inference results are never cached.
+- **Timing:** measure queue wall time across synchronized full `ASR` calls,
+  including scheduling, progress updates, staging, transfers, features, encoding,
+  decoding, text, and timestamps. Exclude loading/export, file I/O, audio preparation,
+  warm-ups, sorting, final result aggregation, and scoring.
 - **RTFx:** total real audio duration / total inference time. Padding does not
-  count as audio. Batch time is shared equally among manifest rows, not measured
+  count as audio. Queue time is shared equally among dataset rows, not measured
   as per-clip latency.
 - **WER:** save raw references/predictions and audio IDs, reconstruct Earnings22
-  parents in chunk order, then use the upstream compound-aware English scorer.
+  parents in chunk order, then use the upstream compound-aware scorer in the
+  selected language.
 
 Checkpoints come from Hub `main`. Each JSONL manifest has a metadata sidecar with
 the resolved checkpoint revision, export settings, GPU/CUDA details, and dataset
