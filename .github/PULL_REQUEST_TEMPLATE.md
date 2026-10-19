@@ -27,8 +27,10 @@ A similar checklist applies for multilingual evaluation (with `run_eval_ml.py` a
 
 ####  Key guidelines
 - [ ] Use the **same decoding hyper-parameters** across all datasets for a given model.
-- [ ] (If writing a new) `run_eval.py`, it must support **batch processing** and use `normalizer/data_utils.py` for data loading, normalization, and manifest writing.
-- [ ] Use the **maximum possible batch size** (can differ per dataset) on an H200 GPU.
+    - [ ] Use the **maximum possible batch size** (can differ per dataset) on an H200 GPU.
+    - [ ] **(Exception) transcription mode:** datasets follow different transcript conventions: verbatim vs. non-verbatim, for denoting quantities (e.g. "$2500" vs. "two thousand five hundred dollars"), for multilingual scripts (e.g. mixed Devanagari/Latin vs. romanized), etc. Models that support it may set the mode via a prompt. Apart from the mode instruction, the prompt must be **identical across datasets**, with no dataset names, domain hints, vocabulary lists, or other dataset-specific context. See the leaderboard [About section](https://hf-audio-open-asr-leaderboard.hf.space/?tab=about) for the transcription styles of each evaluation dataset.
+    - [ ] Prompt(s) should be explicitly set in the script.
+- [ ] If writing a new `run_eval.py`, it must support **batch processing** and use `normalizer/data_utils.py` for data loading and manifest writing. Make sure that the un-normalized model outputs are saved.
 - [ ] Use `torch.compile` and/or relevant optimizations including warmup to maximize RTFx.
 - [ ] Even if you're not using HF Jobs, prepare an HF space like the [existing models](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations), such that the maintainers can reproduce your results on HF Jobs.
 - [ ] Please report your results on the relevant public sets, as well as the RTFx.
@@ -63,8 +65,8 @@ See [here](https://github.com/huggingface/open_asr_leaderboard/blob/main/api/REA
 
 
 ## New Dataset Checklist
-- [ ] The dataset is hosted on the HF Hub with **just** the test set.
 - [ ] Create a new Bash script with one of the existing models. For example, adapting the `submit_jobs.sh` script for Parakeet or Whisper to add a line for your dataset. 
+- [ ] If the dataset is not on the Hugging Face Hub or if it's in a dataset with train and test splits, create a script like [this](https://github.com/huggingface/open_asr_leaderboard/blob/main/scripts/prepare_urgent2024.py) for adding **just the test set** to the [HF collection](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard) of ASR leaderboard datasets. It should have an option for overwriting wrong transcripts, opening a PR, use similar [columns names](https://github.com/huggingface/open_asr_leaderboard/blob/25e0b9e143b07eeaf3b50366c2525ddf0c0c9a6b/scripts/prepare_urgent2024.py#L109-L115), etc.
 
 ## Related issues
 Closes #
