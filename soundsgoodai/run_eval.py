@@ -330,7 +330,8 @@ def export_bundle(
     Clear the cache after TensorRT or plugin upgrades. A per-key lock and
     temporary directory keep incomplete builds out of the cache.
     The child exporter receives ``CUDA_VISIBLE_DEVICES=str(args.device)``
-    as its environment and sees that device as logical device zero.
+    and an unlimited OmegaConf YAML expansion limit (Hub checkpoints are
+    trusted) as its environment and sees that device as logical device zero.
     Run without a remapped parent ``CUDA_VISIBLE_DEVICES`` so the selected
     index identifies the same GPU for export and inference.
     Builder resources are released before ASR loads the engines.
@@ -403,9 +404,13 @@ def export_bundle(
             ]
             for name, value in settings.items():
                 command.extend((f"--{name.replace('_', '-')}", str(value)))
-            subprocess.run(
-                command, check=True, env={"CUDA_VISIBLE_DEVICES": str(args.device)}
-            )
+            env = {
+                "CUDA_VISIBLE_DEVICES": str(args.device),
+                # NeMo configs (e.g. parakeet-tdt-0.6b-v3) exceed OmegaConf's
+                # default YAML alias-expansion limit of 10000 nodes.
+                "OMEGACONF_MAX_YAML_EXPANDED_NODES": "none",
+            }
+            subprocess.run(command, check=True, env=env)
 
             with open(output / "export.json", "w", encoding="utf-8") as destination:
                 json.dump(metadata, destination, indent=2, sort_keys=True)
