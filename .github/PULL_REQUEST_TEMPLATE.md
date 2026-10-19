@@ -30,7 +30,7 @@ A similar checklist applies for multilingual evaluation (with `run_eval_ml.py` a
     - [ ] Use the **maximum possible batch size** (can differ per dataset) on an H200 GPU.
     - [ ] **(Exception) transcription mode:** datasets follow different transcript conventions (verbatim vs. non-verbatim; see the [About](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) section). Models that support it may set the mode via a prompt, following the mode listed for each dataset. Apart from the mode instruction, the prompt must be **identical across datasets**, with no dataset names, domain hints, vocabulary lists, or other dataset-specific context.
     - [ ] Prompt(s) should be explicitly set in the script.
-- [ ] (If writing a new) `run_eval.py`, it must support **batch processing** and use `normalizer/data_utils.py` for data loading and manifest writing. Make sure that the un-normalized model outputs are saved.
+- [ ] If writing a new `run_eval.py`, it must support **batch processing** and use `normalizer/data_utils.py` for data loading and manifest writing. Make sure that the un-normalized model outputs are saved.
 - [ ] Use `torch.compile` and/or relevant optimizations including warmup to maximize RTFx.
 - [ ] Even if you're not using HF Jobs, prepare an HF space like the [existing models](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations), such that the maintainers can reproduce your results on HF Jobs.
 - [ ] Please report your results on the relevant public sets, as well as the RTFx.
