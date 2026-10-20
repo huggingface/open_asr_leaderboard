@@ -64,6 +64,6 @@ COPY . /app
 ENTRYPOINT ["bash"]
 
 # Keep-alive CMD so the Space runtime stays healthy. HF Jobs and `docker run`
-# override this with their own command (e.g. `run_parakeet.sh`).
+# override this with their own command (e.g. `python run_eval.py ...`).
 EXPOSE 7860
 CMD ["-c", "python3 -m http.server 7860"]

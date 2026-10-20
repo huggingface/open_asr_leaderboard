@@ -12,6 +12,7 @@ RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
+JOB_TIMEOUT="${JOB_TIMEOUT:-1h}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -26,11 +27,10 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Models: "model_id revision batch_size" ───────────────────────────────────
 # The revision pins the model repo commit for reproducibility. The batch size is
-# vLLM's max_num_seqs: each sequence of this hybrid Mamba LLM needs ~100 MB of
-# Mamba state + ~16 KB of KV cache per token, so 512 short-form requests are
-# estimated at ~55 GB, within an H200 once the ~17 GB of bf16 weights are loaded.
+# vLLM's max_num_seqs: each request of this hybrid Mamba LLM takes ~0.11 GiB of
+# cache, so 512 requests fill about half of the ~105 GiB cache pool of an H200.
 MODEL_CONFIGS=(
-    "OpenLLM-France/Luciole-8B-Audio-1.0 3444ad9e78f018a4b7dc6350125036733bc97927 512"
+    "OpenLLM-France/Luciole-8B-Audio-1.0 3444ad9e78f018a4b7dc6350125036733bc97927 ${BATCH_SIZE:-512}"
 )
 
 # ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
@@ -83,7 +83,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
         hf jobs run \
             --flavor "$FLAVOR" \
-            --timeout 8h \
+            --timeout "${JOB_TIMEOUT}" \
             --secrets HF_TOKEN="$HF_TOKEN" \
             --env TOKENIZERS_PARALLELISM=false \
             --env HF_AUDIO_DECODER_BACKEND=soundfile \

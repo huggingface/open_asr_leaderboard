@@ -58,6 +58,9 @@ def main(args):
         max_num_seqs=args.batch_size,
         gpu_memory_utilization=args.gpu_memory_utilization,
         limit_mm_per_prompt={"audio": 1},
+        # The warmup samples are the dataset's first ones: don't reuse their preprocessed audio
+        mm_processor_cache_gb=0,
+        compilation_config={"max_cudagraph_capture_size": max(512, args.batch_size)},
     )
     # vLLM does not expose the module tree, so count parameters from the checkpoint metadata
     num_params = sum(get_safetensors_metadata(args.model_id, revision=args.revision).parameter_count.values())
@@ -101,7 +104,7 @@ def main(args):
         # START TIMING
         start_time = time.time()
 
-        # INFERENCE: vLLM schedules the whole minibatch with continuous batching
+        # INFERENCE: vLLM schedules all requests with continuous batching
         outputs = llm.generate(
             [{"prompt": prompt, "multi_modal_data": {"audio": (audio, SAMPLING_RATE)}} for audio in audios],
             sampling_params,
@@ -131,7 +134,7 @@ def main(args):
         print(f"Subsampling dataset to first {args.max_eval_samples} samples!")
     dataset = load(args.max_eval_samples)
     dataset = dataset.map(
-        benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"],
+        benchmark, batch_size=None, batched=True, remove_columns=["audio"],
     )
 
     all_results = {
@@ -234,8 +237,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=256,
-        help="Number of samples sent to vLLM per call, also used as vLLM's max_num_seqs.",
+        default=512,
+        help="vLLM's max_num_seqs (requests in flight); each warmup step sends this many samples.",
     )
     parser.add_argument(
         "--max_eval_samples",

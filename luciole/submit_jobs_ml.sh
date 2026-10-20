@@ -14,6 +14,7 @@ RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
+JOB_TIMEOUT="${JOB_TIMEOUT:-1h}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -29,7 +30,7 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 # ── Models: "model_id revision batch_size" ───────────────────────────────────
 # Same revision and batch size as submit_jobs.sh (see the memory estimate there).
 MODEL_CONFIGS=(
-    "OpenLLM-France/Luciole-8B-Audio-1.0 3444ad9e78f018a4b7dc6350125036733bc97927 512"
+    "OpenLLM-France/Luciole-8B-Audio-1.0 3444ad9e78f018a4b7dc6350125036733bc97927 ${BATCH_SIZE:-512}"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
@@ -54,6 +55,11 @@ DATASET_CONFIGS=(
     "mls pt"
     "mls nl"
 )
+# Optional: restrict this run to specific datasets and/or languages, matched
+# against the first and second field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_LANGUAGES="nl" bash <this script>
+#   ONLY_DATASETS="fleurs mcv" ONLY_LANGUAGES="nl de" bash <this script>
+filter_only_datasets_languages || exit 1
 
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
@@ -75,7 +81,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
 
         hf jobs run \
             --flavor "$FLAVOR" \
-            --timeout 8h \
+            --timeout "${JOB_TIMEOUT}" \
             --secrets HF_TOKEN="$HF_TOKEN" \
             --env TOKENIZERS_PARALLELISM=false \
             --env HF_AUDIO_DECODER_BACKEND=soundfile \
