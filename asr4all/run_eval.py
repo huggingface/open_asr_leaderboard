@@ -1,20 +1,27 @@
 """Open ASR Leaderboard runner for FUTO asr4all models (trust_remote_code CTC + PCEC).
 
 Loads futo-org/asr4all-{s,m,l} with AutoModelForCTC(trust_remote_code=True), batches
-length-sorted audio through the encoder (bf16 autocast, torch.compile, per-shape CUDA graphs,
-fused Triton kernels from `asr4all_kernels`), runs the model's punctuation/casing/error-correction
-pass (PCEC) on the batch, and writes RAW transcripts through normalizer.data_utils so the
-leaderboard's normalizer scores them. Timing uses CUDA events after a per-shape warmup;
-RTFx = total audio / total transcription time.
+length-sorted audio through the encoder (bf16 autocast, torch.compile, CUDA graphs, fused Triton
+kernels from `asr4all_kernels`), runs the model's punctuation/casing/error-correction pass (PCEC)
+on the batch, and writes RAW transcripts through normalizer.data_utils so the leaderboard's
+normalizer scores them. RTFx = total audio / total transcription time.
+
+Warmup is the first --warmup_steps batches. Shapes those batches do not cover are compiled
+before timing from synthetic inputs, never from evaluation data:
+  - every batch is padded to --batch_size rows (padding rows are zeros and are not scored);
+  - the encoder compiles static, tuned kernels for the warmup batches' lengths, and one
+    dynamic-length graph for every other length, built from two silent batches (one shorter
+    and one longer than the 10.24 s full-context window);
+  - the PCEC pass runs at one of four fixed widths (64/128/192/256 tokens); all four are
+    compiled from dummy inputs.
 
 One decoding configuration is used for every dataset: --trunk_op 256,64 decodes clips up to
 10.24 s in a single window (full context); longer audio uses a sliding window (100 frames back,
-64 ahead) computed block-sparse with FlexAttention (--block_sparse 1).
+64 ahead) computed block-sparse with FlexAttention.
 """
 
 import argparse
 import collections
-import contextlib
 import os
 import time
 
@@ -48,55 +55,6 @@ if "--bf16_reduce" in __import__("sys").argv[1:] and "--bf16_reduce 0" not in " 
 ):
     torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = True
 PAUSE_THRESHOLDS = (1, 2, 4, 8, 16, 32, 64, 128)
-
-
-def _gpu_cooldown(target_c: int, timeout_s: int = 300) -> str:
-    import subprocess
-    import time as _t
-
-    t0 = _t.time()
-    while _t.time() - t0 < timeout_s:
-        try:
-            c = int(
-                subprocess.run(
-                    ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                .stdout.strip()
-                .splitlines()[0]
-            )
-        except Exception:
-            return "cooldown unavailable"
-        if c <= target_c:
-            return f"cooled to {c}C in {_t.time() - t0:.0f}s"
-        _t.sleep(5)
-    return f"cooldown TIMEOUT after {timeout_s}s (still >{target_c}C)"
-
-
-def _gpu_thermal() -> str:
-    import subprocess
-
-    try:
-        out = (
-            subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=temperature.gpu,clocks.sm,clocks.max.sm",
-                    "--format=csv,noheader,nounits",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            .stdout.strip()
-            .splitlines()[0]
-        )
-        c, sm, smax = (int(v) for v in out.split(", "))
-        return f"{c}C, SM {sm}/{smax} MHz"
-    except Exception:
-        return "thermal unknown"
 
 
 def collapse_pool_pause_batched(
@@ -198,7 +156,7 @@ def main(args):
     model = model.to(device).eval()
     encoder, vocab, blank = (model.encoder, model.config.vocab, model.config.blank_id)
     pcec, pc = (getattr(model, "pcec", None), None)
-    if pcec is not None and (not args.no_pcec):
+    if pcec is not None:
         cp = model.config.pcec
         pc = {
             "vocab": list(cp["vocab"]),
@@ -212,15 +170,6 @@ def main(args):
         print(
             f"pcec (hub): {sum((p.numel() for p in pcec.parameters())) / 1000000.0:.2f}M params, real_pause={pc['real_pause']}"
         )
-    if args.no_pcec:
-        pcec = None
-    if args.model_dtype != "float32" and on_cuda:
-        mdt = getattr(torch, args.model_dtype)
-        model.encoder.to(mdt)
-        model.ctc_head.to(mdt)
-        if pcec is not None:
-            pcec.to(mdt)
-        print(f"model dtype: encoder/head/pcec -> {args.model_dtype}; mel frontend stays fp32")
     if pcec is not None and args.torch_compile is not None:
         pcec = torch.compile(
             pcec,
@@ -238,32 +187,9 @@ def main(args):
     )
     print(f"pcec: {('ENABLED (in the timed region)' if pcec is not None else 'off')}")
     adaptive = args.trunk_op == "batch"
-    if not adaptive and args.torch_compile is not None and (args.pad_multiple > 1):
-        from asr4all_kernels import sliding_mask
-        from asr4all_kernels import sliding_block_mask
-
-        c_, r_ = (int(x) for x in args.trunk_op.split(","))
-        masks = {}
-        with torch.no_grad():
-            for tsamp in range(args.pad_multiple, 61 * 16000, args.pad_multiple):
-                dummy = torch.zeros(1, tsamp, device=device)
-                feat, _ = model.pre(dummy)
-                T = encoder.stem(encoder.input_proj(feat.transpose(1, 2))).shape[2]
-                if c_ < T:
-                    masks[T] = (
-                        sliding_block_mask(T, encoder.ec.left_ctx, r_, device)
-                        if args.block_sparse
-                        else sliding_mask(T, encoder.ec.left_ctx, r_, device)
-                    )
-        encoder.force_masks = masks
-        encoder.force_op = "full"
-        print(
-            f"[banded-compile] {len(masks)} static {('block-sparse' if args.block_sparse else 'dense')} masks probed for op ({c_},{r_})"
-        )
-    elif adaptive:
-        encoder.force_op = "full"
-    else:
-        encoder.force_op = tuple((int(x) for x in args.trunk_op.split(",")))
+    if adaptive:
+        raise SystemExit("--trunk_op must be C,R (e.g. 256,64) for the banded op")
+    encoder.force_op = tuple((int(x) for x in args.trunk_op.split(",")))
     op_desc = (
         f"batch-adaptive (T_batch, {encoder.ec.right_ctx})"
         if adaptive
@@ -293,8 +219,7 @@ def main(args):
                 from asr4all_kernels import enable_fir_kernel
 
                 enable_fir_kernel(model)
-            if args.flex:
-                encoder.ec = replace(encoder.ec, use_flex_attn=True)
+            encoder.ec = replace(encoder.ec, use_flex_attn=True)
             print(f"kernels: {args.kernels} (flex armed)")
         except ImportError:
             print("kernels: asr4all_kernels not importable — running eager (install it to enable)")
@@ -311,41 +236,31 @@ def main(args):
 
     trunk = _Trunk(model)
     if args.torch_compile is not None:
-        static = args.pad_multiple > 1 if args.compile_static < 0 else bool(args.compile_static)
-        if static:
-            torch._dynamo.config.cache_size_limit = 64
+        torch._dynamo.config.cache_size_limit = 64
         import torch._inductor.config as _icfg
 
-        if args.cudagraphs and static:
-            _icfg.triton.cudagraphs = True
-        opts = {
-            "max_autotune": args.torch_compile == "max-autotune",
-            "triton.cudagraphs": bool(args.cudagraphs and static),
-        }
-        trunk = torch.compile(trunk, options=opts, dynamic=not static)
+        opts = {"max_autotune": args.torch_compile == "max-autotune", "triton.cudagraphs": False}
+        torch._dynamo.config.automatic_dynamic_shapes = False
+        trunk = torch.compile(trunk, options=opts, dynamic=None)
         print(
-            f"torch.compile: {opts}, dynamic={not static} (trunk wrapper); inductor cudagraphs={getattr(_icfg.triton, 'cudagraphs', 'n/a')}"
+            f"torch.compile: {opts}, dynamic={'time axis'} (trunk wrapper); inductor cudagraphs={getattr(_icfg.triton, 'cudagraphs', 'n/a')}"
         )
     render, render_text = (_hub_render, _hub_render_text)
     _n_slots = args.prefetch + 2
     _stage = {"bufs": [None] * _n_slots, "evs": [None] * _n_slots, "i": 0, "last": 0}
-    _host = {"fill_s": 0.0, "prep_wait_s": 0.0, "drain_s": 0.0, "render_s": 0.0, "prof": False}
+    _host = {"fill_s": 0.0, "prep_wait_s": 0.0, "drain_s": 0.0, "render_s": 0.0}
 
-    def _lane(name):
-        return torch.profiler.record_function(name) if _host["prof"] else contextlib.nullcontext()
+    def _rows(n):
+        return max(n, args.batch_size)
 
-    if args.prep_threads > 1:
-        from concurrent.futures import ThreadPoolExecutor as _TPE
-
-        _fill_pool = _TPE(max_workers=args.prep_threads)
-    else:
-        _fill_pool = None
+    def _plens(lens):
+        return list(lens) + [min(lens)] * (_rows(len(lens)) - len(lens))
 
     def _assemble(audios, lens):
         max_len = max(lens)
         if args.pad_multiple > 1:
             max_len = -(-max_len // args.pad_multiple) * args.pad_multiple
-        B = len(audios)
+        B = _rows(len(audios))
         k = _stage["i"] = (_stage["i"] + 1) % _n_slots
         if _stage["evs"][k] is not None:
             _stage["evs"][k].synchronize()
@@ -363,75 +278,35 @@ def main(args):
 
         def _fill(rows):
             for j in rows:
+                if j >= len(audios):
+                    bn[j, :max_len] = 0.0
+                    continue
                 a = audios[j]
                 n = len(a)
                 bn[j, :n] = a
                 bn[j, n:max_len] = 0.0
 
-        if _fill_pool is not None and B >= 2 * args.prep_threads:
-            list(
-                _fill_pool.map(
-                    _fill, [range(k, B, args.prep_threads) for k in range(args.prep_threads)]
-                )
-            )
-        else:
-            _fill(range(B))
+        _fill(range(B))
         _host["fill_s"] += time.perf_counter() - h0
         return buf
 
-    _graphs: dict = {}
+    _hyb = {"mark": False}
 
-    def _capture(key, inp, ilen):
-        in_buf, ilen_buf = (inp.clone(), ilen.clone())
-        s = torch.cuda.Stream(device)
-        s.wait_stream(torch.cuda.current_stream(device))
-        with (
-            torch.cuda.stream(s),
-            torch.no_grad(),
-            torch.autocast("cuda", dtype=dtype, enabled=amp),
-        ):
-            for _ in range(2):
-                trunk(in_buf, ilen_buf)
-        torch.cuda.current_stream(device).wait_stream(s)
-        g = torch.cuda.CUDAGraph()
-        with torch.no_grad(), torch.autocast("cuda", dtype=dtype, enabled=amp), torch.cuda.graph(g):
-            out = trunk(in_buf, ilen_buf)
-        _graphs[key] = (g, in_buf, ilen_buf, out)
+    def _dyn(inp):
+        if _hyb["mark"]:
+            torch._dynamo.mark_dynamic(inp, 1)
+        return inp
 
-    _pgraphs: dict = {}
-    _warming = {"on": False}
+    _pmeta: dict = {}
 
     def _pcec_run(ids, ac, pause):
-        key = (ids.shape[0], ids.shape[1])
-        if args.manual_graphs_pcec and key in _pgraphs:
-            g, bi, ba, bp, out = _pgraphs[key]
-            bi.copy_(ids)
-            ba.copy_(ac)
-            bp.copy_(pause)
-            g.replay()
-            return out
+        _pmeta.update(D=ac.shape[-1], ac=ac.dtype, ids=ids.dtype, pause=pause.dtype)
         z = pcec(ids, acoustic=ac, pause=pause)
-        if args.manual_graphs_pcec and _warming["on"] and (key not in _pgraphs) and on_cuda:
-            bi, ba, bp = (ids.clone(), ac.clone(), pause.clone())
-            s = torch.cuda.Stream(device)
-            s.wait_stream(torch.cuda.current_stream(device))
-            with (
-                torch.cuda.stream(s),
-                torch.no_grad(),
-                torch.autocast("cuda", dtype=dtype, enabled=amp),
-            ):
-                for _ in range(2):
-                    pcec(bi, acoustic=ba, pause=bp)
-            torch.cuda.current_stream(device).wait_stream(s)
-            g = torch.cuda.CUDAGraph()
-            with (
-                torch.no_grad(),
-                torch.autocast("cuda", dtype=dtype, enabled=amp),
-                torch.cuda.graph(g),
-            ):
-                out = pcec(bi, acoustic=ba, pause=bp)
-            _pgraphs[key] = (g, bi, ba, bp, out)
         return z
+
+    def _tier(logits):
+        return pc["tier"]
+        return min(pc["tier"] or logits.shape[1], logits.shape[1])
 
     def issue_prepared(inp, ilen, n):
         start = torch.cuda.Event(enable_timing=True) if on_cuda else None
@@ -440,15 +315,7 @@ def main(args):
         if start:
             start.record()
         with torch.no_grad(), torch.autocast("cuda", dtype=dtype, enabled=amp):
-            key = (inp.shape[0], inp.shape[1])
-            if args.manual_graphs and key in _graphs:
-                g, in_buf, ilen_buf, out = _graphs[key]
-                in_buf.copy_(inp)
-                ilen_buf.copy_(ilen)
-                g.replay()
-                logits, hidden, feat_lens = out
-            else:
-                logits, hidden, feat_lens = trunk(inp, ilen)
+            logits, hidden, feat_lens = trunk(_dyn(inp), ilen)
             vf = torch.div(feat_lens, encoder.ec.rate_reduce, rounding_mode="floor").clamp(
                 max=logits.shape[1]
             )
@@ -456,7 +323,7 @@ def main(args):
             if pcec is None:
                 ids_cpu = logits.argmax(-1)
             if pcec is not None:
-                tier = min(pc["tier"] or logits.shape[1], logits.shape[1])
+                tier = _tier(logits)
                 ids, ac, pause, _n = collapse_pool_pause_batched(
                     logits,
                     hidden,
@@ -477,14 +344,14 @@ def main(args):
     def issue_batch(audios, lens):
         batch = _assemble(audios, lens)
         inp = batch.to(device, non_blocking=True)
-        ilen = torch.tensor(lens, device=device)
+        ilen = torch.tensor(_plens(lens), device=device)
         start = torch.cuda.Event(enable_timing=True) if on_cuda else None
         end = torch.cuda.Event(enable_timing=True) if on_cuda else None
         w0 = time.perf_counter()
         if start:
             start.record()
         with torch.no_grad(), torch.autocast("cuda", dtype=dtype, enabled=amp):
-            logits, hidden, feat_lens = trunk(inp, ilen)
+            logits, hidden, feat_lens = trunk(_dyn(inp), ilen)
             vf = torch.div(feat_lens, encoder.ec.rate_reduce, rounding_mode="floor").clamp(
                 max=logits.shape[1]
             )
@@ -492,7 +359,7 @@ def main(args):
             if pcec is None:
                 ids_cpu = logits.argmax(-1)
             if pcec is not None:
-                tier = min(pc["tier"] or logits.shape[1], logits.shape[1])
+                tier = _tier(logits)
                 ids, ac, pause, _n = collapse_pool_pause_batched(
                     logits,
                     hidden,
@@ -521,8 +388,7 @@ def main(args):
         if h["done"] is not None:
             h["done"].synchronize()
         if h.get("slots_host") is not None:
-            with _lane("render"):
-                return _render_slots(h)
+            return _render_slots(h)
         return _render_ids(h)
 
     def _render_slots(h):
@@ -531,7 +397,7 @@ def main(args):
         sm = h["slots_host"].numpy()
         prevm = numpy.concatenate([numpy.full((sm.shape[0], 1), -1, sm.dtype), sm[:, :-1]], 1)
         keep = (sm != prevm) & (sm != ctrl.blank)
-        out = [render_text(render(sm[j][keep[j]].tolist(), pv, ctrl)) for j in range(sm.shape[0])]
+        out = [render_text(render(sm[j][keep[j]].tolist(), pv, ctrl)) for j in range(h["n"])]
         _host["render_s"] += time.perf_counter() - r0
         return out
 
@@ -554,7 +420,7 @@ def main(args):
             prevm = numpy.concatenate([numpy.full((sm.shape[0], 1), -1, sm.dtype), sm[:, :-1]], 1)
             keep = (sm != prevm) & (sm != ctrl.blank)
             texts = []
-            for j in range(sm.shape[0]):
+            for j in range(h["n"]):
                 texts.append(render_text(render(sm[j][keep[j]].tolist(), pv, ctrl)))
         else:
             im = ids_cpu.cpu().numpy()
@@ -575,118 +441,6 @@ def main(args):
         s, e = h["ev"]
         gpu_s = s.elapsed_time(e) / 1000.0 if s else 0.0
         return (texts, gpu_s, time.perf_counter() - h["w0"])
-
-    side = torch.cuda.Stream(device) if on_cuda and args.pipeline and (pcec is not None) else None
-
-    def launch_batch(audios, lens):
-        batch = _assemble(audios, lens)
-        inp = batch.to(device, non_blocking=True)
-        ilen = torch.tensor(lens, device=device)
-        w0 = time.perf_counter()
-        with torch.no_grad(), torch.autocast("cuda", dtype=dtype, enabled=amp):
-            logits, hidden, feat_lens = trunk(inp, ilen)
-            vf = torch.div(feat_lens, encoder.ec.rate_reduce, rounding_mode="floor").clamp(
-                max=logits.shape[1]
-            )
-            lg, hd, vfc = (logits.clone(), hidden.clone(), vf.clone())
-            ev = torch.cuda.Event()
-            ev.record()
-            side.wait_event(ev)
-            with torch.cuda.stream(side):
-                tier = min(pc["tier"] or lg.shape[1], lg.shape[1])
-                ids, ac, pause, _n = collapse_pool_pause_batched(
-                    lg,
-                    hd,
-                    blank=blank,
-                    tier=tier,
-                    pad_in=pc["pad_in"],
-                    blackout=pc["pause_blackout"],
-                    valid_frames=vfc,
-                )
-                if not pc["real_pause"]:
-                    pause = torch.full_like(pause, int(pc["pause_blackout"]))
-                z = pcec(ids, acoustic=ac, pause=pause)
-                slots = z.argmax(-1)
-                done = torch.cuda.Event()
-                done.record(side)
-
-        def resolve():
-            done.synchronize()
-            ctrl, pv = (pc["ctrl"], pc["vocab"])
-            texts = []
-            for row in slots.cpu().tolist():
-                seq, prev = ([], -1)
-                for i in row:
-                    if i != prev and i != ctrl.blank:
-                        seq.append(i)
-                    prev = i
-                texts.append(render_text(render(seq, pv, ctrl)))
-            return (texts, time.perf_counter() - w0)
-
-        return resolve
-
-    def run_phase_split(batches, rows):
-        H = 256
-        stash, order_idx = ([], [])
-        if on_cuda:
-            torch.cuda.synchronize(device)
-        t0 = time.perf_counter()
-        for idxs, audios, lens in batches:
-            batch = _assemble(audios, lens)
-            inp = batch.to(device, non_blocking=True)
-            ilen = torch.tensor(lens, device=device)
-            with torch.no_grad(), torch.autocast("cuda", dtype=dtype, enabled=amp):
-                logits, hidden, feat_lens = trunk(inp, ilen)
-                vf = torch.div(feat_lens, encoder.ec.rate_reduce, rounding_mode="floor").clamp(
-                    max=logits.shape[1]
-                )
-                ids, ac, pause, _n = collapse_pool_pause_batched(
-                    logits,
-                    hidden,
-                    blank=blank,
-                    tier=H,
-                    pad_in=pc["pad_in"],
-                    blackout=pc["pause_blackout"],
-                    valid_frames=vf,
-                )
-                if not pc["real_pause"]:
-                    pause = torch.full_like(pause, int(pc["pause_blackout"]))
-                if ids.shape[1] < H:
-                    padw = H - ids.shape[1]
-                    ids = torch.nn.functional.pad(ids, (0, padw), value=int(pc["pad_in"]))
-                    pause = torch.nn.functional.pad(
-                        pause, (0, padw), value=int(pc["pause_blackout"])
-                    )
-                    ac = torch.nn.functional.pad(ac, (0, 0, 0, padw))
-            stash.append((ids, ac, pause))
-            order_idx.extend(idxs)
-        all_ids = torch.cat([s[0] for s in stash])
-        all_ac = torch.cat([s[1] for s in stash])
-        all_pz = torch.cat([s[2] for s in stash])
-        del stash
-        slots_all = []
-        with torch.no_grad(), torch.autocast("cuda", dtype=dtype, enabled=amp):
-            for lo in range(0, all_ids.shape[0], args.pcec_batch):
-                z = pcec(
-                    all_ids[lo : lo + args.pcec_batch],
-                    acoustic=all_ac[lo : lo + args.pcec_batch],
-                    pause=all_pz[lo : lo + args.pcec_batch],
-                )
-                slots_all.append(z.argmax(-1))
-        slots_cpu = torch.cat(slots_all).cpu()
-        if on_cuda:
-            torch.cuda.synchronize(device)
-        elapsed = time.perf_counter() - t0
-        ctrl, pv = (pc["ctrl"], pc["vocab"])
-        texts = {}
-        for j, i in enumerate(order_idx):
-            seq, prev = ([], -1)
-            for s in slots_cpu[j].tolist():
-                if s != prev and s != ctrl.blank:
-                    seq.append(s)
-                prev = s
-            texts[i] = render_text(render(seq, pv, ctrl))
-        return (texts, elapsed)
 
     dataset = data_utils.load_data(args)
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
@@ -741,27 +495,56 @@ def main(args):
         m = max(lens)
         if args.pad_multiple > 1:
             m = -(-m // args.pad_multiple) * args.pad_multiple
-        return (len(audios), m)
+        return (_rows(len(audios)), m)
 
     seen_shapes = set()
-    _warming["on"] = True
-    for _, audios, lens in batches():
+    for bi, (_, audios, lens) in enumerate(batches()):
+        if bi >= args.warmup_steps:
+            break
         s = _shape_of(audios, lens)
         run_batch(audios, lens)
         if s not in seen_shapes:
             seen_shapes.add(s)
-            if args.manual_graphs and on_cuda:
-                batch = _assemble(audios, lens)
-                _capture(s, batch.to(device), torch.tensor(lens, device=device))
-    _warming["on"] = False
-    print(
-        f"warmup: covered {len(seen_shapes)} distinct padded shapes"
-        + (f"; captured {len(_graphs)} CUDA graphs" if _graphs else "")
-        + (f"; {len(_pgraphs)} PCEC graphs" if _pgraphs else "")
-    )
-    if on_cuda and args.cooldown_c > 0:
-        print(f"cooldown: {_gpu_cooldown(args.cooldown_c)}")
-    print(f"thermal at start of timed pass: {_gpu_thermal()}" if on_cuda else "")
+    _hyb["mark"] = True
+    if on_cuda:
+        c_ = int(args.trunk_op.split(",")[0])
+        B = _rows(1)
+        with torch.no_grad():
+            feat, _ = model.pre(
+                torch.zeros(1, 64000, device=device), torch.tensor([64000], device=device)
+            )
+            t_att = encoder.stem(encoder.input_proj(feat.transpose(1, 2))).shape[2]
+        hop = 64000 // t_att
+        step = args.pad_multiple if args.pad_multiple > 1 else hop
+
+        def _unwarmed(samp, limit):
+            while _shape_of([None] * B, [samp]) in seen_shapes and samp + step <= limit:
+                samp += step
+            return samp
+
+        short = _unwarmed(min(step, c_ * hop), c_ * hop)
+        long_ = _unwarmed(c_ * hop + hop, 1920000)
+        for samp in (short, long_):
+            if _shape_of([None] * B, [samp]) in seen_shapes:
+                print(f"regime warmup: no unwarmed shape near {samp} samples (regime fully warmed)")
+                continue
+            z = numpy.zeros(samp, dtype=numpy.float32)
+            run_batch([z] * B, [samp] * B)
+        print(
+            f"regime warmup: silent batches at {short} and {long_} samples (commit {c_} frames = {c_ * hop} samples)"
+        )
+    if pcec is not None and _pmeta and on_cuda:
+        B = _rows(1)
+        with torch.no_grad(), torch.autocast("cuda", dtype=dtype, enabled=amp):
+            for H in (64, 128, 192, 256):
+                ids_d = torch.full((B, H), int(pc["pad_in"]), dtype=_pmeta["ids"], device=device)
+                ac_d = torch.zeros(B, H, _pmeta["D"], dtype=_pmeta["ac"], device=device)
+                pz_d = torch.full(
+                    (B, H), int(pc["pause_blackout"]), dtype=_pmeta["pause"], device=device
+                )
+                _pcec_run(ids_d, ac_d, pz_d)
+                _pcec_run(ids_d, ac_d, pz_d)
+    print(f"warmup: covered {len(seen_shapes)} distinct padded shapes" + "" + "")
     results = {
         "references": [],
         "predictions": [],
@@ -771,171 +554,73 @@ def main(args):
     }
     tot_gpu = tot_wall = tot_audio = 0.0
     _host.update(fill_s=0.0, prep_wait_s=0.0, drain_s=0.0, render_s=0.0)
-    if args.pcec_phase and pcec is not None:
-        run_phase_split(batches(), rows)
-        texts_by_idx = {}
-        for _p in range(args.timed_passes):
-            texts_by_idx, elapsed = run_phase_split(batches(), rows)
-            tot_wall += elapsed
-            for _, _, lens in batches():
-                tot_audio += sum(lens) / 16000
-        tot_gpu = tot_wall
-        for idxs, _audios2, lens in batches():
-            for j, i in enumerate(idxs):
-                results["references"].append(rows[i]["ref"])
-                results["row_idx"].append(i)
-                results["predictions"].append(texts_by_idx[i])
-                results["audio_length_s"].append(lens[j] / 16000)
-                results["transcription_time_s"].append(
-                    tot_wall
-                    / args.timed_passes
-                    * (lens[j] / 16000)
-                    / (tot_audio / args.timed_passes)
-                )
-    elif side is not None:
-        texts_by_idx = {}
-        for p_ in range(args.timed_passes):
-            if on_cuda:
-                torch.cuda.synchronize(device)
-            t0 = time.perf_counter()
-            pending = None
-            for idxs, audios, lens in batches():
-                nxt = launch_batch(audios, lens)
-                if pending is not None:
-                    pidxs, presolve = pending
-                    txt, _ = presolve()
-                    if p_ == args.timed_passes - 1:
-                        texts_by_idx.update(zip(pidxs, txt))
-                pending = (idxs, nxt)
-                tot_audio += sum(lens) / 16000 if p_ >= 0 else 0
-            pidxs, presolve = pending
-            txt, _ = presolve()
-            if p_ == args.timed_passes - 1:
-                texts_by_idx.update(zip(pidxs, txt))
-            if on_cuda:
-                torch.cuda.synchronize(device)
-            tot_wall += time.perf_counter() - t0
-        tot_gpu = tot_wall
-        for idxs, _audios, lens in batches():
-            for j, i in enumerate(idxs):
-                results["references"].append(rows[i]["ref"])
-                results["row_idx"].append(i)
-                results["predictions"].append(texts_by_idx[i])
-                results["audio_length_s"].append(lens[j] / 16000)
-                results["transcription_time_s"].append(
-                    tot_wall
-                    / args.timed_passes
-                    * (lens[j] / 16000)
-                    / (tot_audio / args.timed_passes)
-                )
-    serialized = side is None and (not (args.pcec_phase and pcec is not None))
-    if serialized:
-        from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor
 
-        copy_stream = torch.cuda.Stream(device) if on_cuda else None
+    def _prep(audios, lens):
+        return _prep_inner(audios, lens)
 
-        def _prep(audios, lens):
-            with _lane("prep"):
-                return _prep_inner(audios, lens)
+    def _prep_inner(audios, lens):
+        batch = _assemble(audios, lens)
+        inp = batch.to(device, non_blocking=True)
+        ilen = torch.tensor(_plens(lens), device=device)
+        ev = None
+        if on_cuda:
+            done = torch.cuda.Event()
+            done.record()
+            _stage["evs"][_stage["last"]] = done
+        return (inp, ilen, ev)
 
-        def _prep_inner(audios, lens):
-            batch = _assemble(audios, lens)
-            if copy_stream is not None:
-                with torch.cuda.stream(copy_stream):
-                    inp = batch.to(device, non_blocking=True)
-                    ilen = torch.tensor(lens, device=device)
-                    ev = torch.cuda.Event()
-                    ev.record(copy_stream)
-                _stage["evs"][_stage["last"]] = ev
-            else:
-                inp = batch.to(device, non_blocking=True)
-                ilen = torch.tensor(lens, device=device)
-                ev = None
-            return (inp, ilen, ev)
-
-        texts_by_idx = {}
-        prep_pool = ThreadPoolExecutor(max_workers=1)
-        dec_pool = ThreadPoolExecutor(max_workers=1)
-        n_pass = args.timed_passes + (1 if args.profile_dir else 0)
-        for p_ in range(n_pass):
-            prof_pass = p_ >= args.timed_passes
-            prof = None
-            if prof_pass:
-                acts = [torch.profiler.ProfilerActivity.CPU]
-                if on_cuda:
-                    acts.append(torch.profiler.ProfilerActivity.CUDA)
-                prof = torch.profiler.profile(activities=acts)
-                prof.__enter__()
-                _host["prof"] = True
-            if on_cuda:
-                torch.cuda.synchronize(device)
-            t0 = time.perf_counter()
-            evs, dec_futs = ([], [])
-            it = list(batches())
-            futs = collections.deque(
-                (prep_pool.submit(_prep, b[1], b[2]) for b in it[: args.prefetch])
-            )
-            nxt = len(futs)
-            for bi, (idxs, audios, lens) in enumerate(it):
-                s0 = time.perf_counter()
-                inp, ilen, ev = futs.popleft().result()
-                _host["prep_wait_s"] += time.perf_counter() - s0
-                if nxt < len(it):
-                    futs.append(prep_pool.submit(_prep, it[nxt][1], it[nxt][2]))
-                    nxt += 1
-                if ev is not None:
-                    torch.cuda.current_stream(device).wait_event(ev)
-                with _lane("issue"):
-                    h = issue_prepared(inp, ilen, len(audios))
-                h["inp"] = inp
-                done = torch.cuda.Event() if on_cuda else None
-                if h["slots"] is not None:
-                    h["slots_host"] = h["slots"].to("cpu", non_blocking=True)
-                else:
-                    h["ids_host"] = h["ids"].to("cpu", non_blocking=True)
-                h["vf_host"] = h["vf"].to("cpu", non_blocking=True)
-                if done is not None:
-                    done.record()
-                h["done"] = done
-                evs.append(h["ev"])
-                dec_futs.append((idxs, dec_pool.submit(decode_async, h)))
-                if not prof_pass:
-                    tot_audio += sum(lens) / 16000
-            s0 = time.perf_counter()
-            for idxs, df in dec_futs:
-                txt = df.result()
-                if p_ == args.timed_passes - 1:
-                    texts_by_idx.update(zip(idxs, txt))
-            if on_cuda:
-                torch.cuda.synchronize(device)
-            if prof_pass:
-                _host["prof"] = False
-                prof.__exit__(None, None, None)
-                os.makedirs(args.profile_dir, exist_ok=True)
-                tag = f"{args.dataset}_{args.split}_b{args.batch_size}".replace("/", "_")
-                prof.export_chrome_trace(os.path.join(args.profile_dir, f"trace_{tag}.json"))
-                print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=25))
-                print(
-                    f"[profile] trace -> {args.profile_dir}/trace_{tag}.json  pass wall {time.perf_counter() - t0:.2f}s"
-                )
-                continue
-            _host["drain_s"] += time.perf_counter() - s0
-            tot_wall += time.perf_counter() - t0
-            tot_gpu += sum((s.elapsed_time(e) / 1000.0 for s, e in evs if s is not None))
-        prep_pool.shutdown(wait=False)
-        dec_pool.shutdown(wait=False)
-        for idxs, _audios3, lens in batches():
-            for j, i in enumerate(idxs):
-                results["references"].append(rows[i]["ref"])
-                results["row_idx"].append(i)
-                results["predictions"].append(texts_by_idx[i])
-                results["audio_length_s"].append(lens[j] / 16000)
-                results["transcription_time_s"].append(
-                    tot_wall
-                    / args.timed_passes
-                    * (lens[j] / 16000)
-                    / (tot_audio / args.timed_passes)
-                )
+    texts_by_idx = {}
+    prep_pool = ThreadPoolExecutor(max_workers=1)
+    dec_pool = ThreadPoolExecutor(max_workers=1)
+    if on_cuda:
+        torch.cuda.synchronize(device)
+    t0 = time.perf_counter()
+    evs, dec_futs = ([], [])
+    it = list(batches())
+    futs = collections.deque((prep_pool.submit(_prep, b[1], b[2]) for b in it[: args.prefetch]))
+    nxt = len(futs)
+    for bi, (idxs, audios, lens) in enumerate(it):
+        s0 = time.perf_counter()
+        inp, ilen, ev = futs.popleft().result()
+        _host["prep_wait_s"] += time.perf_counter() - s0
+        if nxt < len(it):
+            futs.append(prep_pool.submit(_prep, it[nxt][1], it[nxt][2]))
+            nxt += 1
+        if ev is not None:
+            torch.cuda.current_stream(device).wait_event(ev)
+        h = issue_prepared(inp, ilen, len(audios))
+        h["inp"] = inp
+        done = torch.cuda.Event() if on_cuda else None
+        if h["slots"] is not None:
+            h["slots_host"] = h["slots"].to("cpu", non_blocking=True)
+        else:
+            h["ids_host"] = h["ids"].to("cpu", non_blocking=True)
+        h["vf_host"] = h["vf"].to("cpu", non_blocking=True)
+        if done is not None:
+            done.record()
+        h["done"] = done
+        evs.append(h["ev"])
+        dec_futs.append((idxs, dec_pool.submit(decode_async, h)))
+        tot_audio += sum(lens) / 16000
+    s0 = time.perf_counter()
+    for idxs, df in dec_futs:
+        txt = df.result()
+        texts_by_idx.update(zip(idxs, txt))
+    if on_cuda:
+        torch.cuda.synchronize(device)
+    _host["drain_s"] += time.perf_counter() - s0
+    tot_wall += time.perf_counter() - t0
+    tot_gpu += sum((s.elapsed_time(e) / 1000.0 for s, e in evs if s is not None))
+    prep_pool.shutdown(wait=False)
+    dec_pool.shutdown(wait=False)
+    for idxs, _audios3, lens in batches():
+        for j, i in enumerate(idxs):
+            results["references"].append(rows[i]["ref"])
+            results["row_idx"].append(i)
+            results["predictions"].append(texts_by_idx[i])
+            results["audio_length_s"].append(lens[j] / 16000)
+            results["transcription_time_s"].append(tot_wall * (lens[j] / 16000) / tot_audio)
     extra = None
     if is_chunked:
         keys = data_utils.CHUNK_METADATA_KEYS
@@ -965,7 +650,7 @@ def main(args):
     wer, rtfx = score_results(str(Path(manifest_path).parent), args.model_id)
     print(f"WER: {wer}  RTFx: {rtfx}")
     print(
-        f"[rtfx] wall {tot_audio / tot_wall:.1f}   gpu {tot_audio / max(tot_gpu, 1e-09):.1f}   audio {tot_audio:.0f}s  wall {tot_wall:.1f}s  gpu {tot_gpu:.1f}s   host fill {_host['fill_s']:.1f}s ({args.prep_threads} thr) prep-wait {_host['prep_wait_s']:.1f}s drain {_host['drain_s']:.1f}s render {_host['render_s']:.1f}s   batch {args.batch_size}  op {op_desc}   {(_gpu_thermal() if on_cuda else 'cpu')}"
+        f"[rtfx] wall {tot_audio / tot_wall:.1f}   gpu {tot_audio / max(tot_gpu, 1e-09):.1f}   audio {tot_audio:.0f}s  wall {tot_wall:.1f}s  gpu {tot_gpu:.1f}s   host fill {_host['fill_s']:.1f}s ({1} thr) prep-wait {_host['prep_wait_s']:.1f}s drain {_host['drain_s']:.1f}s render {_host['render_s']:.1f}s   batch {args.batch_size}  op {op_desc}   {''}"
     )
 
 
@@ -994,85 +679,17 @@ if __name__ == "__main__":
         default="batch",
         help="`batch` (offline-equivalent, per-batch commit) or `C,R`",
     )
-    p.add_argument("--no_pcec", action="store_true", help="trunk only")
-    p.add_argument(
-        "--pcec_phase",
-        type=int,
-        default=0,
-        help="run PCEC as a second phase over buffered collapsed inputs, re-batched at --pcec_batch",
-    )
-    p.add_argument("--pcec_batch", type=int, default=512)
-    p.add_argument(
-        "--pipeline",
-        type=int,
-        default=0,
-        help="overlap PCEC(i) with trunk(i+1) on a side CUDA stream",
-    )
-    p.add_argument(
-        "--model_dtype",
-        default="float32",
-        choices=["float32", "bfloat16"],
-        help="weight dtype for encoder/head/pcec (mel stays fp32); bf16 = bf16 residual stream, no per-GEMM casts",
-    )
     p.add_argument(
         "--sort",
         default="asc",
         choices=["asc", "desc"],
         help="duration sort direction (references use desc)",
     )
-    p.add_argument("--flex", type=int, default=1, help="arm FlexAttention (banded ops only)")
-    p.add_argument(
-        "--block_sparse",
-        type=int,
-        default=1,
-        help="long batches (T > commit): FlexAttention block-sparse sliding mask (1) or the dense bool mask (0)",
-    )
-    p.add_argument(
-        "--bf16_reduce",
-        type=int,
-        default=0,
-        help="allow_bf16_reduced_precision_reduction for GEMMs (WER-gated probe)",
-    )
-    p.add_argument(
-        "--manual_graphs_pcec",
-        type=int,
-        default=0,
-        help="also hand-capture the PCEC forward per (B,H) tier shape",
-    )
-    p.add_argument(
-        "--manual_graphs",
-        type=int,
-        default=0,
-        help="hand-capture one CUDA graph per static shape (bypasses inductor's cudagraph trees and their per-switch syncs)",
-    )
-    p.add_argument(
-        "--cudagraphs",
-        type=int,
-        default=1,
-        help="force inductor CUDA-graph capture (static shapes only)",
-    )
-    p.add_argument(
-        "--compile_static",
-        type=int,
-        default=-1,
-        help="1=dynamic=False (max-autotune/graphs), 0=dynamic=True, -1=auto (static iff pad_multiple>1)",
-    )
-    p.add_argument(
-        "--timed_passes",
-        type=int,
-        default=1,
-        help="repeat the timed pass N times for granularity at high RTFx",
-    )
     p.add_argument(
         "--pad_multiple",
         type=int,
         default=1,
         help="round each batch's padded sample width up to this multiple (shape bucketing; 16000 = 1 s grid). 1 = off",
-    )
-    p.add_argument(
-        "--profile_dir",
-        default=None,
-        help="after the timed passes, profile one extra (untimed) pass and write a trace here",
     )
     p.add_argument(
         "--decode_threads",
@@ -1082,18 +699,6 @@ if __name__ == "__main__":
     )
     p.add_argument(
         "--prefetch", type=int, default=2, help="batches prepared ahead of the one being issued"
-    )
-    p.add_argument(
-        "--prep_threads",
-        type=int,
-        default=4,
-        help="threads filling the pinned input buffer (numpy copy releases the GIL)",
-    )
-    p.add_argument(
-        "--cooldown_c",
-        type=int,
-        default=0,
-        help="block until the GPU reaches this temp before timing (0 = off)",
     )
     p.add_argument("--streaming", type=lambda x: x == "True", default=False)
     main(p.parse_args())

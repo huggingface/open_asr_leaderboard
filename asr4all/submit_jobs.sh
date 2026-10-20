@@ -16,10 +16,9 @@ REVISION="${REVISION:-open-asr-leaderboard}"  # trust_remote_code: pinned tag on
 
 # One decoding configuration for every dataset. --trunk_op 256,64 decodes clips up to 10.24 s in a
 # single window (full context); longer audio uses a 100-back / 64-ahead sliding window, computed
-# block-sparse (--block_sparse 1, FlexAttention).  The same flags apply to every dataset.
-EVAL_FLAGS="--dtype bfloat16 --kernels ldsa,fir --cudagraphs 0 --manual_graphs 1 \
---manual_graphs_pcec 1 --torch_compile max-autotune --compile_static 1 --pad_multiple 32000 \
---timed_passes 5 --cooldown_c 0 --trunk_op 256,64 --block_sparse 1"
+# block-sparse with FlexAttention. Warmup is the first --warmup_steps (default 10) batches.
+EVAL_FLAGS="--dtype bfloat16 --kernels ldsa,fir --torch_compile max-autotune --pad_multiple 32000 \
+--trunk_op 256,64 --sort desc"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
