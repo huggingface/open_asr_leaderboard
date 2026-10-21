@@ -55,6 +55,8 @@ License | Size (B) | # Languages | Encoder | Decoder | (Recommended) Link to tra
     - a line in `MODEL_CONFIGS`
     - a line when calling `docker run` to pass the API key 
 - [ ] Provide a link to your model's documentation that we can link on the leaderboard.
+- [ ] Can you guarantee to not train on, log, store, retain, or inspect the audio used for the Open ASR Leaderboard evaluations? This is important to ensure the held-out nature of the private sets.
+- [ ] (If applicable) when was the last submission? If the last submission was too recent or if no new private audio has been added since then, we may decide to hold-off the submission for a later date.
 - [ ] Please provide the following information. Note that the cost should represent the "entry-level" costs, e.g. when one first signs up to your platform.
 
 Cost ($/hour) |  # Languages | Link to model announcement or API
