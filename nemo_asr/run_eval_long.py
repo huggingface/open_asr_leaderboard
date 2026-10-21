@@ -59,7 +59,7 @@ def main(args):
             # Use a unique filename based on global index
             audio_path = os.path.join(CACHE_DIR, f"sample_{global_idx}.wav")
 
-            if "array" in sample:
+            if not isinstance(sample, dict) or "array" in sample:
                 audio_array = np.float32(sample["array"])
                 sample_rate = 16000
 
