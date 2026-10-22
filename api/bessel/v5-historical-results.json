@@ -1,0 +1,114 @@
+{
+  "status": "historical_public_evaluation_not_current_leaderboard_verification",
+  "model": "bessel/decision-ctc-v5",
+  "inference_model": "asrouter/decision-ctc-azure-serverless6-en-v5",
+  "scorer_commit": "25e0b9e143b07eeaf3b50366c2525ddf0c0c9a6b",
+  "profile_sha256": "a58b2ef869d532cde0c6c05bd4cf50843e60ffbad8050722295ec69009e04e10",
+  "inference_runtime_sha256": "65954fe37b49e0f5761e7d3616cfdc38e252f4d2daf25daaab78ae698c19b6d8",
+  "input_manifest_sha256": "540f31802a68f9586aa48bd3cfdfc6fbdc406e87594c4994150a69c8370b76ad",
+  "input_count": 70985,
+  "macro_wer_percent_from_official_rounded_dataset_scores": 4.82625,
+  "current_suite_complete": false,
+  "missing_current_splits": [
+    "librispeech:test.clean",
+    "librispeech:test.other"
+  ],
+  "failed_selected_samples": 7,
+  "failed_candidates": 199,
+  "candidate_calls": 428880,
+  "interrupted_timing_samples": 4,
+  "fresh_end_to_end_rtfx": null,
+  "entry_level_price_usd_per_audio_hour": null,
+  "actual_azure_cost_usd": null,
+  "datasets": [
+    {
+      "input_count": 7805,
+      "dataset": "ami_cleaned",
+      "samples": 7715,
+      "failed_samples": 0,
+      "official_filtered_references": 90,
+      "wer": 8.91,
+      "ins": 2204,
+      "del": 2292,
+      "sub": 2841
+    },
+    {
+      "input_count": 341,
+      "dataset": "earnings22_cleaned_aa_chunked",
+      "samples": 341,
+      "failed_samples": 0,
+      "official_filtered_references": 0,
+      "wer": 4.35,
+      "ins": 128,
+      "del": 166,
+      "sub": 375
+    },
+    {
+      "input_count": 18768,
+      "dataset": "gigaspeech_cleaned",
+      "samples": 18757,
+      "failed_samples": 1,
+      "official_filtered_references": 11,
+      "wer": 7.44,
+      "ins": 9218,
+      "del": 4468,
+      "sub": 15858
+    },
+    {
+      "input_count": 2102,
+      "dataset": "monsoon_en_in",
+      "samples": 2102,
+      "failed_samples": 0,
+      "official_filtered_references": 0,
+      "wer": 2.97,
+      "ins": 396,
+      "del": 279,
+      "sub": 778
+    },
+    {
+      "input_count": 39341,
+      "dataset": "spgispeech",
+      "samples": 39341,
+      "failed_samples": 5,
+      "official_filtered_references": 0,
+      "wer": 2.85,
+      "ins": 16116,
+      "del": 2568,
+      "sub": 8896
+    },
+    {
+      "input_count": 1000,
+      "dataset": "urgent2024",
+      "samples": 1000,
+      "failed_samples": 0,
+      "official_filtered_references": 0,
+      "wer": 6.65,
+      "ins": 257,
+      "del": 329,
+      "sub": 647
+    },
+    {
+      "input_count": 1000,
+      "dataset": "urgent2024_clean",
+      "samples": 1000,
+      "failed_samples": 0,
+      "official_filtered_references": 0,
+      "wer": 3.73,
+      "ins": 214,
+      "del": 176,
+      "sub": 302
+    },
+    {
+      "input_count": 628,
+      "dataset": "voxpopuli_cleaned_aa",
+      "samples": 628,
+      "failed_samples": 1,
+      "official_filtered_references": 0,
+      "wer": 1.71,
+      "ins": 66,
+      "del": 98,
+      "sub": 140
+    }
+  ],
+  "note": "All failed hypotheses are retained. Earnings22 is scored with official session regrouping. Historical timing includes interruptions; it is not a fresh speed claim. No audio or transcript is redistributed."
+}

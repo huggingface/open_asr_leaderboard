@@ -11,6 +11,7 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
+    # "bessel/decision-ctc-v5       1"
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
@@ -96,6 +97,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e BESSEL_API_KEY="${BESSEL_API_KEY:-}" \
+            -e BESSEL_API_URL="${BESSEL_API_URL:-}" \
             -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
             -e HF_HOME=/tmp/hf_home \
             -e HF_DATASETS_CACHE="${DATASETS_CACHE_DIR}" \

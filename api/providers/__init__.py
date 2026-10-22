@@ -50,6 +50,7 @@ def get_provider(model_name: str) -> tuple[APIProvider, str]:
 
 # Auto-import all provider modules so they register themselves
 from . import (
+    bessel_provider,
     aquavoice_provider,
     assemblyai_provider,
     elevenlabs_provider,
