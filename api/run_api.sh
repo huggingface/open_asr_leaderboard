@@ -21,6 +21,7 @@ MODEL_CONFIGS=(
     # "aquavoice/avalon-v1-en        5"
     # "zoom/scribe_v1                32"
     # "zoom/scribe_v2_pro            8"
+    # "zoom/scribe_v2.1_pro          8"
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
