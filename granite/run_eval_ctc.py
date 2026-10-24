@@ -39,6 +39,7 @@ from tqdm import tqdm
 import evaluate
 
 from datasets import IterableDataset
+from huggingface_hub import snapshot_download
 from normalizer import data_utils
 from transformers import AutoModel, AutoProcessor
 
@@ -168,9 +169,12 @@ def main(args):
     model = load_model(args.model_id, device, revision=args.revision,
                        compile_scope=args.compile_scope)
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
-    processor = AutoProcessor.from_pretrained(
-        args.model_id, trust_remote_code=True, revision=args.revision
-    )
+    # Loaded from the pinned snapshot: transformers 4.57's AutoProcessor looks up its
+    # config files without `revision`, so it would read the repo's main branch.
+    processor_source = args.model_id
+    if args.revision is not None and not os.path.isdir(args.model_id):
+        processor_source = snapshot_download(args.model_id, revision=args.revision)
+    processor = AutoProcessor.from_pretrained(processor_source, trust_remote_code=True)
     is_cuda = device.type == "cuda"
 
     # --- Gather the whole corpus up front (decode / I/O OUTSIDE the timer) ---
@@ -221,21 +225,27 @@ def main(args):
             preds.extend(processor.batch_decode(output.preds[:n_real]))
         return preds
 
-    # --- Warmup (untimed): one batch per distinct compiled shape ---
-    # Compile is per-shape, so warming a fixed number of batches would leave later
-    # buckets to compile inside the timed loop.
-    seen = set()
-    warm = []
-    for i in range(0, len(audios), args.batch_size):
-        chunk = audios[i:i + args.batch_size]
-        # Same T' featurize() will produce for this batch in the timed loop.
-        key = bucketed_frames(processor, max(len(a) for a in chunk), args.frame_bucket)
-        if key not in seen:
-            seen.add(key)
-            if len(chunk) < args.batch_size:
-                chunk = chunk + [np.zeros(1, dtype=np.float32)] * (args.batch_size - len(chunk))
-            warm.append(chunk)
-    print(f"Compile warmup: {len(warm)} distinct shape(s) (this is slow, once each)...")
+    # --- Warmup (untimed): one silent batch per frame bucket up to --warmup_max_s ---
+    # Compile is per-shape, so every bucket a deployed system would serve is compiled
+    # here, as it would be at startup. The shapes come from --warmup_max_s and the
+    # bucket size, never from the evaluation data; batches longer than that compile
+    # inside the timed loop.
+    samples_per_bucket = args.frame_bucket * processor.stack_factor * processor.hop_length
+    num_buckets = -(-int(args.warmup_max_s * 16000) // samples_per_bucket)
+    warm = [
+        [np.zeros(k * samples_per_bucket, dtype=np.float32)] * args.batch_size
+        for k in range(1, num_buckets + 1)
+    ]
+    max_warm_frames = num_buckets * args.frame_bucket
+    n_unwarmed = sum(
+        bucketed_frames(processor, max(len(a) for a in audios[i:i + args.batch_size]), args.frame_bucket)
+        > max_warm_frames
+        for i in range(0, len(audios), args.batch_size)
+    )
+    if n_unwarmed:
+        print(f"{n_unwarmed} batch(es) longer than --warmup_max_s={args.warmup_max_s}: "
+              "they compile inside the timed loop.")
+    print(f"Compile warmup: {len(warm)} bucket(s) up to {args.warmup_max_s} s (this is slow, once each)...")
     t0 = time.time()
     # Must warm under inference_mode and through prefetch_inputs, matching the
     # timed loop: dynamo guards on the input tensors' dispatch key set, and a
@@ -305,6 +315,10 @@ if __name__ == "__main__":
                         help="Pad stacked frame lengths up to a multiple of this so the "
                              "compiled encoder sees few distinct shapes. Sweep-optimal "
                              "default: 32.")
+    parser.add_argument("--warmup_max_s", type=float, default=40.0,
+                        help="Longest audio (seconds) the untimed warmup compiles for: one "
+                             "silent batch per frame bucket up to this length, independent "
+                             "of the evaluation data.")
     parser.add_argument("--compile_scope", choices=["layers", "encoder", "none"], default="layers",
                         help="What to torch.compile: each conformer block (fast compile, "
                              "one graph shared by all blocks), the whole encoder (slowest "
