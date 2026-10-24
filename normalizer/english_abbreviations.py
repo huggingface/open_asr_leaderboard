@@ -1908,7 +1908,8 @@ english_name_normalizer = {
 }
 
 
-# Regex-based multi-word → single-token mappings.
+# Regex-based multi-word → single-token mappings, plus spellings that vary too
+# freely to enumerate in english_spelling_normalizer (e.g. elongations).
 # Applied after symbol removal, so hyphens/punctuation are already stripped.
 # Keys are used with re.sub; values are the replacement strings.
 english_compound_normalizer = {
@@ -1928,5 +1929,6 @@ english_compound_normalizer = {
     r"\ba\s+m\b": "am",
     r"\bp\s+m\b": "pm",
     r"\bo\s+k\b": "okay",
+    r"\bo+h+\b": "oh",
+    r"\booo+\b": "oh",
 }
-

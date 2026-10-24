@@ -1,6 +1,5 @@
 import argparse
 from typing import Optional
-import datasets
 import soundfile as sf
 import tempfile
 import time
@@ -19,6 +18,10 @@ load_dotenv()
 
 def fetch_audio_urls(dataset_path, dataset, split, batch_size=100, max_retries=20):
     API_URL = "https://datasets-server.huggingface.co/rows"
+
+    # Single-config repos are addressed as "default" by the datasets-server,
+    # even though load_dataset takes an empty config name.
+    dataset = dataset or "default"
 
     headers = {}
     if os.environ.get("HF_TOKEN") is not None:
@@ -105,13 +108,27 @@ def transcribe_dataset(
     max_workers=4,
     prompt=None,
 ):
+    is_chunked = data_utils.is_chunked_dataset(dataset_path)
+
     if use_url:
+        if is_chunked:
+            raise ValueError(
+                f"{dataset_path} is a chunked dataset whose audio is not referenced by "
+                "the rows API, run without --use_url."
+            )
         audio_rows = fetch_audio_urls(dataset_path, dataset, split)
         if max_samples:
             audio_rows = itertools.islice(audio_rows, max_samples)
         ds = audio_rows
     else:
-        ds = datasets.load_dataset(dataset_path, dataset, split=split, streaming=False)
+        ds = data_utils.load_data(
+            argparse.Namespace(
+                dataset_path=dataset_path,
+                dataset=dataset,
+                split=split,
+                streaming=False,
+            )
+        )
         ds = data_utils.prepare_data(ds)
         if max_samples:
             ds = ds.take(max_samples)
@@ -122,6 +139,8 @@ def transcribe_dataset(
         "audio_length_s": [],
         "transcription_time_s": [],
     }
+    if is_chunked:
+        results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
 
     print(f"Transcribing with model: {model_name}")
 
@@ -165,7 +184,18 @@ def transcribe_dataset(
                     os.unlink(tmp_path)
 
         transcription_time = time.time() - start
-        return reference, transcription, audio_duration, transcription_time
+        chunk_metadata = (
+            {key: sample[key] for key in data_utils.CHUNK_METADATA_KEYS}
+            if is_chunked
+            else {}
+        )
+        return (
+            reference,
+            transcription,
+            audio_duration,
+            transcription_time,
+            chunk_metadata,
+        )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_sample = {
@@ -176,11 +206,19 @@ def transcribe_dataset(
             total=len(future_to_sample),
             desc="Transcribing",
         ):
-            reference, transcription, audio_duration, transcription_time = future.result()
+            (
+                reference,
+                transcription,
+                audio_duration,
+                transcription_time,
+                chunk_metadata,
+            ) = future.result()
             results["predictions"].append(transcription)
             results["references"].append(reference)
             results["audio_length_s"].append(audio_duration)
             results["transcription_time_s"].append(transcription_time)
+            for key, value in chunk_metadata.items():
+                results[key].append(value)
 
     manifest_path = data_utils.write_manifest(
         results["references"],
@@ -191,12 +229,25 @@ def transcribe_dataset(
         split,
         audio_length=results["audio_length_s"],
         transcription_time=results["transcription_time_s"],
+        extra_fields={key: results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        if is_chunked
+        else None,
     )
 
     print("Results saved at path:", manifest_path)
 
-    norm_refs = [data_utils.normalizer(r) for r in results["references"]]
-    norm_preds = [data_utils.normalizer(p) for p in results["predictions"]]
+    if is_chunked:
+        sessions = data_utils.merge_chunked_manifest(
+            data_utils.read_manifest(manifest_path)
+        )
+        references = [session["text"] for session in sessions]
+        predictions = [session["pred_text"] for session in sessions]
+    else:
+        references = results["references"]
+        predictions = results["predictions"]
+
+    norm_refs = [data_utils.normalizer(r) for r in references]
+    norm_preds = [data_utils.normalizer(p) for p in predictions]
     refs_split = [tuple(r.split()) for r in norm_refs]
     preds_split = [tuple(p.split()) for p in norm_preds]
     wer = round(100 * batch_error_rate(refs_split, preds_split, merge_compounds=True)["err_rate"], 2)

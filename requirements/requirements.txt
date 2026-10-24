@@ -8,3 +8,4 @@ num2words
 peft
 soundfile
 kaldialign
+voi_oiwer

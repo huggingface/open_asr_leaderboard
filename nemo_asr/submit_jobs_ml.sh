@@ -3,62 +3,93 @@
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_ml.sh
+#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_ml.sh
+
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-nemo}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
+ARMENIAN_DATASET_PATH="${ARMENIAN_DATASET_PATH:-Metric-AI/open-asr-leaderboard-multilingual-datasets}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
 # Set USE_LOCAL_SCRIPT=1 to run your local run_eval_ml.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
-USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_SCRIPT_INJECT=""
-if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    LOCAL_SCRIPT_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval_ml.py")
-    LOCAL_SCRIPT_INJECT="echo '${LOCAL_SCRIPT_B64}' | base64 -d > /app/run_eval_ml.py &&"
-fi
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval_ml.py) || exit 1
+
+LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Models: "model_id batch_size" ───────────────────────────────────────────
+# Each model entry also lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "nvidia/parakeet-tdt-0.6b-v3      64"
-    "nvidia/canary-1b-v2              64"
+    "nvidia/parakeet-tdt-0.6b-v3      64 de fr it es pt nl"
+    "nvidia/canary-1b-v2              64 de fr it es pt nl"
+    "nvidia/stt_hy_fastconformer_hybrid_large_pc 64 hy"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian
 DATASET_CONFIGS=(
     "fleurs de"
     "fleurs fr"
     "fleurs it"
     "fleurs es"
     "fleurs pt"
+    "fleurs nl"
+    "fleurs hy"
+    "mcv hy"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
+    "mcv nl"
     "mls es"
     "mls fr"
     "mls it"
     "mls pt"
+    "mls nl"
 )
+
+# Optional: restrict this run to specific datasets and/or languages, matched
+# against the first and second field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_LANGUAGES="nl" bash <this script>
+#   ONLY_DATASETS="fleurs mcv" ONLY_LANGUAGES="nl de" bash <this script>
+filter_only_datasets_languages || exit 1
 
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID BATCH_SIZE <<< "$model_cfg"
+    read -r MODEL_ID BATCH_SIZE MODEL_LANGUAGES <<< "$model_cfg"
     # Sanitize model ID for use as a folder name (e.g. "nvidia/parakeet" -> "nvidia-parakeet")
     MODEL_FOLDER="${MODEL_ID//\//-}"
+
+    MODEL_DATASET_CONFIGS=()
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r _dataset _language <<< "$cfg"
+        if [[ " $MODEL_LANGUAGES " == *" $_language "* ]]; then
+            MODEL_DATASET_CONFIGS+=("$cfg")
+        fi
+    done
+    if [[ ${#MODEL_DATASET_CONFIGS[@]} -eq 0 ]]; then
+        echo "Skipping ${MODEL_ID}: no configured dataset/language combinations selected."
+        continue
+    fi
 
     echo "████████████████████████████████████████████████████████████████████████████████"
     echo "  Evaluating: ${MODEL_ID}"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
-    for cfg in "${DATASET_CONFIGS[@]}"; do
+    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         CONFIG_NAME="${DATASET}_${LANGUAGE}"
-        echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
+        JOB_DATASET="${DATASET_PATH}"
+        [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
+        echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -66,15 +97,16 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
+            --secrets HF_TOKEN="$HF_TOKEN" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
+                ${LOCAL_NORMALIZER_INJECT}
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset=${DATASET_PATH} \
+                    --dataset=${JOB_DATASET} \
                     --config_name=${CONFIG_NAME} \
                     --language=${LANGUAGE} \
                     --split=test \
@@ -99,23 +131,16 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     # Download results and score
     mkdir -p "./results/${MODEL_FOLDER}"
 
-    hf buckets sync \
-        "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
-        "./results/${MODEL_FOLDER}" > /dev/null 2>&1
-
-    EXPECTED=${#DATASET_CONFIGS[@]}
-    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
-    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
-        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
-    else
-        echo "All ${ACTUAL} result files present."
-    fi
+    RUN_RESULTS=$(python "${FETCH_RUN_RESULTS}" \
+        --bucket "${RESULTS_BUCKET}" --model-folder "${MODEL_FOLDER}" \
+        --local-dir "./results/${MODEL_FOLDER}" --since "${RUN_START}" \
+        --expected "${#MODEL_DATASET_CONFIGS[@]}")
 
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
     # Collect the set of languages actually evaluated (across all datasets)
     ALL_LANGUAGES=()
-    for cfg in "${DATASET_CONFIGS[@]}"; do
+    for cfg in "${MODEL_DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         if [[ ! " ${ALL_LANGUAGES[*]} " == *" ${LANGUAGE} "* ]]; then
             ALL_LANGUAGES+=("$LANGUAGE")
@@ -128,7 +153,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     for LANGUAGE in "${ALL_LANGUAGES[@]}"; do
         PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
+score_results('${RUN_RESULTS}', '${MODEL_ID}', multilingual=True, language='${LANGUAGE}', families=['ml_${LANGUAGE}'], csv_only=True)
 "
     done
 

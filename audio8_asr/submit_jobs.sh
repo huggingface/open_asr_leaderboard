@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
+
 set -euo pipefail
 
 # Independent Audio8-ASR HF Jobs submission.
@@ -10,10 +14,10 @@ set -euo pipefail
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-audio8-asr}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
-MODEL_ID="${MODEL_ID:-AutoArk-AI/Audio8-ASR-0.1B}"
+MODEL_ID="${MODEL_ID:-Edge0/Audio8-ASR-0.1B}"
 MODEL_REVISION="${MODEL_REVISION:-b812eff124893ecd76a1dcde74ee58db5adab59c}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-256}"
 MAX_AUDIO_SECONDS="${MAX_AUDIO_SECONDS:-30}"
@@ -23,15 +27,37 @@ TORCH_COMPILE="${TORCH_COMPILE:-}"
 JOB_TIMEOUT="${JOB_TIMEOUT:-2h}"
 CUDA_ALLOC_CONF="${CUDA_ALLOC_CONF:-expandable_segments:True}"
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+
+# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
+# committed to the Space (useful for iterating without pushing to the Space).
+LOCAL_SCRIPT_INJECT=$(local_script_inject "${script_dir}" run_eval.py) || exit 1
+
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
+LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
+
+# Datasets: "name split batch_size [dataset_path]"; dataset_path defaults to
+# $DEFAULT_DATASET_PATH when omitted.
 DATASET_CONFIGS=(
   "ami_cleaned test ${AMI_BATCH_SIZE:-1152}"
-  "earnings22 test ${EARNINGS22_BATCH_SIZE:-1024}"
+  "earnings22_cleaned_aa_chunked test ${EARNINGS22_BATCH_SIZE:-1024} ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
   "gigaspeech_cleaned test ${GIGASPEECH_BATCH_SIZE:-1408}"
   "librispeech test.clean ${LIBRISPEECH_CLEAN_BATCH_SIZE:-1024}"
   "librispeech test.other ${LIBRISPEECH_OTHER_BATCH_SIZE:-1024}"
   "spgispeech test ${SPGISPEECH_BATCH_SIZE:-2048}"
+  "urgent2024 test ${URGENT2024_BATCH_SIZE:-1024}"
+  "urgent2024_clean test ${URGENT2024_CLEAN_BATCH_SIZE:-1024}"
   "voxpopuli_cleaned_aa test ${VOXPOPULI_BATCH_SIZE:-628}"
+  "monsoon_en_in test ${MONSOON_EN_IN_BATCH_SIZE:-1024} VoiceArena/Monsoon_en_IN_test"
 )
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry, e.g.:
+#   ONLY_DATASETS="monsoon_en_in" bash <this script>
+#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+filter_only_datasets || exit 1
+
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
   echo "HF_TOKEN is required" >&2
@@ -58,8 +84,16 @@ echo "CUDA allocator: $CUDA_ALLOC_CONF"
 
 pids=()
 for config in "${DATASET_CONFIGS[@]}"; do
-  read -r dataset split batch_size <<< "$config"
-  echo "Submitting dataset=${dataset} split=${split} batch_size=${batch_size}"
+  read -r dataset split batch_size dataset_path <<< "$config"
+  if [[ -n "$dataset_path" ]]; then
+      # Entry names its own repo: pass no config. Such repos hold a single
+      # (default) config, and the name here is just a label.
+      dataset_config=""
+  else
+      dataset_path="$DEFAULT_DATASET_PATH"
+      dataset_config="$dataset"
+  fi
+  echo "Submitting dataset_path=${dataset_path} dataset=${dataset} split=${split} batch_size=${batch_size}"
   (
     hf jobs run \
       --flavor "$FLAVOR" \
@@ -72,12 +106,14 @@ for config in "${DATASET_CONFIGS[@]}"; do
       "hf.co/spaces/${SPACE}" \
       bash -c "
         set -euo pipefail
+        ${LOCAL_NORMALIZER_INJECT}
+        ${LOCAL_SCRIPT_INJECT}
         cd /app
         rm -rf /app/results
         PYTHONPATH=/app python /app/run_eval.py \\
           --model_id=${MODEL_ID} \\
           --model_revision=${MODEL_REVISION} \\
-          --dataset_path=${DATASET_PATH} \\
+          --dataset_path=${dataset_path} \\
           --dataset=${dataset} \\
           --split=${split} \\
           --device=0 \\
@@ -119,17 +155,16 @@ fi
 # Allow the completed Jobs' bucket writes to become visible before syncing.
 sleep 10
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 local_results="$repo_root/results/$MODEL_FOLDER"
 mkdir -p "$local_results"
-hf buckets sync \
-  "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
-  "$local_results"
+RUN_RESULTS=$(python "${FETCH_RUN_RESULTS}" \
+    --bucket "${RESULTS_BUCKET}" --model-folder "${MODEL_FOLDER}" \
+    --local-dir "$local_results" --since "${RUN_START}")
 
 PYTHONPATH="$repo_root" python - <<PY
 from normalizer.eval_utils import score_results
 
-score_results("$local_results", "$MODEL_ID", families=["public"])
+score_results("$RUN_RESULTS", "$MODEL_ID", families=["public"])
 PY
 
 echo "All Audio8-ASR public HF Jobs completed and scored."

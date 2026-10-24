@@ -2,44 +2,87 @@
 # Local script to submit HF Jobs for Granite ASR evaluation.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
 
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
+
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-granite}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
-DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard}"
+DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
-# ── Models: "model_id type batch_size [additional_params]" ────────────────────
-# Types: speculative, speculative_bpe, nar
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Set USE_LOCAL_SCRIPT=1 to run your local eval script instead of the version
+# committed to the Space (useful for iterating without pushing to the Space).
+# The script is picked per model type below, so the injection is built there.
+USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
+
+# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
+# job (so normalizer changes take effect without updating the HF Space).
+LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
+
+# ── Models: "model_id type batch_size [revision]" ─────────────────────────────
+# Types: speculative, speculative_bpe, nar, ctc
+# revision: optional 4th field, a model repo commit/branch/tag. Only the ctc
+# eval script accepts --revision today; omit it for the other types.
 MODEL_CONFIGS=(
     "ibm-granite/granite-4.0-1b-speech speculative 256"
     "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
+    "ibm-granite/granite-speech-5.0-2b speculative_bpe 128"
+    "ibm-granite/granite-speech-5.0-470m-turboctc ctc 128 78b07c8e131eede3d59b95545efc8506b45a505b"
+    "ibm-granite/granite-speech-5.0-470m-turboctc-nc ctc 128 05b33f57fe08aae7a0365c7e096a42658f8a28ac"
 )
 
-# ── Datasets: "name split" ───────────────────────────────────────────────────
+# ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
+# dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
+# An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
+# config name: the first field is only a label for selection and result files.
 DATASET_CONFIGS=(
     "ami_cleaned test"
     "gigaspeech_cleaned test"
     "voxpopuli_cleaned_aa test"
-    "earnings22 test"
+    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
+    "urgent2024 test"
+    "urgent2024_clean test"
+    "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
+# Optional: restrict this run to specific datasets, matched against the first
+# field of each DATASET_CONFIGS entry
+#   ONLY_DATASETS="monsoon_en_in" bash <this script>
+#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+filter_only_datasets || exit 1
+
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_TYPE BATCH_SIZE <<< "$model_cfg"
+    read -r MODEL_ID MODEL_TYPE BATCH_SIZE REVISION <<< "$model_cfg"
+    REVISION_ARG=""
+    [[ -n "$REVISION" ]] && REVISION_ARG="--revision=${REVISION}"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
-    echo "  Evaluating: ${MODEL_ID} (${MODEL_TYPE}, batch_size=${BATCH_SIZE})"
+    echo "  Evaluating: ${MODEL_ID} (${MODEL_TYPE}, batch_size=${BATCH_SIZE}${REVISION:+, revision=${REVISION}})"
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT <<< "$cfg"
+        read -r DATASET SPLIT DATASET_PATH <<< "$cfg"
+        if [[ -n "$DATASET_PATH" ]]; then
+            # Entry names its own repo: pass no config. Such repos hold a single
+            # (default) config, and the name here is just a label.
+            DATASET_CONFIG=""
+        else
+            DATASET_PATH="$DEFAULT_DATASET_PATH"
+            DATASET_CONFIG="$DATASET"
+        fi
 
-        echo "Submitting job: model=${MODEL_ID} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE}"
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE}"
 
         # Build command based on model type
         if [[ "$MODEL_TYPE" == "speculative" ]]; then
@@ -51,9 +94,22 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         elif [[ "$MODEL_TYPE" == "nar" ]]; then
             EVAL_SCRIPT="run_eval_nar.py"
             EXTRA_ARGS=""
+        elif [[ "$MODEL_TYPE" == "ctc" ]]; then
+            EVAL_SCRIPT="run_eval_ctc.py"
+            EXTRA_ARGS=""
         else
             echo "ERROR: Unknown model type: ${MODEL_TYPE}" >&2
             exit 1
+        fi
+
+        LOCAL_SCRIPT_INJECT=""
+        if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
+            if [[ ! -f "${SCRIPT_DIR}/${EVAL_SCRIPT}" ]]; then
+                echo "ERROR: ${SCRIPT_DIR}/${EVAL_SCRIPT} not found (needed for type ${MODEL_TYPE})" >&2
+                exit 1
+            fi
+            RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/${EVAL_SCRIPT}")
+            LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/${EVAL_SCRIPT} &&"
         fi
 
         NAMESPACE_ARG=""
@@ -62,17 +118,20 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
+            --secrets HF_TOKEN="$HF_TOKEN" \
             --env PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
             --env PYTORCH_ALLOC_CONF="expandable_segments:True" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
             bash -c "
+                ${LOCAL_NORMALIZER_INJECT}
+                ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python ${EVAL_SCRIPT} \
                     --model_id=${MODEL_ID} \
+                    ${REVISION_ARG} \
                     --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET} \
+                    --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
@@ -93,22 +152,14 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     sleep 10  # allow time for the last results to be flushed to the bucket
 
     mkdir -p "./results/${MODEL_FOLDER}"
-    hf buckets sync \
-        "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
-        "./results/${MODEL_FOLDER}" > /dev/null 2>&1
+    RUN_RESULTS=$(python "${FETCH_RUN_RESULTS}" \
+        --bucket "${RESULTS_BUCKET}" --model-folder "${MODEL_FOLDER}" \
+        --local-dir "./results/${MODEL_FOLDER}" --since "${RUN_START}" \
+        --expected "${#DATASET_CONFIGS[@]}")
 
-    EXPECTED=${#DATASET_CONFIGS[@]}
-    ACTUAL=$(find "./results/${MODEL_FOLDER}" -name "*.jsonl" | wc -l)
-    if [[ "$ACTUAL" -lt "$EXPECTED" ]]; then
-        echo "WARNING: expected ${EXPECTED} result files but only found ${ACTUAL}. Some jobs may not have finished yet."
-    else
-        echo "All ${ACTUAL} result files present."
-    fi
-
-    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
     PYTHONPATH="${REPO_ROOT}" python -c "
 from normalizer.eval_utils import score_results
-score_results('$(pwd)/results/${MODEL_FOLDER}', '${MODEL_ID}')
+score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
 done

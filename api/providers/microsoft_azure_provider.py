@@ -22,6 +22,8 @@ class MicrosoftAzureProvider(APIProvider):
         "de": "de-DE",
         "it": "it-IT",
         "pt": "pt-PT",
+        "nl": "nl-NL",
+        "hi": "hi-IN",
     }
 
     def transcribe(
@@ -46,6 +48,9 @@ class MicrosoftAzureProvider(APIProvider):
                 "task": "transcribe",
             },
         }
+        if prompt is None:
+            prompt = "Transcribe verbatim, including all filler words and disfluencies."
+        
         if prompt is not None:
             # E.g., prompt = "Output must be in lexical format."
             definition["enhancedMode"]["prompt"] = [prompt]

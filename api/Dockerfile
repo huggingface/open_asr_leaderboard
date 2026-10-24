@@ -30,7 +30,8 @@ RUN pip install --no-cache-dir \
     requests \
     tqdm \
     python-dotenv \
-    kaldialign==0.12.0
+    kaldialign==0.12.0 \
+    voi_oiwer
 
 # ── Provider-specific SDKs ────────────────────────────────────────────────────
 RUN pip install --no-cache-dir \
@@ -41,7 +42,9 @@ RUN pip install --no-cache-dir \
     speechmatics-python \
     httpx \
     requests-toolbelt \
-    gladiaio-sdk
+    gladiaio-sdk \
+    google-genai \
+    websockets
 
 # Force soundfile backend for datasets audio decoding
 ENV HF_AUDIO_DECODER_BACKEND=soundfile

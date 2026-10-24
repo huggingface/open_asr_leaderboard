@@ -161,6 +161,8 @@ def main(args):
         benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"],
     )
 
+    is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+
     all_results = {
         "audio_length_s": [],
         "transcription_time_s": [],
@@ -168,6 +170,8 @@ def main(args):
         "references": [],
         "audio_filepath": [],
     }
+    if is_chunked:
+        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
@@ -184,12 +188,23 @@ def main(args):
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
+        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        if is_chunked
+        else None,
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
     wer_metric = evaluate.load("wer")
-    norm_refs = [data_utils.normalizer(r) for r in all_results["references"]]
-    norm_preds = [data_utils.normalizer(p) for p in all_results["predictions"]]
+    if is_chunked:
+        sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))
+        references = [session["text"] for session in sessions]
+        predictions = [session["pred_text"] for session in sessions]
+    else:
+        references = all_results["references"]
+        predictions = all_results["predictions"]
+
+    norm_refs = [data_utils.normalizer(r) for r in references]
+    norm_preds = [data_utils.normalizer(p) for p in predictions]
     wer = wer_metric.compute(
         references=norm_refs, predictions=norm_preds
     )

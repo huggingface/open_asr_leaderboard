@@ -1,21 +1,10 @@
-huggingface_hub
-transformers<5
-datasets==3.6.0
-k2 @ https://huggingface.co/csukuangfj/k2/resolve/main/ubuntu-cuda/1.24.4.dev20241029/k2-1.24.4.dev20241030+cuda12.4.torch2.4.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-fsspec
-kaldialign
-kaldi-native-fbank
-lilcom
-lhotse
-num2words
-numpy
-omegaconf
-pypinyin
-regex
-sentencepiece
+# Shared Fast GPU ASR runner for Zipformer and Parakeet.
+# Install CPU-only PyTorch first; see soundsgoodai/README.md.
+fast-gpu-asr
+audioop-lts; python_version >= "3.13"
+datasets
 soundfile
-tensorboard
---extra-index-url https://download.pytorch.org/whl/cu124
-torch==2.4.0+cu124
-torchaudio==2.4.0+cu124
-tqdm
+librosa
+kaldialign>=0.12.0
+num2words
+regex
