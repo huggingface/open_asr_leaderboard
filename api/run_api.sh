@@ -33,6 +33,7 @@ MODEL_CONFIGS=(
     # "gemini/gemini-3.5-transcribe  8"
     # "sophea/asr-k1                 16"
     # "sprag/symphony                8"
+    # "OtterAI/speech-v3.1           128"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -49,6 +50,8 @@ EVAL_DATASETS=(
     "urgent2024_clean:test"
     "voxpopuli_cleaned_aa:test"
     "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
+    "librispeech:test.clean"
+    "librispeech:test.other"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
@@ -105,6 +108,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
             -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+            -e OTTERAI_API_KEY -e OTTERAI_API_URL \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
