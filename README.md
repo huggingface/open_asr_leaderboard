@@ -89,26 +89,7 @@ Each model family has a `run_eval.py` entry point driven by a corresponding bash
 
 # Trade-off plots
 
-For open-source models, you can plot tradeoff plots like below with `scripts/plot_all.sh`.
-
-![EN Shortform RTFx vs WER](scripts/data/en_shortform_rtfx_wer.png)
-
-You can highlight a particular model (see `scripts/data` for CSV results as of 26 March 2026):
-```
-./scripts/plot_all.sh --highlight "model_name"
-
-# for example
-./scripts/plot_all.sh --highlight "nvidia/parakeet-tdt-0.6b-v3"
-```
-
-![Highlight model](scripts/data/nvidia_parakeet-tdt-0.6b-v3_en_shortform_rtfx_wer.png)
-
-You can also specify your own model and its performance as such:
-```
-./scripts/plot_all.sh --custom-model "MY MODEL" --model-size 2.0 --en-shortform-wer 5.5 --en-shortform-rtfx 1000
-```
-
-![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
+Pareto plots of WER against RTFx and model size are available directly on the [leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
 
 # Benchmark fitting
 
