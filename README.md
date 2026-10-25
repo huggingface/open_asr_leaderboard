@@ -75,17 +75,10 @@ RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 ORG_NAME="<org-name>" RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 ```
 
-For long-form evaluations, launch the family containing the model. The scripts
-run Earnings21, Earnings22, TED-LIUM, and all eight CORAAL subsets, then print a
-comparison with the current leaderboard. Dataset repositories are mounted
-read-only and their revisions are recorded in the launcher; TED-LIUM uses its
-original `distil-whisper/tedlium-long-form` source because it is no longer in
-the consolidated long-form repository. Full per-sample JSONL inference traces
-are stored at `<bucket>/longform/<model-slug>/`, and completed splits are reused
-when a run is resumed:
+For long-form evaluations (Earnings21, Earnings22, and the eight CORAAL subsets),
+use the `submit_jobs_*_longform.sh` script of the model's family, e.g.:
 ```bash
-RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash transformers/submit_jobs_longform.sh
-RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash nemo_asr/submit_jobs_longform.sh
+RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash transformers/submit_jobs_whisper_longform.sh
 ```
 
 ## Local evaluation

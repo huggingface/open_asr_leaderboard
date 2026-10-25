@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-RESULTS_BUCKET="${RESULTS_BUCKET:-}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_private}"
 IMAGE_TAG="api-eval"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
 
@@ -14,26 +14,16 @@ fi
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 # Worker limits match the corresponding entries in run_api.sh.
 MODEL_CONFIGS=(
-    # "openai/gpt-4o-transcribe      16"
-    # "openai/gpt-4o-mini-transcribe 16"
-    # "openai/whisper-1              16"
-    # "assembly/universal-3-pro      4"
-    # "elevenlabs/scribe_v2          8"
-    # "revai/machine                 4"
-    # "revai/fusion                  4"
-    # "speechmatics/enhanced         4"
-    # "aquavoice/avalon-v1-en        5"
-    # "reson8/resonant-1             16"
-    # "reson8/resonant-1-flash       16"
+    # "openai/gpt-transcribe 16"
+    "assembly/universal-3-5-pro    4"
+    # "elevenlabs/scribe_v2          2"
+    "reson8/resonant-1             4"
 )
 
 # ── Datasets: "dataset_path:config:split" ────────────────────────────────────
-# TED-LIUM is loaded from its original repository because it is no longer in
-# the consolidated long-form dataset.
 DATASET_CONFIGS=(
     "hf-audio/asr-leaderboard-longform:earnings21:test"
     "hf-audio/asr-leaderboard-longform:earnings22:test"
-    "distil-whisper/tedlium-long-form:default:test"
     "bezzam/coraal:ATL:test"
     "bezzam/coraal:DCA:test"
     "bezzam/coraal:DCB:test"
@@ -97,7 +87,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS}
+                    --max_workers=${MAX_WORKERS} \
+                    --streaming
             "
     done
 
@@ -118,10 +109,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         -v "${REPO_ROOT}/../scripts:/app/scripts:ro" \
         -v "${HF_CACHE_DIR}:/hf_cache" \
         "${IMAGE_TAG}" -c "
-            cd /app && PYTHONPATH=/app python /app/scripts/score_longform_results.py \
-                /app/results/${MODEL_FOLDER} \
-                --model-id=${MODEL_ID} \
-                --current-csv=/app/scripts/data/en_longform.csv
+            cd /app && PYTHONPATH=/app python /app/scripts/score_bucket_results.py \
+                --family longform \
+                --model_id=${MODEL_ID} \
+                --local_dir=/app/results \
+                --skip_sync \
+                --no_upload_scores
         "
 
     if [[ -n "${RESULTS_BUCKET}" ]]; then
