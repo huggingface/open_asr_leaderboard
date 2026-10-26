@@ -107,6 +107,7 @@ def transcribe_dataset(
     max_samples=None,
     max_workers=4,
     prompt=None,
+    streaming=False,
 ):
     is_chunked = data_utils.is_chunked_dataset(dataset_path)
 
@@ -126,7 +127,7 @@ def transcribe_dataset(
                 dataset_path=dataset_path,
                 dataset=dataset,
                 split=split,
-                streaming=False,
+                streaming=streaming,
             )
         )
         ds = data_utils.prepare_data(ds)
@@ -286,6 +287,12 @@ if __name__ == "__main__":
         default=None,
         help="Optional prompt to pass to the provider (e.g., 'Output must be in lexical format.')",
     )
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="Stream the dataset instead of loading it in full. Needed for long-form "
+        "recordings (up to about an hour), which overflow an Arrow block otherwise.",
+    )
 
     args = parser.parse_args()
 
@@ -298,4 +305,5 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         max_workers=args.max_workers,
         prompt=args.prompt,
+        streaming=args.streaming,
     )
