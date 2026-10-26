@@ -60,6 +60,7 @@ from . import (
     modulate_provider,
     openai_provider,
     otterai_provider,
+    p99lab_provider,
     reson8_provider,
     revai_provider,
     sophea_provider,
