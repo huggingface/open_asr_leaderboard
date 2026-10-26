@@ -12,12 +12,13 @@ if [[ -n "${RESULTS_BUCKET}" && -z "${HF_TOKEN:-}" ]]; then
 fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
-# Worker limits match the corresponding entries in run_api.sh.
+# Fewer workers than in run_api.sh: each request uploads up to an hour of audio, and
+# requests rejected near the API's concurrency limit end up as empty transcripts.
 MODEL_CONFIGS=(
     # "openai/gpt-transcribe 16"
-    "assembly/universal-3-5-pro    4"
+    # "assembly/universal-3-5-pro    4"
     # "elevenlabs/scribe_v2          2"
-    "reson8/resonant-1             4"
+    # "reson8/resonant-1             4"
 )
 
 # ── Datasets: "dataset_path:config:split" ────────────────────────────────────
