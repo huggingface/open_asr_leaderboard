@@ -60,7 +60,11 @@ def main(args):
             # Use a unique filename based on global index
             audio_path = os.path.join(CACHE_DIR, f"sample_{global_idx}.wav")
 
-            if isinstance(sample, dict) and "bytes" in sample and "array" not in sample:
+            if not isinstance(sample, dict) or "array" in sample:
+                audio_array = np.float32(sample["array"])
+                sample_rate = 16000
+
+            elif "bytes" in sample: # added to be compatible with latest datasets library (3.x.x) that produces byte stream
                 with io.BytesIO(sample["bytes"]) as audio_file:
                     audio_array, sample_rate = soundfile.read(audio_file, dtype="float32")
             else:
