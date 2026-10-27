@@ -7,7 +7,7 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-OpenLLM-France/open-asr-leaderboard-luciole-audio}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-luciole-audio}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
