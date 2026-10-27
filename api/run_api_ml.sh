@@ -22,6 +22,7 @@ MODEL_CONFIGS=(
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
     # "microsoft/azure-speech-07-2026  4"
+    # "microsoft/azure-speech-09-2026  4"
     # "modulate/multilingual         25"
     # "soniox/stt-async-v5           20"
     # "gemini/gemini-3.5-transcribe  16"

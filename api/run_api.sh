@@ -25,6 +25,7 @@ MODEL_CONFIGS=(
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
     # "microsoft/azure-speech-07-2026  4"
+    # "microsoft/azure-speech-09-2026  4"
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"
     # "meta/muse-voice-transcribe    8"
