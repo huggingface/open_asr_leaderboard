@@ -6,3 +6,4 @@ jiwer
 regex
 num2words
 kaldialign==0.12.0
+voi_oiwer
