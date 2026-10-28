@@ -43,6 +43,36 @@ ADDITIONAL_DIACRITICS = {
 }
 
 
+_NON_SPEECH_TAGS = frozenset({
+    "laugh", "laughs", "laughing", "laughter",
+    "cough", "coughs", "coughing", "unk", "music",
+})
+_BRACKET_PAIRS = (("(", ")"), ("[", "]"), ("<", ">"), ("（", "）"), ("［", "］"), ("＜", "＞"))
+_BRACKET_CHARACTERS = "".join(opening + closing for opening, closing in _BRACKET_PAIRS)
+_BRACKET_PATTERN = re.compile("|".join(
+    rf"{re.escape(opening)}[^{re.escape(_BRACKET_CHARACTERS)}]*{re.escape(closing)}"
+    for opening, closing in _BRACKET_PAIRS
+))
+
+
+def remove_non_speech_annotations(s: str) -> str:
+    """Remove exact enclosed non-speech tags; leave speech for normal cleanup.
+
+    Match complete, paired, innermost ASCII/fullwidth delimiters. Repeat after
+    removing nested tags, preserving ordinary outer content. Tag bodies ignore
+    case and surrounding whitespace; spaces prevent adjacent words from joining.
+    """
+    def replace(match: Match[str]) -> str:
+        body = match.group()[1:-1].strip().casefold()
+        return " " if body in _NON_SPEECH_TAGS else match.group()
+
+    while True:
+        cleaned = _BRACKET_PATTERN.sub(replace, s)
+        if cleaned == s:
+            return cleaned
+        s = cleaned
+
+
 def remove_symbols_and_diacritics(s: str, keep=""):
     """
     Replace any other markers, symbols, and punctuations with a space, and drop any diacritics (category 'Mn' and some
@@ -91,8 +121,7 @@ class BasicTextNormalizer:
 
     def __call__(self, s: str):
         s = s.lower()
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = remove_non_speech_annotations(s)
         s = self.clean(s).lower()
 
         if self.split_letters:
@@ -112,8 +141,7 @@ class BasicMultilingualTextNormalizer:
 
     def __call__(self, s: str):
         s = s.lower()
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = remove_non_speech_annotations(s)
         s = self.clean(s).lower()
 
         # Remove punctuation and extra spaces
@@ -723,8 +751,7 @@ class EnglishTextNormalizer:
     def __call__(self, s: str):
         s = s.lower()
 
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = remove_non_speech_annotations(s)
         s = re.sub(self.ignore_patterns, "", s)
         s = re.sub(r"\s+'", "'", s)  # standardize when there's a space before an apostrophe
 
