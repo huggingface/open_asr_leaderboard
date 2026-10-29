@@ -1,4 +1,4 @@
-"""Sonaflow Inc. Bessel v1.5 English transcription API provider.
+"""Sonaflow Inc. Bessel Consensus3 r1 English transcription API provider.
 
 No sample metadata, reference, prompt, or dataset name is sent to the API.
 Once a job might have been accepted, all recovery uses the SAME request ID.
@@ -14,10 +14,10 @@ import requests
 
 from . import APIProvider, PermanentError, register
 
-VARIANT = "bessel-v1.5"
-MODEL_ID = "Sonaflow/bessel-v1.5"
-PROFILE_SHA256 = "a58b2ef869d532cde0c6c05bd4cf50843e60ffbad8050722295ec69009e04e10"
-RUNTIME_SHA256 = "65954fe37b49e0f5761e7d3616cfdc38e252f4d2daf25daaab78ae698c19b6d8"
+VARIANT = "bessel-consensus3-r1"
+MODEL_ID = "Sonaflow/bessel-consensus3-r1"
+PROFILE_SHA256 = "5c0bcaad39f97b37f6dd073e26dc65b41f6a3919af8befc6580cbe31b30d80c4"
+RUNTIME_SHA256 = "84ad4385c75b5260bc8ba58eacb328112e2d34805a5bca30d224e88738d83899"
 
 
 @register("Sonaflow")
@@ -35,7 +35,7 @@ class BesselProvider(APIProvider):
 
     def _transcribe(self, identity, model_variant, audio_file_path, use_url, language, prompt):
         if model_variant != VARIANT or use_url or not audio_file_path or language != "en" or prompt:
-            raise PermanentError("Bessel v1.5 requires its versioned English model, a local WAV/FLAC and no prompt")
+            raise PermanentError("Bessel Consensus3 r1 requires its versioned English model, a local WAV/FLAC and no prompt")
         url = os.environ.get("BESSEL_API_URL", "").rstrip("/")
         key = os.environ.get("BESSEL_API_KEY", "")
         parsed = urlsplit(url)
@@ -44,7 +44,7 @@ class BesselProvider(APIProvider):
             raise PermanentError("Configure an HTTPS BESSEL_API_URL and private BESSEL_API_KEY")
         audio = Path(audio_file_path).read_bytes()
         if not audio or len(audio) > 24 * 1024 * 1024:
-            raise PermanentError("Bessel v1.5 accepts audio files up to 24 MiB")
+            raise PermanentError("Bessel accepts audio files up to 24 MiB")
         # A unique invocation ID avoids cross-recording and cross-run result caches.
         headers = {"Authorization": "Bearer " + key, "Idempotency-Key": identity}
         deadline = time.monotonic() + 7200
@@ -70,7 +70,7 @@ class BesselProvider(APIProvider):
                 except ValueError:
                     return None
 
-            # Scale-to-zero cold starts can exceed a single HTTP timeout.
+            # Service startup or transient outages can exceed one HTTP timeout.
             # Retrying this metadata GET submits no audio and creates no job.
             seal = None
             for attempt in range(10):
@@ -79,7 +79,7 @@ class BesselProvider(APIProvider):
                     break
                 time.sleep(min(2 ** attempt, 10))
             if not seal or seal.get("profile_sha256") != PROFILE_SHA256 or seal.get("inference_runtime_sha256") != RUNTIME_SHA256 or seal.get("upload_audio_storage") != "memory_only" or seal.get("model") != MODEL_ID:
-                raise PermanentError("Bessel v1.5 endpoint contract is unavailable or mismatched; no audio submitted")
+                raise PermanentError("Bessel Consensus3 r1 endpoint contract is unavailable or mismatched; no audio submitted")
             accepted = False
             value = None
             for attempt in range(6):
@@ -108,8 +108,8 @@ class BesselProvider(APIProvider):
                         result = value.get("result", {})
                         if (not isinstance(result, dict) or result.get("model") != MODEL_ID or result.get("profile_sha256") != PROFILE_SHA256
                                 or result.get("runtime_sha256") != RUNTIME_SHA256 or not isinstance(result.get("text"), str)):
-                            raise PermanentError("Bessel v1.5 result provenance mismatch")
-                        # Preserve empty transcripts; never filter failed evaluation rows.
+                            raise PermanentError("Bessel Consensus3 r1 result provenance mismatch")
+                        # Preserve the API's normalized text and empty transcripts exactly.
                         return result["text"]
                     if status not in ("queued", "running"):
                         raise PermanentError(f"Bessel job {status}; preserve request {identity}; no replay")

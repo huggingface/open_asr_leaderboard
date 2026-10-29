@@ -32,12 +32,14 @@ class Reply:
 
 class Session:
     def __init__(self, *, text="unaltered  Transcript!", lost_post=False, failure=None, bad_seal=False,
-                 bad_result=False, rejected=False, cold_starts=0):
+                 bad_result=False, rejected=False, cold_starts=0, contract_model=None, result_model=None):
         self.headers = {}
         self.calls = []
         self.text, self.lost_post, self.failure = text, lost_post, failure
         self.bad_seal, self.bad_result, self.rejected = bad_seal, bad_result, rejected
         self.cold_starts = cold_starts
+        self.contract_model = contract_model or provider.MODEL_ID
+        self.result_model = result_model or provider.MODEL_ID
 
     def __enter__(self):
         return self
@@ -52,7 +54,7 @@ class Session:
             if self.cold_starts:
                 self.cold_starts -= 1
                 raise requests.Timeout("service starting")
-            return Reply({"model": provider.MODEL_ID,
+            return Reply({"model": self.contract_model,
                 "profile_sha256": "wrong" if self.bad_seal else provider.PROFILE_SHA256,
                 "inference_runtime_sha256": provider.RUNTIME_SHA256, "upload_audio_storage": "memory_only"})
         identity = self.headers["Idempotency-Key"]
@@ -65,7 +67,7 @@ class Session:
         if self.failure:
             return Reply({"id": identity, "status": self.failure})
         return Reply({"id": identity, "status": "complete", "result": {
-            "model": provider.MODEL_ID, "profile_sha256": provider.PROFILE_SHA256,
+            "model": self.result_model, "profile_sha256": provider.PROFILE_SHA256,
             "runtime_sha256": "wrong" if self.bad_result else provider.RUNTIME_SHA256, "text": self.text}})
 
 
@@ -86,7 +88,7 @@ class ProviderTests(unittest.TestCase):
             return provider.BesselProvider().transcribe(provider.VARIANT, str(self.audio),
                 {"text": "SECRET REFERENCE", "dataset": "must-not-be-sent"}, **kwargs)
 
-    def test_raw_transcript_and_no_reference_forwarding(self):
+    def test_returned_transcript_and_no_reference_forwarding(self):
         s = Session()
         self.assertEqual(self.run_call(s), s.text)
         posts = [c for c in s.calls if c[0] == "POST"]
@@ -131,6 +133,23 @@ class ProviderTests(unittest.TestCase):
     def test_wrong_result_runtime_is_rejected(self):
         with self.assertRaises(package.PermanentError):
             self.run_call(Session(bad_result=True))
+
+    def test_different_model_contract_never_submits_audio(self):
+        s = Session(contract_model="Sonaflow/different-release")
+        with self.assertRaises(package.PermanentError):
+            self.run_call(s)
+        self.assertFalse(any(c[0] == "POST" for c in s.calls))
+
+    def test_different_model_result_is_rejected(self):
+        with self.assertRaises(package.PermanentError):
+            self.run_call(Session(result_model="Sonaflow/different-release"))
+
+    def test_unsupported_variant_never_contacts_service(self):
+        s = Session()
+        with patch.object(provider.requests, "Session", return_value=s):
+            with self.assertRaises(package.PermanentError):
+                provider.BesselProvider().transcribe("different-release", str(self.audio), {})
+        self.assertFalse(s.calls)
 
     def test_unexpected_client_failure_is_permanent_not_billable_retry(self):
         s = Session()
