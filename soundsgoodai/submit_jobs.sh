@@ -36,12 +36,14 @@ REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
 LOCAL_DIR=${SCRIPT_DIR}/results/${RUN_ID}
 export PYTHONPATH=${REPO_ROOT}:${PYTHONPATH:-}
 
-# Local normalizer/ package is injected into the job by default, so normalizer
-# changes take effect without updating the HF Space; USE_LOCAL_NORMALIZER=0 uses
-# the image's version instead.
+# Local normalizer/ package, and the asr_normalizer package it imports (as installed
+# locally), are injected into the job by default, so normalizer changes take effect
+# without updating the HF Space; USE_LOCAL_NORMALIZER=0 uses the image's version instead.
 LOCAL_NORMALIZER_INJECT=
 if [[ ${USE_LOCAL_NORMALIZER:-1} == 1 ]]; then
-    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
+    ASR_NORMALIZER_PARENT=$(python -c "import asr_normalizer, os; print(os.path.dirname(os.path.dirname(asr_normalizer.__file__)))") || exit 1
+    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer \
+        -C "${ASR_NORMALIZER_PARENT}" asr_normalizer | base64 -w0)
     LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app"
 fi
 
