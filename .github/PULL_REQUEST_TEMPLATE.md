@@ -32,6 +32,8 @@ A similar checklist applies for multilingual evaluation (with `run_eval_ml.py` a
     - [ ] Prompt(s) should be explicitly set in the script.
 - [ ] If writing a new `run_eval.py`, it must support **batch processing** and use `normalizer/data_utils.py` for data loading and manifest writing. Make sure that the un-normalized model outputs are saved.
 - [ ] Use `torch.compile` and/or relevant optimizations including warmup to maximize RTFx.
+    - [ ] Warmup must **not use information from the test set**, as it would not be known in practice. For example, do not select warmup batches or compiled shapes from the evaluation audio's lengths. Instead, warm up on inputs independent of the dataset, e.g. dummy audio for every length bucket up to the maximum length your model supports, as a deployed system would at startup. Running a fixed number of batches (`--warmup_steps`) as most existing scripts do is fine.
+    - [ ] Warmup is not timed. Any compilation not covered by the warmup happens in the timed loop and counts toward RTFx.
 - [ ] Even if you're not using HF Jobs, prepare an HF space like the [existing models](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations), such that the maintainers can reproduce your results on HF Jobs.
 - [ ] Please report your results on the relevant public sets, as well as the RTFx.
 - [ ] Be sure to count the **total number** of parameters. You can get the exact number by adding the following line in your `run_eval.py` script:
@@ -55,6 +57,8 @@ License | Size (B) | # Languages | Encoder | Decoder | (Recommended) Link to tra
     - a line in `MODEL_CONFIGS`
     - a line when calling `docker run` to pass the API key 
 - [ ] Provide a link to your model's documentation that we can link on the leaderboard.
+- [ ] Can you guarantee to not train on, log, store, retain, or inspect the audio used for the Open ASR Leaderboard evaluations? This is important to ensure the held-out nature of the private sets.
+- [ ] (If applicable) when was the last submission? If the last submission was too recent or if no new private audio has been added since then, we may decide to hold-off the submission for a later date.
 - [ ] Please provide the following information. Note that the cost should represent the "entry-level" costs, e.g. when one first signs up to your platform.
 
 Cost ($/hour) |  # Languages | Link to model announcement or API

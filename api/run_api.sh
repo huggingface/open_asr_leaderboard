@@ -34,6 +34,7 @@ MODEL_CONFIGS=(
     # "sophea/asr-k1                 16"
     # "sprag/symphony                8"
     # "OtterAI/speech-v3.1           128"
+    # "p99lab/audrey-0.7               64"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -122,6 +123,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
             -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
+            -e P99LAB_API_KEY="${P99LAB_API_KEY:-}" -e P99LAB_API_URL="${P99LAB_API_URL:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \

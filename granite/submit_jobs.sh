@@ -32,6 +32,7 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 MODEL_CONFIGS=(
     "ibm-granite/granite-4.0-1b-speech speculative 256"
     "ibm-granite/granite-speech-4.1-2b speculative_bpe 128"
+    "ibm-granite/granite-speech-5.0-2b speculative_bpe 128"
     "ibm-granite/granite-speech-5.0-470m-turboctc ctc 128 78b07c8e131eede3d59b95545efc8506b45a505b"
     "ibm-granite/granite-speech-5.0-470m-turboctc-nc ctc 128 05b33f57fe08aae7a0365c7e096a42658f8a28ac"
 )

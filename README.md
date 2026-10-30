@@ -25,7 +25,7 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
 
 # Evaluate a model (as of 24 July 2026)
 
-English and multilingual short-form evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes a Docker image on the same hardware, to minimize environment and driver differences. Long-form evaluations will migrate to HF Jobs in the near future.
+English short-form, English long-form, and multilingual evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes a Docker image on the same hardware, to minimize environment and driver differences.
 
 For API models see [here](api/README.md).
 
@@ -39,7 +39,7 @@ Example costs for a full run over the main public datasets for English short-for
 - $4.75 for `openai/whisper-large-v3-turbo`
 - $5.58 for `Qwen/Qwen3-ASR-1.7B`
 
-Each model family has its own Docker image with the necessary software requirements. The evalulation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
+Each model family has its own Docker image with the necessary software requirements. The evaluation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
 
 **To launch an evaluation:**
 
@@ -75,34 +75,21 @@ RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 ORG_NAME="<org-name>" RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash qwen/submit_jobs.sh
 ```
 
+For long-form evaluations (Earnings21, Earnings22, and the eight CORAAL subsets),
+use the `submit_jobs_*_longform.sh` script of the model's family, e.g.:
+```bash
+RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash transformers/submit_jobs_whisper_longform.sh
+```
+
 ## Local evaluation
 
-For contributors who want to test locally or evaluate multilingual/long-form models before HF Jobs support is added, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
+For contributors who want to test locally, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
 
 Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
 
 # Trade-off plots
 
-For open-source models, you can plot tradeoff plots like below with `scripts/plot_all.sh`.
-
-![EN Shortform RTFx vs WER](scripts/data/en_shortform_rtfx_wer.png)
-
-You can highlight a particular model (see `scripts/data` for CSV results as of 26 March 2026):
-```
-./scripts/plot_all.sh --highlight "model_name"
-
-# for example
-./scripts/plot_all.sh --highlight "nvidia/parakeet-tdt-0.6b-v3"
-```
-
-![Highlight model](scripts/data/nvidia_parakeet-tdt-0.6b-v3_en_shortform_rtfx_wer.png)
-
-You can also specify your own model and its performance as such:
-```
-./scripts/plot_all.sh --custom-model "MY MODEL" --model-size 2.0 --en-shortform-wer 5.5 --en-shortform-rtfx 1000
-```
-
-![Custom model](scripts/data/MY_MODEL_en_shortform_rtfx_wer.png)
+Pareto plots of WER against RTFx and model size are available directly on the [leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
 
 # Benchmark fitting
 
