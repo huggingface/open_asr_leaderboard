@@ -26,6 +26,7 @@ MODEL_CONFIGS=(
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
+    # "reson8/rumble-2               16"
     # "microsoft/azure-speech-07-2026  4"
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"

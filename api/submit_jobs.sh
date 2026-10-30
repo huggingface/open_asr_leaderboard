@@ -56,6 +56,7 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-06-2026  4"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
+    # "reson8/rumble-2               16"
 )
 
 # ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
