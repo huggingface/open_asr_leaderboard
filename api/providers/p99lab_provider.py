@@ -8,7 +8,7 @@ from . import APIProvider, PermanentError, register
 
 @register("p99lab")
 class P99LabProvider(APIProvider):
-    """p99lab Audrey. Model variants: "audrey-0.7", "audrey-1". Env: P99LAB_API_KEY, P99LAB_API_URL."""
+    """p99lab Audrey. Model variants: "audrey-1". Env: P99LAB_API_KEY, P99LAB_API_URL."""
 
     def transcribe(
         self,
