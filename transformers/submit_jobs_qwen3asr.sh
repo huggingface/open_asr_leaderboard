@@ -29,6 +29,7 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 MODEL_IDs=(
     "Qwen/Qwen3-ASR-0.6B-hf"
     "Qwen/Qwen3-ASR-1.7B-hf"
+    "bosonai/Qwen3-ASR-1.7B-hf-orze"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
