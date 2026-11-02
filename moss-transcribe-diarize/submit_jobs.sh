@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
+
 set -euo pipefail
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-moss-transcribe-diarize}"
@@ -24,6 +29,8 @@ DATASET_CONFIGS=(
     "librispeech test.clean"
     "librispeech test.other"
     "spgispeech test"
+    "urgent2024 test"
+    "urgent2024_clean test"
     "voxpopuli_cleaned_aa test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
 )
@@ -31,24 +38,7 @@ DATASET_CONFIGS=(
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="librispeech spgispeech" bash <this script>
-if [[ -n "${ONLY_DATASETS:-}" ]]; then
-    _selected=()
-    if [[ ${#DATASET_CONFIGS[@]} -gt 0 ]]; then
-        for _cfg in "${DATASET_CONFIGS[@]}"; do
-            read -r _name _ <<< "$_cfg"
-            for _want in ${ONLY_DATASETS}; do
-                if [[ "$_name" == "$_want" || "${_name##*/}" == "$_want" ]]; then
-                    _selected+=("$_cfg")
-                fi
-            done
-        done
-    fi
-    if [[ ${#_selected[@]} -eq 0 ]]; then
-        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no active entry in DATASET_CONFIGS." >&2
-        exit 1
-    fi
-    DATASET_CONFIGS=("${_selected[@]}")
-fi
+filter_only_datasets || exit 1
 
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
@@ -61,21 +51,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
-USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
-LOCAL_SCRIPT_INJECT=""
-if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
-    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py &&"
-fi
+LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval.py) || exit 1
 
 # Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
 # job (so normalizer changes take effect without updating the HF Space).
-USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
-LOCAL_NORMALIZER_INJECT=""
-if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
-    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 -w0)
-    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
-fi
+LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 MODEL_FOLDER="${MODEL_ID//\//-}"
 NAMESPACE_ARGS=()
@@ -144,11 +124,11 @@ sleep 10
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 local_results="${repo_root}/results/${MODEL_FOLDER}"
 mkdir -p "${local_results}"
-hf buckets sync \
-    "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}" \
-    "${local_results}"
+RUN_RESULTS=$(python "${FETCH_RUN_RESULTS}" \
+    --bucket "${RESULTS_BUCKET}" --model-folder "${MODEL_FOLDER}" \
+    --local-dir "${local_results}" --since "${RUN_START}")
 
-actual="$(find "${local_results}" -name '*.jsonl' | wc -l)"
+actual="$(find "${RUN_RESULTS}" -name '*.jsonl' | wc -l)"
 expected="${#DATASET_CONFIGS[@]}"
 if [[ "${actual}" -ne "${expected}" ]]; then
     echo "Expected ${expected} result files, found ${actual}" >&2
@@ -158,7 +138,7 @@ fi
 PYTHONPATH="${repo_root}" python - <<PY
 from normalizer.eval_utils import score_results
 
-score_results("${local_results}", "${MODEL_ID}")
+score_results("${RUN_RESULTS}", "${MODEL_ID}")
 PY
 
 echo "All MOSS-Transcribe-Diarize public HF Jobs completed and scored."

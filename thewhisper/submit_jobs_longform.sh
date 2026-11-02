@@ -5,6 +5,10 @@
 # Usage: HF_TOKEN=hf_... bash submit_jobs_longform.sh
 # The TheStage AI token for the compiled engines is set below (THESTAGE_AUTH_TOKEN).
 
+# Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
+# ONLY_DATASETS filtering, and fetching this run's results.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
+
 # ── Configuration ────────────────────────────────────────────────────────────
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-thewhisper}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_longform}"      # HF bucket repo for saving results
@@ -18,21 +22,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Set USE_LOCAL_SCRIPT=1 to run your local run_eval_longform.py instead of the version
 # committed to the Space (useful for iterating without pushing to the Space).
-USE_LOCAL_SCRIPT="${USE_LOCAL_SCRIPT:-1}"
-LOCAL_SCRIPT_INJECT=""
-if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
-    RUN_EVAL_B64=$(base64 < "${SCRIPT_DIR}/run_eval_longform.py" | tr -d '\n')
-    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval_longform.py &&"
-fi
+LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval_longform.py) || exit 1
 
 # Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
 # job (so normalizer changes take effect without updating the HF Space).
-USE_LOCAL_NORMALIZER="${USE_LOCAL_NORMALIZER:-1}"
-LOCAL_NORMALIZER_INJECT=""
-if [[ "$USE_LOCAL_NORMALIZER" == "1" ]]; then
-    NORMALIZER_B64=$(tar --exclude='__pycache__' --exclude='*.pyc' -czf - -C "${REPO_ROOT}" normalizer | base64 | tr -d '\n')
-    LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app &&"
-fi
+LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Model ────────────────────────────────────────────────────────────────────
 MODEL_ID="TheStageAI/thewhisper-large-v3-turbo"
@@ -59,20 +53,7 @@ DATASET_CONFIGS=(
 # Optional: restrict this run to specific datasets, matched against the second
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="earnings21 earnings22" bash <this script>
-if [[ -n "${ONLY_DATASETS:-}" ]]; then
-    _selected=()
-    for _cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r _ _name <<< "$_cfg"
-        for _want in ${ONLY_DATASETS}; do
-            [[ "$_name" == "$_want" ]] && _selected+=("$_cfg")
-        done
-    done
-    if [[ ${#_selected[@]} -eq 0 ]]; then
-        echo "ERROR: ONLY_DATASETS='${ONLY_DATASETS}' matched no entry in DATASET_CONFIGS." >&2
-        exit 1
-    fi
-    DATASET_CONFIGS=("${_selected[@]}")
-fi
+filter_only_datasets 2 || exit 1
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
@@ -96,7 +77,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         hf jobs run \
             --flavor "$FLAVOR" \
             --timeout 8h \
-            --env HF_TOKEN="$HF_TOKEN" \
+            --secrets HF_TOKEN="$HF_TOKEN" \
             --secrets THESTAGE_AUTH_TOKEN \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
