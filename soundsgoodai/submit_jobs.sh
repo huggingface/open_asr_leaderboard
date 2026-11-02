@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit one HF job per model, exporting once and evaluating all datasets.
+# Submit HF evaluations, with dataset parallelism controlled by the config.
 # Usage: HF_TOKEN=hf_... bash soundsgoodai/submit_jobs.sh
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
@@ -19,6 +19,11 @@ if [[ ! -f ${CONFIG} ]]; then
     exit 1
 fi
 source "${CONFIG}"
+MULTILINGUAL=${MULTILINGUAL:-0}
+EVAL_SCRIPT=run_eval.py
+if [[ ${MULTILINGUAL} == 1 ]]; then
+    EVAL_SCRIPT=run_eval_ml.py
+fi
 
 # Defaults come after the config so it can set them; the environment wins over both.
 SPACE=${SPACE:-hf-audio/fast-gpu-asr-eval}
@@ -40,11 +45,13 @@ if [[ ${USE_LOCAL_NORMALIZER:-1} == 1 ]]; then
     LOCAL_NORMALIZER_INJECT="echo '${NORMALIZER_B64}' | base64 -d | tar -xzf - -C /app"
 fi
 
-# Local run_eval.py is injected by default; USE_LOCAL_SCRIPT=0 uses the image's.
+# Local runners are injected by default; USE_LOCAL_SCRIPT=0 uses the image's.
 LOCAL_SCRIPT_INJECT=
 if [[ ${USE_LOCAL_SCRIPT:-1} == 1 ]]; then
-    RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/run_eval.py")
-    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d > /app/run_eval.py"
+    for SCRIPT in run_eval.py run_eval_ml.py; do
+        RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/${SCRIPT}")
+        LOCAL_SCRIPT_INJECT+="echo '${RUN_EVAL_B64}' | base64 -d > /app/${SCRIPT}"$'\n'
+    done
 fi
 
 # Optional: restrict this run to specific datasets, matched against the first
@@ -57,7 +64,8 @@ if [[ -n ${ONLY_DATASETS:-} ]]; then
     for CONFIG in "${DATASET_CONFIGS[@]}"; do
         read -r NAME _ <<< ${CONFIG}
         for WANT in "${WANTED[@]}"; do
-            if [[ ${NAME} == "${WANT}" || ${NAME##*/} == "${WANT}" ]]; then
+            if [[ ${NAME} == "${WANT}" || ${NAME##*/} == "${WANT}" ||
+                ( ${MULTILINGUAL} == 1 && ${NAME%_*} == "${WANT}" ) ]]; then
                 SELECTED+=("${CONFIG}")
                 break
             fi
@@ -68,6 +76,39 @@ if [[ -n ${ONLY_DATASETS:-} ]]; then
         exit 1
     fi
     DATASET_CONFIGS=("${SELECTED[@]}")
+fi
+
+# Multilingual configs use <dataset>_<language>; keep filtering and scoring aligned.
+if [[ -n ${ONLY_LANGUAGES:-} ]]; then
+    if [[ ${MULTILINGUAL} != 1 ]]; then
+        echo "ONLY_LANGUAGES requires a multilingual config (CONFIG=config_ml.sh)." >&2
+        exit 1
+    fi
+
+    read -ra WANTED <<< "${ONLY_LANGUAGES}"
+    SELECTED=()
+    for CONFIG in "${DATASET_CONFIGS[@]}"; do
+        read -r NAME _ <<< "${CONFIG}"
+        if [[ " ${WANTED[*]} " == *" ${NAME##*_} "* ]]; then
+            SELECTED+=("${CONFIG}")
+        fi
+    done
+
+    if (( ${#SELECTED[@]} == 0 )); then
+        echo "ONLY_LANGUAGES='${ONLY_LANGUAGES}' matched no selected datasets." >&2
+        exit 1
+    fi
+
+    DATASET_CONFIGS=("${SELECTED[@]}")
+fi
+
+LANGUAGES=(en)
+if [[ ${MULTILINGUAL} == 1 ]]; then
+    LANGUAGES=()
+    for CONFIG in "${DATASET_CONFIGS[@]}"; do
+        read -r DATASET _ <<< "${CONFIG}"
+        LANGUAGES+=("${DATASET##*_}")
+    done
 fi
 
 NAMESPACE_ARGS=()
@@ -82,8 +123,8 @@ mkdir "${LOCAL_DIR}"  # Do not mix the current run with existing local results.
 # above it; the local DATASET_CONFIGS is what that job evaluates.
 job_command() {
     local -a DATASET_CONFIGS=("$@")
-    declare -p MODEL_ID REPORT_NAME MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE \
-        DEFAULT_DATASET_PATH DATASET_CONFIGS COMMON_ARGS DESTINATION
+    declare -p MODEL_ID REPORT_NAME MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE WORKERS \
+        DEFAULT_DATASET_PATH DATASET_CONFIGS COMMON_ARGS DESTINATION MULTILINGUAL EVAL_SCRIPT
     echo "${LOCAL_NORMALIZER_INJECT}"
     echo "${LOCAL_SCRIPT_INJECT}"
     cat <<'JOB'
@@ -96,13 +137,18 @@ for CONFIG in "${DATASET_CONFIGS[@]}"; do
     if [[ -n ${DATASET_PATH} ]]; then
         DATASET_CONFIG=
     fi
-    echo "Evaluating ${REPORT_NAME}: ${DATASET} ${SPLIT}, batch ${BATCH_SIZE}, beam ${BEAM}"
-    python /app/run_eval.py "${COMMON_ARGS[@]}" \
+    LANGUAGE_ARGS=()
+    if [[ ${MULTILINGUAL} == 1 ]]; then
+        LANGUAGE_ARGS=(--language="${DATASET##*_}")
+    fi
+    echo "Evaluating ${REPORT_NAME}: ${DATASET} ${SPLIT}, batch ${BATCH_SIZE}, workers ${WORKERS}, beam ${BEAM}"
+    python "/app/${EVAL_SCRIPT}" "${COMMON_ARGS[@]}" "${LANGUAGE_ARGS[@]}" \
         --engine-cache=/app/engines \
         --model-id="${MODEL_ID}" --report-name="${REPORT_NAME}" \
         --model-family="${MODEL_TYPE}" \
         --checkpoint-file="${CHECKPOINT_FILE}" --decoder-type="${DECODER_TYPE}" \
         --beam="${BEAM}" --batch-size="${BATCH_SIZE}" \
+        --workers="${WORKERS}" \
         --dataset-path="${DATASET_PATH:-${DEFAULT_DATASET_PATH}}" \
         --dataset="${DATASET_CONFIG}" --split="${SPLIT}" \
         2>&1 | tee "${DESTINATION}/${DATASET}-${SPLIT}.log"
@@ -135,7 +181,7 @@ submit_job() {
 }
 
 for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE REPORT_SUFFIX <<< ${MODEL_CONFIG}
+    read -r MODEL_ID MODEL_TYPE CHECKPOINT_FILE DECODER_TYPE BEAM BATCH_SIZE WORKERS REPORT_SUFFIX <<< ${MODEL_CONFIG}
     # Reported name; also names the result folder and the bucket path.
     REPORT_NAME=${MODEL_ID}${REPORT_SUFFIX:+ ${REPORT_SUFFIX}}
     MODEL_FOLDER=$(model_folder "${REPORT_NAME}")
@@ -181,6 +227,25 @@ for MODEL_CONFIG in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
     echo "  Summary: ${REPORT_NAME} (${#MANIFESTS[@]}/${#DATASET_CONFIGS[@]} datasets)"
     echo "████████████████████████████████████████████████████████████████████████████████"
-    python -c 'import sys; from normalizer.eval_utils import score_results; score_results(sys.argv[1], sys.argv[2])' \
-        "${RUN_RESULTS}" "${REPORT_NAME}" 2>&1 | tee "${MODEL_DIR}/scores.log"
+    python - "${RUN_RESULTS}" "${REPORT_NAME}" "${LANGUAGES[@]}" <<'PY' 2>&1 | tee "${MODEL_DIR}/scores.log"
+import sys
+from pathlib import Path
+
+from normalizer.eval_utils import score_results
+
+for language in set(sys.argv[3:]):
+    if language != "en" and not any(
+        Path(sys.argv[1]).glob(
+            f"MODEL_{sys.argv[2].replace('/', '-')}_DATASET_*_{language}_test.jsonl"
+        )
+    ):
+        print(f"WARNING: no result manifests for {language}; skipping scoring.", file=sys.stderr)
+        continue
+
+    multilingual = language != "en"
+    lang_family = [f"ml_{language}"] if multilingual else None
+    score_results(
+        sys.argv[1], sys.argv[2], multilingual, language=language, families=lang_family
+    )
+PY
 done

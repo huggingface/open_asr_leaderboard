@@ -20,8 +20,7 @@ import shutil
 import sys
 from datetime import datetime, timezone
 
-from huggingface_hub import HfApi
-from huggingface_hub.hf_api import BucketFile
+from huggingface_hub import BucketFile, HfApi
 
 # Next to the model's results; hidden, so a recursive glob over ./results (as
 # score_results does) does not pick the links up a second time.
@@ -50,7 +49,7 @@ def main():
         files = [
             f
             for f in HfApi().list_bucket_tree(args.bucket, prefix=prefix, recursive=True)
-            if isinstance(f, BucketFile) and f.uploaded_at >= since
+            if isinstance(f, BucketFile) and f.uploaded_at is not None and f.uploaded_at >= since
         ]
     except Exception as e:  # e.g. the folder does not exist yet: every job failed
         log(f"WARNING: could not list {args.bucket}/{prefix}: {e}")

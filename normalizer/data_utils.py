@@ -179,13 +179,14 @@ def load_chunked_data(args):
 def load_data(args):
     if is_chunked_dataset(args.dataset_path):
         return load_chunked_data(args)
-
+    
     dataset = load_dataset(
         args.dataset_path,
         args.dataset,
         split=args.split,
         streaming=args.streaming,
         token=True,
+        revision=getattr(args, "dataset_revision", None),
     )
 
     return dataset

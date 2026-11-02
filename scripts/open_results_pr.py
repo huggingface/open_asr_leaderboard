@@ -579,7 +579,10 @@ def process(target, args, api, synced):
         )
     finally:
         os.unlink(tmp)
-    print(f"\nPR opened: {getattr(pr, 'pr_url', pr)}")
+    if pr.pr_num is None:
+        print(f"\nNo changes: {target.filename} on main already has this row. No PR opened.")
+        return True
+    print(f"\nPR opened: {pr.pr_url}")
     if args.merge:
         # Merged through the PR rather than committed to main directly, so the
         # change keeps a discussion page on the Hub to link to and revert from.
