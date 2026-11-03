@@ -1,0 +1,4 @@
+huggingface_hub>=1.13.0,<2
+tqdm
+regex
+kaldialign==0.12.0

@@ -41,8 +41,92 @@ verifier configuration. A replay cache miss fails rather than calling an API.
 
 ## Run one model
 
-Run the commands below from the repository root. Install the shared dependencies
-and pinned VCB package locally for job submission and CTEM scoring:
+Run the commands below from the repository root. Job submission only needs the
+Hugging Face client locally; the grading job installs its own scoring dependencies:
+
+```bash
+pip install 'huggingface_hub>=1.13.0,<2'
+```
+
+### HF Jobs
+
+Set `HF_TOKEN` (or run `hf auth login`) and choose a results bucket you can write
+to. Set `OPENAI_API_KEY` for the existing OpenAI grader. Credentials are passed
+as job secrets; only the grading job receives the OpenAI key.
+
+```bash
+RESULTS_BUCKET="<your-results-bucket>" bash nemo_asr/submit_jobs_voice_code_bench.sh
+```
+
+For each model, the launcher submits GPU inference, waits for HF to report
+`COMPLETED`, then submits a separate CPU grading job. Failed or canceled inference
+never starts grading. The local launcher must stay running to coordinate the
+handoff; this is not a detached workflow service. Job URLs and status changes are
+printed, and job IDs/status are saved alongside the local results.
+
+Inference runs `nvidia/parakeet-tdt-0.6b-v3` with batch size 128 on an H200 by
+default. It injects the local evaluator and normalizer into the NeMo Space image.
+Each invocation generates a unique run ID and stores its exact manifest at:
+
+```text
+hf://buckets/<bucket>/runs/<run-id>/<model-folder>/<manifest>.jsonl
+```
+
+Grading uses a lightweight Python image on `cpu-basic`, installs the pinned VCB
+package, and runs the unchanged OpenAI verifier and CTEM calculation. It writes
+`<manifest>.ctem.json` and `<manifest>.verifier-cache.json` beside the manifest.
+Each completed verifier response is uploaded to the bucket, so a failed grading
+job can resume with the existing cache. Caches are separate per run/model;
+run only one grading job for a given manifest at a time.
+
+After successful grading, artifacts are downloaded to
+`nemo_asr/results/voice_code_bench/<run-id>/<model-folder>/`. Set
+`DOWNLOAD_RESULTS=0` to leave them in the bucket. Use `ORG_NAME` for an
+organization job namespace, `FLAVOR` for inference hardware, and
+`SCORING_FLAVOR`, `SCORING_IMAGE`, or `SCORING_TIMEOUT` to override the grading
+runtime (defaults: `cpu-basic`, `python:3.12-slim`, `8h`).
+
+To check just two recordings:
+
+```bash
+MAX_EVAL_SAMPLES=2 RESULTS_BUCKET="<your-results-bucket>" \
+  bash nemo_asr/submit_jobs_voice_code_bench.sh
+```
+
+The launcher passes `--allow-partial` to grading for this smoke test.
+
+### Retry grading without inference
+
+Use the manifest path printed by the original run, relative to the results
+bucket. The grading-only launcher reuses that manifest's verifier cache:
+
+```bash
+RESULTS_BUCKET="<your-results-bucket>" \
+  bash nemo_asr/submit_jobs_voice_code_bench_scoring.sh \
+  'runs/<run-id>/<model-folder>/<manifest>.jsonl'
+```
+
+Set `ALLOW_PARTIAL=1` when grading a smoke-test manifest. The default
+`VERIFIER_MODE=live-fill` resumes OpenAI calls only for uncached judgments.
+To replay completed judgments without an OpenAI key:
+
+```bash
+VERIFIER_MODE=replay RESULTS_BUCKET="<your-results-bucket>" \
+  bash nemo_asr/submit_jobs_voice_code_bench_scoring.sh \
+  'runs/<run-id>/<model-folder>/<manifest>.jsonl'
+```
+
+Replay requires an existing cache and fails on cache misses. Fresh inference
+runs use `live-fill`; use the grading-only launcher to replay an existing run.
+The grading-only launcher leaves its report and cache in the bucket and prints
+the job URL. A failed grading job returns an error while preserving the
+inference manifest and previously uploaded judgments.
+
+### Local inference
+
+To run on local hardware instead, use the repository's NeMo environment (see
+`requirements/requirements_nemo.txt`), then install the shared dependencies and
+pinned VCB package locally:
 
 ```bash
 pip install -r requirements/requirements_jobs.txt
@@ -54,38 +138,7 @@ hf download besimple-ai/voice-code-bench --repo-type dataset \
 pip install .cache/voice-code-bench
 ```
 
-### HF Jobs
-
-Set `HF_TOKEN` in your environment and choose a results bucket you can write to.
-Set `OPENAI_API_KEY` locally to score automatically after inference; otherwise
-the script downloads the manifests and prints commands for scoring later.
-
-```bash
-RESULTS_BUCKET="<your-results-bucket>" bash nemo_asr/submit_jobs_voice_code_bench.sh
-```
-
-The script runs `nvidia/parakeet-tdt-0.6b-v3` with batch size 128 on an H200 by
-default. It injects the local evaluator and normalizer into the NeMo Space image,
-downloads results to `nemo_asr/results/voice_code_bench/<model-folder>/`, and
-scores CTEM locally. The verifier cache is stored at
-`nemo_asr/results/voice_code_bench/voice_code_bench.verifier-cache.json`.
-Use `ORG_NAME` for an organization job namespace or `FLAVOR` to select hardware.
-
-To check just two recordings:
-
-```bash
-MAX_EVAL_SAMPLES=2 RESULTS_BUCKET="<your-results-bucket>" \
-  bash nemo_asr/submit_jobs_voice_code_bench.sh
-```
-
-The script adds `--allow-partial` to scoring for this smoke test. To replay
-existing verifier responses without an API key, set `VERIFIER_MODE=replay`;
-replay requires a populated cache and fails on cache misses.
-
-### Local inference
-
-To run on local hardware instead, use the repository's NeMo environment (see
-`requirements/requirements_nemo.txt`) and invoke the evaluator directly:
+Invoke the evaluator directly:
 
 ```bash
 PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}" python nemo_asr/run_eval.py \

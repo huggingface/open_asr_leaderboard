@@ -112,7 +112,9 @@ def score_manifest(manifest, metadata, *, cache, cache_mode="replay", allow_part
     }
 
 
-def main():
+def main(*, cache_factory=None):
+    # The HF worker supplies a cache that checkpoints to the results bucket.
+    # Standalone scoring retains the original local VerifierCache behavior.
     parser = argparse.ArgumentParser(description="Score raw VoiceCodeBench predictions with CTEM (higher is better).")
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, help="Defaults to <manifest>.ctem.json.")
@@ -132,7 +134,7 @@ def main():
     )
     report = score_manifest(
         read_manifest(args.manifest), read_metadata(Path(metadata_path)),
-        cache=VerifierCache(args.verifier_cache), cache_mode=args.verifier_mode,
+        cache=(cache_factory or VerifierCache)(args.verifier_cache), cache_mode=args.verifier_mode,
         allow_partial=args.allow_partial,
     )
     report["source_manifest"] = str(args.manifest)
