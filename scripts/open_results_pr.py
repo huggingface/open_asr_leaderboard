@@ -414,6 +414,32 @@ def upsert(header, rows, model_id, values, metadata, sort, overwrite=False):
     return rows, "added", new_row, []
 
 
+def recompute_averages(target, header, row):
+    """Recompute `target.averages` in place on `row` from its other columns.
+
+    Returns {avg_column: (number of sources present, missing source columns)}.
+    """
+    index = {c: i for i, c in enumerate(header)}
+    counts = {}
+    for avg_column, sources in target.averages.items():
+        if avg_column not in index:
+            continue
+        # English must average only the public sets, not the extra WER columns,
+        # so it lists them; elsewhere every WER column counts.
+        avg_sources = sources or [c for c in header if c.endswith(" WER")]
+        present, missing = [], []
+        for column in avg_sources:
+            raw = row[index[column]] if column in index else ""
+            (present if raw.strip() else missing).append(
+                float(raw) if raw.strip() else column
+            )
+        if present:
+            # Unrounded, matching english_short_latest.csv.
+            row[index[avg_column]] = str(sum(present) / len(present))
+        counts[avg_column] = (len(present), missing)
+    return counts
+
+
 def write_csv(header, rows):
     buf = io.StringIO(newline="")
     writer = csv.writer(buf, lineterminator="\n")
@@ -499,30 +525,15 @@ def process(target, args, api, synced):
                 f"      Pass --overwrite to blank them instead."
             )
 
-    index = {c: i for i, c in enumerate(header)}
-    for avg_column, sources in target.averages.items():
-        if avg_column not in index:
-            continue
-        # English must average only the public sets, not the extra WER columns,
-        # so it lists them; elsewhere every WER column counts.
-        avg_sources = sources or [c for c in header if c.endswith(" WER")]
-        present, missing = [], []
-        for column in avg_sources:
-            raw = new_row[index[column]] if column in index else ""
-            (present if raw.strip() else missing).append(
-                float(raw) if raw.strip() else column
-            )
+    for avg_column, (present, missing) in recompute_averages(target, header, new_row).items():
         if missing:
             print(
-                f"WARNING: {len(missing)} of {len(avg_sources)} datasets have no "
+                f"WARNING: {len(missing)} of {present + len(missing)} datasets have no "
                 f"result ({', '.join(missing)}).\n"
-                f"         '{avg_column}' is averaged over the {len(present)} present; "
+                f"         '{avg_column}' is averaged over the {present} present; "
                 f"'RTFx' covers only the datasets this run scored.",
                 file=sys.stderr,
             )
-        if present:
-            # Unrounded, matching english_short_latest.csv.
-            new_row[index[avg_column]] = str(sum(present) / len(present))
     for i, row in enumerate(rows):
         if row and row[0].strip() == row_name:
             rows[i] = new_row
