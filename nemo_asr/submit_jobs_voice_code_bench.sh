@@ -45,10 +45,10 @@ fi
 
 # ── Models: "model_id batch_size" ────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "nvidia/parakeet-tdt-0.6b-v3 16"
-    # "nvidia/parakeet-tdt-0.6b-v2 16"
-    # "nvidia/parakeet-rnnt-1.1b 16"
-    # "nvidia/parakeet-ctc-1.1b 16"
+    "nvidia/parakeet-tdt-0.6b-v3 128"
+    # "nvidia/parakeet-tdt-0.6b-v2 128"
+    # "nvidia/parakeet-rnnt-1.1b 128"
+    # "nvidia/parakeet-ctc-1.1b 128"
 )
 
 ALLOW_PARTIAL_ARG=""

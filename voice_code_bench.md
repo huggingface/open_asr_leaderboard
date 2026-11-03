@@ -64,7 +64,7 @@ the script downloads the manifests and prints commands for scoring later.
 RESULTS_BUCKET="<your-results-bucket>" bash nemo_asr/submit_jobs_voice_code_bench.sh
 ```
 
-The script runs `nvidia/parakeet-tdt-0.6b-v3` with batch size 16 on an H200 by
+The script runs `nvidia/parakeet-tdt-0.6b-v3` with batch size 128 on an H200 by
 default. It injects the local evaluator and normalizer into the NeMo Space image,
 downloads results to `nemo_asr/results/voice_code_bench/<model-folder>/`, and
 scores CTEM locally. The verifier cache is stored at
@@ -92,7 +92,7 @@ PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}" python nemo_asr/run_eval.py \
   --model_id nvidia/parakeet-tdt-0.6b-v3 \
   --dataset_path besimple-ai/voice-code-bench \
   --dataset default --split test \
-  --device 0 --batch_size 1
+  --device 0 --batch_size 128
 ```
 
 Pass `--device -1` for CPU or adjust `--batch_size` for available memory. Add
