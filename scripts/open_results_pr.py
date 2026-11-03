@@ -182,15 +182,15 @@ def build_targets(language=None):
         ),
         "dataocean": Target(
             "dataocean",
-            "hf-audio/dataocean_shortform_results",
-            "dataocean_short_latest.csv",
+            "hf-audio/open_asr_private_data_results",
+            "dataocean.csv",
             PRIVATE_BUCKET,
             passes=[(["dataocean"], "en")],
         ),
         "appen": Target(
             "appen",
-            "hf-audio/appen_shortform_results",
-            "appen_short_latest.csv",
+            "hf-audio/open_asr_private_data_results",
+            "appen.csv",
             PRIVATE_BUCKET,
             passes=[(["appen"], "en")],
         ),
@@ -198,8 +198,8 @@ def build_targets(language=None):
         # with voi_oiwer (see OIWER_LANGUAGES in normalizer/eval_utils.py).
         "voicearena": Target(
             "voicearena",
-            "hf-audio/voicearena_shortform_results",
-            "voicearena_short_latest.csv",
+            "hf-audio/open_asr_private_data_results",
+            "voicearena.csv",
             PRIVATE_BUCKET,
             passes=[(["voicearena_private"], "en"), (["voicearena_private_hi"], "hi")],
         ),
