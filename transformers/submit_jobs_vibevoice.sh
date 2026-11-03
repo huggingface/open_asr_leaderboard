@@ -39,8 +39,6 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 64"
     "voxpopuli_cleaned_aa test 32"
     "earnings22_cleaned_aa_chunked test 64 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean 64"
-    "librispeech test.other 64"
     "spgispeech test 64"
     "urgent2024 test 64"
     "urgent2024_clean test 64"
@@ -49,7 +47,7 @@ DATASET_CONFIGS=(
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
-#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+#   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
 
 
