@@ -567,7 +567,7 @@ def score_results(
                   Languages in CER_LANGUAGES (e.g. 'zh') are scored with CER.
         families: Optional list of family keys ("appen", "dataocean", "voicearena_private", "liva",
                   "voicearena_private_hi", "public", "extra", "longform", "ml_de", "ml_fr", "ml_it", "ml_es",
-                  "ml_pt", "ml_nl", "ml_hy", "ml_zh") restricting which CSV summary blocks are printed.
+                  "ml_pt", "ml_nl", "ml_hy", "ml_zh", "ml_ur") restricting which CSV summary blocks are printed.
                   None prints all detected families.
         use_cache: If True, read each manifest's score from its `.score.json` file
                    (see SCORE_SUFFIX) when one matches, and write one when not.
@@ -785,6 +785,7 @@ def score_results(
         "pt": ["fleurs", "mls"],
         "nl": ["fleurs", "mcv", "mls"],
         "hy": ["fleurs", "mcv"],
+        "ur": ["fleurs"],
         # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
         "hi": ["Monsoon"],
         # Chinese (Mandarin): FLEURS cmn_hans_cn and AISHELL-1 (scored with CER, see CER_LANGUAGES)
@@ -805,10 +806,14 @@ def score_results(
             f"{dataset}_{lang}_test": (f"{ML_DATASET_LABELS[dataset]} {metric_name}", None)
             for dataset in datasets
         }
+        # Urdu uses google/fleurs config ur_pk rather than fleurs_ur.
+        if lang == "ur":
+            col_map = {"ur_pk_test": ("FLEURS WER", None)}
         header = "model,RTFx," + ",".join(
             f"{ML_DATASET_LABELS[dataset]} {metric_name}" for dataset in datasets
         )
-        FAMILY_CONFIGS.append((f"ml_{lang}", f"_{lang}_test", header, col_map))
+        presence = "_ur_pk_test" if lang == "ur" else f"_{lang}_test"
+        FAMILY_CONFIGS.append((f"ml_{lang}", presence, header, col_map))
 
     # Restrict scoring to only the datasets relevant to the requested families.
     # Without this, files outside the requested families would still be scored
@@ -1254,7 +1259,7 @@ def score_results(
         if families is not None and family_key not in families:
             continue
         if family_key.startswith("ml_"):
-            family_name = family_key[len("ml_") :]  # "de", "fr", "it", "es", "pt", "nl", "hy", "zh"
+            family_name = family_key[len("ml_") :]  # "de", "fr", "it", "es", "pt", "nl", "hy", "zh", "ur"
         else:
             family_name = FAMILY_DISPLAY_NAMES.get(
                 family_key, family_key.capitalize()

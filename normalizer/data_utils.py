@@ -6,6 +6,7 @@ from datasets import Audio, IterableDataset, load_dataset
 from huggingface_hub import snapshot_download
 from normalizer import (
     ArmenianTextNormalizer,
+    UrduTextNormalizer,
     BasicMultilingualTextNormalizer,
     EnglishTextNormalizer,
 )
@@ -45,6 +46,7 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
         self._language_normalizers = {
             "hy": ArmenianTextNormalizer(),
             "zh": ChineseTextNormalizer(),
+            "ur": UrduTextNormalizer(),
         }
         # Pre-compile filler patterns. Each filler word is passed through the
         # base normalization itself, so the pattern matches the normalized

@@ -53,7 +53,7 @@ from normalizer.eval_utils import (
 )
 
 # Languages covered by the multilingual (FLEURS/MCV/MLS + Hindi Monsoon) benchmarks.
-ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi", "zh"]
+ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi", "zh", "ur"]
 
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
@@ -72,14 +72,17 @@ FAMILY_BUCKETS = {
 }
 
 # Datasets of the multilingual tables, in column order: (column label, dataset prefix).
-# A language's manifest for a dataset is "<prefix>_<lang>_test".
+# A language's manifest for a dataset is "<prefix>_<lang>_test", except Urdu
+# FLEURS, whose direct google/fleurs config produces "ur_pk_test".
 ML_TABLE_DATASETS = [("FLEURS", "fleurs"), ("MCV", "mcv"), ("MLS", "mls")]
 # Languages scored on their own sets get their own table rather than a row of mostly
 # empty FLEURS / MCV / MLS columns: Hindi on Voice Arena Monsoon (with voi_oiwer),
-# Chinese on FLEURS and AISHELL-1 (with CER, see CER_LANGUAGES).
+# Chinese on FLEURS and AISHELL-1 (with CER, see CER_LANGUAGES), and Urdu
+# on the direct google/fleurs ur_pk config.
 ML_SEPARATE_LANGUAGES = {
     "hi": [("Monsoon", "Monsoon")],
     "zh": [("FLEURS", "fleurs"), ("AISHELL-1", "aishell1")],
+    "ur": [("ur_fleurs", "ur_pk")],
 }
 
 
@@ -95,9 +98,11 @@ def _language_row(model_results: dict, language: str, datasets: list):
     """(per-dataset WERs, average WER, pooled RTFx) of one language, or None."""
     wers, timed = [], []
     for _label, prefix in datasets:
-        match = next(
-            (v for k, v in model_results.items() if f"{prefix}_{language}_test" in k), None
+        manifest_name = (
+            "ur_pk_test" if language == "ur" and prefix == "ur_pk"
+            else f"{prefix}_{language}_test"
         )
+        match = next((v for k, v in model_results.items() if manifest_name in k), None)
         wers.append(match["wer"] if match else None)
         if match:
             timed.append(match)
@@ -116,7 +121,7 @@ def print_multilingual_summary(all_results: dict, languages: list) -> None:
 
     One table of FLEURS / MCV / MLS with a row per language (and per model, when
     several were scored), then one table per language scored on its own sets (Hindi,
-    Chinese). Averages are the plain mean of the language's dataset WERs; RTFx is
+    Chinese, Urdu). Averages are the plain mean of the language's dataset WERs; RTFx is
     pooled (total audio over total time) over the same runs, except in a single
     model's own-set table, which has one row and RTFx per dataset. Chinese is
     scored with CER, and its table is labelled so.
