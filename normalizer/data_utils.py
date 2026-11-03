@@ -6,6 +6,7 @@ from datasets import Audio, IterableDataset, load_dataset
 from huggingface_hub import snapshot_download
 from normalizer import (
     ArmenianTextNormalizer,
+    UrduTextNormalizer,
     BasicMultilingualTextNormalizer,
     EnglishTextNormalizer,
 )
@@ -41,7 +42,7 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
 
     def __init__(self, remove_diacritics: bool = True):
         super().__init__(remove_diacritics)
-        self._language_normalizers = {"hy": ArmenianTextNormalizer()}
+        self._language_normalizers = {"hy": ArmenianTextNormalizer(), "ur": UrduTextNormalizer()}
         # Pre-compile filler patterns. Each filler word is passed through the
         # base normalization itself, so the pattern matches the normalized
         # text exactly (base normalization may strip punctuation such as "…"

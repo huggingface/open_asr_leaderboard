@@ -661,6 +661,7 @@ def score_results(
         "pt": ["fleurs", "mls"],
         "nl": ["fleurs", "mcv", "mls"],
         "hy": ["fleurs", "mcv"],
+        "ur": ["fleurs"],
         # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
         "hi": ["Monsoon"],
     }
@@ -675,10 +676,14 @@ def score_results(
             f"{dataset}_{lang}_test": (f"{ML_DATASET_LABELS[dataset]} WER", None)
             for dataset in datasets
         }
+        # Urdu uses google/fleurs config ur_pk rather than fleurs_ur.
+        if lang == "ur":
+            col_map = {"ur_pk_test": ("FLEURS WER", None)}
         header = "model,RTFx," + ",".join(
             f"{ML_DATASET_LABELS[dataset]} WER" for dataset in datasets
         )
-        FAMILY_CONFIGS.append((f"ml_{lang}", f"_{lang}_test", header, col_map))
+        presence = "_ur_pk_test" if lang == "ur" else f"_{lang}_test"
+        FAMILY_CONFIGS.append((f"ml_{lang}", presence, header, col_map))
 
     # Restrict scoring to only the datasets relevant to the requested families.
     # Without this, files outside the requested families would still be scored
