@@ -197,6 +197,10 @@ def prepare_sample(
 def transcribe_request(client: OpenAI, request: dict) -> str:
     response = client.chat.completions.create(**request)
     content = response.choices[0].message.content
+    # With the reasoning parser, a reply without speech (e.g. the silent warm-up
+    # clips) has no answer part at all: vLLM returns None rather than "".
+    if content is None:
+        return ""
     if not isinstance(content, str):
         raise TypeError(f"Expected a text completion, got {type(content).__name__}")
     return content

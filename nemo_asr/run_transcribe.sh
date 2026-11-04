@@ -116,7 +116,9 @@ if [[ -z "${SERVER_LAUNCHER:-}" ]]; then
         echo "ERROR: ${NEMO_SPEECH_DIR} is not a NeMo Speech checkout." >&2
         exit 1
     fi
-    installed_nemo_revision="$(git -C "${NEMO_SPEECH_DIR}" rev-parse HEAD)"
+    # The checkout is owned by the image's build user, not the job's user, so
+    # git would otherwise refuse it as "dubious ownership".
+    installed_nemo_revision="$(git -c safe.directory="${NEMO_SPEECH_DIR}" -C "${NEMO_SPEECH_DIR}" rev-parse HEAD)"
     if [[ "${installed_nemo_revision}" != "${NEMO_SPEECH_REVISION}" ]]; then
         echo "ERROR: NeMo Speech revision mismatch: expected ${NEMO_SPEECH_REVISION}, found ${installed_nemo_revision}." >&2
         exit 1
