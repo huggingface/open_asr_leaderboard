@@ -1,0 +1,11 @@
+# Async client plus vLLM server runtime; install in the matched CUDA image.
+vllm[audio]==0.30.0
+aiohttp==3.14.3
+datasets==3.6.0
+huggingface_hub>=1.5,<2
+librosa==0.11.0
+soundfile==0.14.0
+num2words
+regex
+kaldialign==0.12.0
+voi_oiwer
