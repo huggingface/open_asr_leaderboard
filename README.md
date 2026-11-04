@@ -100,6 +100,24 @@ The `benchmark_fitting` folder contains scripts to measure whether a model overf
 
 Please follow the [pull request template](./.github/PULL_REQUEST_TEMPLATE.md); it contains a submission checklist and guidelines.
 
+# Miscellaneous
+
+#### Normalizer changes
+
+After a normalization change, existing JSONL manifests can be rescored without rerunning inference: manifests store the raw `text` and `pred_text`, and normalization is applied at scoring time.
+
+```bash
+# dry run over every row of every results file
+python scripts/rescore_all.py
+
+# some models / files only, keeping the updated CSVs locally for inspection
+python scripts/rescore_all.py --models openai/whisper-large-v3 nvidia/canary-1b-v2 \
+    --targets english multilingual --language de --out_dir /tmp/rescored
+
+# re-use results already synced locally, and open the PRs
+python scripts/rescore_all.py --skip_sync --open_pr
+```
+
 # Citation 
 
 

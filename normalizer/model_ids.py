@@ -39,8 +39,12 @@ HYPHENATED_ORGS = frozenset(
 # The eval scripts for these models take a bare or framework-specific model card
 # on the command line: `omniasr/run_eval_ml.py` maps
 # "facebook/omniASR-LLM-7B" to the "omniASR_LLM_7B" card NeMo/omnilingual want,
-# and `nemo_asr/run_parakeet.sh` passes NVIDIA's names without their org.
+# and `nemo_asr/run_parakeet.sh` passes NVIDIA's names without their org. API
+# providers are run under `api/`'s provider name, which can differ from the org
+# the row is published under.
 BUCKET_ID_OVERRIDES = {
+    "assembly-universal-3-5-pro": "assemblyai/universal-3-5-pro",
+    "assembly-universal-3-pro": "assemblyai/universal-3-pro",
     "omniASR_CTC_7B_v2": "facebook/omniASR-CTC-7B-v2",
     "omniASR_LLM_7B_v2": "facebook/omniASR-LLM-7B-v2",
     "stt_en_conformer_transducer_small": "nvidia/stt_en_conformer_transducer_small",
