@@ -187,7 +187,14 @@ class OpusClipProvider(APIProvider):
                 # A host behind an access gate answers with a redirect to its login page.
                 raise PermanentError(f"{method} {path} was redirected (HTTP {r.status_code}); check OPUSCLIP_API_URL")
             code, message = _error_of(r)
-            last = f"HTTP {r.status_code} {code}: {message}"
+            if code:
+                last = f"HTTP {r.status_code} {code}: {message}"
+            else:
+                # Not an API error body, e.g. a block page from the CDN in front of the API.
+                last = (
+                    f"HTTP {r.status_code} (non-API response, server={r.headers.get('server')}, "
+                    f"cf-ray={r.headers.get('cf-ray')})"
+                )
             if r.status_code in PERMANENT_STATUS:
                 raise PermanentError(f"{method} {path}: {last}")
             if r.status_code in FRESH_ATTEMPT_STATUS:
