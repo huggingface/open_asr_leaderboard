@@ -13,8 +13,6 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned ${DEFAULT_DATASET_PATH} gigaspeech_cleaned test default ${SHORTFORM_CONCURRENCY}"
     "voxpopuli_cleaned_aa ${DEFAULT_DATASET_PATH} voxpopuli_cleaned_aa test default ${SHORTFORM_CONCURRENCY}"
     "earnings22_cleaned_aa_chunked ArtificialAnalysis/Earnings22-Cleaned-AA-chunked - test default ${SHORTFORM_CONCURRENCY}"
-    "librispeech_clean ${DEFAULT_DATASET_PATH} librispeech test.clean default ${SHORTFORM_CONCURRENCY}"
-    "librispeech_other ${DEFAULT_DATASET_PATH} librispeech test.other default ${SHORTFORM_CONCURRENCY}"
     "spgispeech ${DEFAULT_DATASET_PATH} spgispeech test spgispeech ${SHORTFORM_CONCURRENCY}"
     "urgent2024 ${DEFAULT_DATASET_PATH} urgent2024 test default ${SHORTFORM_CONCURRENCY}"
     "urgent2024_clean ${DEFAULT_DATASET_PATH} urgent2024_clean test default ${SHORTFORM_CONCURRENCY}"
