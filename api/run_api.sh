@@ -50,11 +50,8 @@ EVAL_DATASETS=(
     "gigaspeech_cleaned:test"
     "spgispeech:test"
     "urgent2024:test"
-    "urgent2024_clean:test"
     "voxpopuli_cleaned_aa:test"
     "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
-    "librispeech:test.clean"
-    "librispeech:test.other"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
