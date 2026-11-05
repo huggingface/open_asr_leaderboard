@@ -18,7 +18,9 @@ log_dir="$(pwd)/results"
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OMP_THREAD_LIMIT=1
 export PYTHONUNBUFFERED=1
 
-uv pip install --system -r "$script_dir/../requirements/requirements_reson8_rumble.txt"
+uv pip install --system \
+    -r "$script_dir/../requirements/requirements_jobs.txt" \
+    -r "$script_dir/../requirements/requirements_reson8_rumble.txt"
 
 check_download() {
     if [[ -n "$download_pid" ]] && ! kill -0 "$download_pid" 2>/dev/null; then

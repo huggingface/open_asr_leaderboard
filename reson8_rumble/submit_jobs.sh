@@ -60,6 +60,7 @@ LOCAL_SCRIPT_INJECT=$(USE_LOCAL_SCRIPT=1 local_script_inject "$SCRIPT_DIR/.." \
     reson8_rumble/run_eval.py \
     reson8_rumble/run_rumble.sh \
     reson8_rumble/serve_vllm.sh \
+    requirements/requirements_jobs.txt \
     requirements/requirements_reson8_rumble.txt)
 LOCAL_NORMALIZER_INJECT=$(USE_LOCAL_NORMALIZER=1 local_normalizer_inject)
 DATASET_SPEC=$(printf '%s\n' "${DATASET_CONFIGS[@]}")
