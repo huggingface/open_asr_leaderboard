@@ -5,10 +5,9 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SPACE="${SPACE:-Reson8/open-asr-leaderboard-rumble-2-flash}"
+IMAGE=vllm/vllm-openai:v0.30.0@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
 MODEL_ID=Reson8/Rumble-2-Flash
-MODEL_FOLDER=Reson8-Rumble-2-Flash
+MODEL_FOLDER="${MODEL_ID//\//-}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 ORG_NAME="${ORG_NAME:-}"
 : "${HF_TOKEN:?Set HF_TOKEN to a token with model/dataset, Jobs and results-bucket access}"
@@ -56,7 +55,13 @@ DATASET_CONFIGS=(
 filter_only_datasets 1 || exit 1
 
 
-# The Space image contains the evaluator, normalizer and dependencies.
+# The upstream image has no evaluator, so always send the local runtime files.
+LOCAL_SCRIPT_INJECT=$(USE_LOCAL_SCRIPT=1 local_script_inject "$SCRIPT_DIR/.." \
+    reson8_rumble/run_eval.py \
+    reson8_rumble/run_rumble.sh \
+    reson8_rumble/serve_vllm.sh \
+    requirements/requirements_reson8_rumble.txt)
+LOCAL_NORMALIZER_INJECT=$(USE_LOCAL_NORMALIZER=1 local_normalizer_inject)
 DATASET_SPEC=$(printf '%s\n' "${DATASET_CONFIGS[@]}")
 
 namespace_args=()
@@ -67,18 +72,19 @@ echo "Submitting one H200 job for ${#DATASET_CONFIGS[@]} datasets with $NUM_ENGI
 hf jobs run \
     --flavor h200 --timeout 8h --secrets HF_TOKEN ${namespace_args[@]+"${namespace_args[@]}"} \
     --volume "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}:/app/results:rw" \
-    "hf.co/spaces/${SPACE}" -- bash reson8_rumble/run_rumble.sh \
-        "$DATASET_SPEC" "$NUM_ENGINES"
+    "$IMAGE" -- bash -c "
+        set -euo pipefail
+        mkdir -p /app/reson8_rumble /app/requirements
+        cd /app
+        ${LOCAL_SCRIPT_INJECT}
+        ${LOCAL_NORMALIZER_INJECT}
+        exec bash reson8_rumble/run_rumble.sh \"\$@\"
+    " bash "$DATASET_SPEC" "$NUM_ENGINES"
 
 # A non-detached hf jobs run waits and fails if the remote job fails.
 sleep 10  # allow the final bucket writes to become visible
 mkdir -p "./results/${MODEL_FOLDER}"
-RUN_RESULTS=$(python "$FETCH_RUN_RESULTS" \
+python "$FETCH_RUN_RESULTS" \
     --bucket "$RESULTS_BUCKET" --model-folder "$MODEL_FOLDER" \
     --local-dir "./results/${MODEL_FOLDER}" --since "$RUN_START" \
-    --expected "${#DATASET_CONFIGS[@]}")
-(
-    cd "$REPO_ROOT"
-    python -m reson8_rumble.score_results \
-        "$RUN_RESULTS" "$MODEL_ID" --datasets "$DATASET_SPEC"
-)
+    --expected "${#DATASET_CONFIGS[@]}"

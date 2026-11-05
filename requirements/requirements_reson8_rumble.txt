@@ -1,4 +1,4 @@
-# Async client plus vLLM server runtime; install in the matched CUDA image.
+# Installed into the upstream vLLM image at job startup.
 vllm[audio]==0.30.0
 aiohttp==3.14.3
 datasets==3.6.0
@@ -8,4 +8,3 @@ soundfile==0.14.0
 num2words
 regex
 kaldialign==0.12.0
-voi_oiwer
