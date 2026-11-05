@@ -32,18 +32,18 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 # ── Models: "model_id batch_size languages..." ──────────────────────────────
 # Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "hf-audio/omniasr-ctc-300m-v2 64 de fr it es pt nl hi hy zh"
-    "hf-audio/omniasr-ctc-1b-v2 64 de fr it es pt nl hi hy zh"
-    "hf-audio/omniasr-ctc-3b-v2 64 de fr it es pt nl hi hy zh"
-    "hf-audio/omniasr-ctc-7b-v2 64 de fr it es pt nl hi hy zh"
-    "hf-audio/omniasr-llm-300m-v2 64 de fr it es pt nl hi hy zh"
-    "hf-audio/omniasr-llm-1b-v2 64 de fr it es pt nl hi hy zh"
-    "hf-audio/omniasr-llm-3b-v2 64 de fr it es pt nl hi hy zh"
-    "hf-audio/omniasr-llm-7b-v2 64 de fr it es pt nl hi hy zh"
+    "hf-audio/omniasr-ctc-300m-v2 64 de fr it es pt nl hi hy zh vi"
+    "hf-audio/omniasr-ctc-1b-v2 64 de fr it es pt nl hi hy zh vi"
+    "hf-audio/omniasr-ctc-3b-v2 64 de fr it es pt nl hi hy zh vi"
+    "hf-audio/omniasr-ctc-7b-v2 64 de fr it es pt nl hi hy zh vi"
+    "hf-audio/omniasr-llm-300m-v2 64 de fr it es pt nl hi hy zh vi"
+    "hf-audio/omniasr-llm-1b-v2 64 de fr it es pt nl hi hy zh vi"
+    "hf-audio/omniasr-llm-3b-v2 64 de fr it es pt nl hi hy zh vi"
+    "hf-audio/omniasr-llm-7b-v2 64 de fr it es pt nl hi hy zh vi"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi, Vietnamese
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
@@ -53,6 +53,7 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs vi"
     "fleurs hy"
     "mcv hy"
     "fleurs zh"
@@ -62,6 +63,7 @@ DATASET_CONFIGS=(
     "mcv fr"
     "mcv it"
     "mcv nl"
+    "mcv vi"
     "mls es"
     "mls fr"
     "mls it"
