@@ -53,7 +53,7 @@ from normalizer.eval_utils import (
 )
 
 # Languages covered by the multilingual (FLEURS/MCV/MLS + Hindi Monsoon) benchmarks.
-ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi", "zh"]
+ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi", "zh", "vi"]
 
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
