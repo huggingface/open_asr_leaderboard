@@ -50,7 +50,9 @@ DATASET_CONFIGS=(
     "mls pt"
     "fleurs pt"
     "fleurs nl"
+    "fleurs vi"
     "mcv nl"
+    "mcv vi"
     "mls nl"
     "monsoon hi"
 )

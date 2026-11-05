@@ -661,6 +661,7 @@ def score_results(
         "pt": ["fleurs", "mls"],
         "nl": ["fleurs", "mcv", "mls"],
         "hy": ["fleurs", "mcv"],
+        "vi": ["fleurs", "mcv"],
         # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
         "hi": ["Monsoon"],
     }

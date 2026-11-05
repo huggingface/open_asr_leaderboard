@@ -26,6 +26,7 @@ MODEL_LANGUAGE_CODES = {
     "nl": "nld",
     "hy": "hye",
     "hi": "hin",
+    "vi": "vie",
 }
 
 
@@ -54,6 +55,7 @@ GEMMA4_LANGUAGE_NAMES = {
     "it": "Italian",
     "nl": "Dutch",
     "pt": "Portuguese",
+    "vi": "Vietnamese",
 }
 
 
