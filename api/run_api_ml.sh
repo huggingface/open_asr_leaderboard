@@ -14,6 +14,7 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
+    # "U2/U2-multilingual 16"  # LANGUAGES="de it pt es fr"
     # "fonada/kapture-v3             16"
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
@@ -184,6 +185,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e U2_ASR_API_URL \
+            -e U2_ASR_API_KEY \
+            -e U2_ASR_MODEL_VERSION \
             -e HF_HOME=/tmp/hf_home \
             -e HF_DATASETS_CACHE="${DATASETS_CACHE_DIR}" \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
@@ -242,6 +246,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     model_files=("${RUNDIR}/results/MODEL_${MODEL_FOLDER}_DATASET_"*.jsonl)
     if [[ -e "${model_files[0]}" ]]; then
         mv "${model_files[@]}" "${MODEL_RESULTS_DIR}/"
+        if [[ "$MODEL_ID" == U2/* ]]; then
+            for manifest in "${MODEL_RESULTS_DIR}/"*.jsonl; do
+                coverage="${RUNDIR}/results/$(basename "$manifest").coverage.json"
+                [[ ! -f "$coverage" ]] || mv "$coverage" "${MODEL_RESULTS_DIR}/"
+            done
+        fi
     else
         echo "WARNING: no result files found for ${MODEL_ID}"
     fi
@@ -281,6 +291,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             FNAME="MODEL_${MODEL_FOLDER}_DATASET_${DS_PATH//\//-}_${CONFIG_NAME}_test.jsonl"
             if [[ -f "${MODEL_RESULTS_DIR}/${FNAME}" ]]; then
                 INCLUDE_ARGS+=(--include "${FNAME}")
+                if [[ "$MODEL_ID" == U2/* && -f "${MODEL_RESULTS_DIR}/${FNAME}.coverage.json" ]]; then
+                    INCLUDE_ARGS+=(--include "${FNAME}.coverage.json")
+                fi
             else
                 echo "WARNING: result file not found, skipping upload: ${MODEL_RESULTS_DIR}/${FNAME}"
             fi
