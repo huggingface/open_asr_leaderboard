@@ -71,6 +71,7 @@ ML_CSV_COLUMNS = [
     ("hy_mcv", "mcv_hy_test"),
     ("hi_monsoon", "Monsoon_hi_test"),
     ("zh_fleurs", "fleurs_zh_test"),
+    ("zh_aishell1", "aishell1_zh_test"),
 ]
 
 

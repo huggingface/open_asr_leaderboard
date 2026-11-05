@@ -16,13 +16,13 @@ DEVICE_ID=0
 
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
-CHINESE_DATASETS="steven0226/open-asr-leaderboard-multilingual-datasets"
 
 # German, French, Italian, Spanish, Portuguese, Dutch, Chinese, English
-DATASET_NAMES=("fleurs" "mcv" "mls")
+DATASET_NAMES=("fleurs" "mcv" "mls" "aishell1")
 DATASET_LANGS_fleurs="de fr it es pt nl zh"
 DATASET_LANGS_mcv="de es fr it nl"
 DATASET_LANGS_mls="es fr it pt nl"
+DATASET_LANGS_aishell1="zh"
 
 # Function to run evaluation
 run_evaluation() {
@@ -31,7 +31,6 @@ run_evaluation() {
     local language=$3
     local config_name="${dataset}_${language}"
     local dataset_path="$DATASETS"
-    [[ "$language" == "zh" ]] && dataset_path="$CHINESE_DATASETS"
 
     echo ""
     echo "🚀 Running evaluation: $config_name"

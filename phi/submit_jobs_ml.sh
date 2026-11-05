@@ -13,7 +13,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-phi4}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
-CHINESE_DATASET_PATH="${CHINESE_DATASET_PATH:-steven0226/open-asr-leaderboard-multilingual-datasets}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 NUM_BEAMS=1
@@ -40,6 +39,7 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -70,7 +70,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         CONFIG_NAME="${DATASET}_${LANGUAGE}"
         JOB_DATASET="${DATASET_PATH}"
-        [[ "$LANGUAGE" == "zh" ]] && JOB_DATASET="${CHINESE_DATASET_PATH}"
         echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""

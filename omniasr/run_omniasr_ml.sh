@@ -14,12 +14,12 @@ BATCH_SIZE=64  # Conservative batch size due to LLM memory requirements
 # Multilingual datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
-CHINESE_DATASETS="steven0226/open-asr-leaderboard-multilingual-datasets"
 
-DATASET_NAMES=("fleurs" "mcv" "mls")
+DATASET_NAMES=("fleurs" "mcv" "mls" "aishell1")
 DATASET_LANGS_fleurs="de fr it es pt nl hy zh"
 DATASET_LANGS_mcv="de es fr it nl hy"
 DATASET_LANGS_mls="es fr it pt nl"
+DATASET_LANGS_aishell1="zh"
 
 # Function to run multilingual evaluation
 run_evaluation() {
@@ -29,7 +29,6 @@ run_evaluation() {
     local config_name="${dataset}_${language}"
     local dataset_path="$DATASETS"
     [[ "$language" == "hy" ]] && dataset_path="$ARMENIAN_DATASETS"
-    [[ "$language" == "zh" ]] && dataset_path="$CHINESE_DATASETS"
 
     echo ""
     echo "Running multilingual evaluation: $config_name"

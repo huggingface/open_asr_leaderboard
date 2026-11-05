@@ -12,7 +12,6 @@ set -euo pipefail
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-moss-transcribe-diarize}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
-CHINESE_DATASET_PATH="${CHINESE_DATASET_PATH:-steven0226/open-asr-leaderboard-multilingual-datasets}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MODEL_ID="${MODEL_ID:-OpenMOSS-Team/MOSS-Transcribe-Diarize}"
@@ -32,6 +31,7 @@ DATASET_CONFIGS=(
     "fleurs pt"
     "fleurs nl"
     "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -84,7 +84,6 @@ for config in "${DATASET_CONFIGS[@]}"; do
     read -r dataset language <<< "${config}"
     config_name="${dataset}_${language}"
     dataset_path="${DATASET_PATH}"
-    [[ "${language}" == "zh" ]] && dataset_path="${CHINESE_DATASET_PATH}"
     echo "Submitting model=${MODEL_ID} config=${config_name} batch_size=${BATCH_SIZE}"
 
     (
@@ -144,7 +143,6 @@ for config in "${DATASET_CONFIGS[@]}"; do
     read -r dataset language <<< "${config}"
     config_name="${dataset}_${language}"
     dataset_path="${DATASET_PATH}"
-    [[ "${language}" == "zh" ]] && dataset_path="${CHINESE_DATASET_PATH}"
     expected="MODEL_${MODEL_FOLDER}_DATASET_${dataset_path//\//-}_${config_name}_test.jsonl"
     if [[ ! -f "${RUN_RESULTS}/${expected}" ]]; then
         echo "Missing result: ${expected}" >&2

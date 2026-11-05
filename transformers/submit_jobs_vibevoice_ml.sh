@@ -12,7 +12,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
-CHINESE_DATASET_PATH="${CHINESE_DATASET_PATH:-steven0226/open-asr-leaderboard-multilingual-datasets}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 MAX_NEW_TOKENS=225  # 30s audio at 24000 Hz with 3200 compression
@@ -41,6 +40,7 @@ DATASET_CONFIGS=(
     "fleurs pt"
     "fleurs nl"
     "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -75,7 +75,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         # known target language (consistent with the API models, which always
         # pass the language to the provider).
         JOB_DATASET="${DATASET_PATH}"
-        [[ "$LANGUAGE" == "zh" ]] && JOB_DATASET="${CHINESE_DATASET_PATH}"
         CONFIG_NAME="${DATASET}_${LANGUAGE}"
         CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
 

@@ -712,14 +712,15 @@ def score_results(
         "hy": ["fleurs", "mcv"],
         # Hindi: VoiceArena/Monsoon_hi_test (scored with voi_oiwer, see OIWER_LANGUAGES)
         "hi": ["Monsoon"],
-        # Chinese (Mandarin): FLEURS cmn_hans_cn (scored with CER, see CER_LANGUAGES)
-        "zh": ["fleurs"],
+        # Chinese (Mandarin): FLEURS cmn_hans_cn and AISHELL-1 (scored with CER, see CER_LANGUAGES)
+        "zh": ["fleurs", "aishell1"],
     }
     ML_DATASET_LABELS = {
         "fleurs": "FLEURS",
         "mcv": "MCV",
         "mls": "MLS",
         "Monsoon": "Monsoon",
+        "aishell1": "AISHELL-1",
     }
     # Labels follow how this call scores (`language`), not the dataset. CER
     # results are stored under "wer" as well.
