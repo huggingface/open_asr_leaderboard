@@ -27,6 +27,7 @@ MODEL_CONFIGS=(
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
     # "microsoft/azure-speech-07-2026  4"
+    # "microsoft/azure-speech-09-2026  4"
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"
     # "meta/muse-voice-transcribe    8"
@@ -50,11 +51,8 @@ EVAL_DATASETS=(
     "gigaspeech_cleaned:test"
     "spgispeech:test"
     "urgent2024:test"
-    "urgent2024_clean:test"
     "voxpopuli_cleaned_aa:test"
     "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
-    "librispeech:test.clean"
-    "librispeech:test.other"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:

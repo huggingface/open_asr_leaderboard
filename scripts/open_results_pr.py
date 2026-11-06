@@ -27,6 +27,7 @@ Usage:
     python scripts/open_results_pr.py --target appen      --model_id my-org/my-model
     python scripts/open_results_pr.py --target dataocean  --model_id my-org/my-model
     python scripts/open_results_pr.py --target voicearena --model_id my-org/my-model
+    python scripts/open_results_pr.py --target liva       --model_id my-org/my-model
 
     # public multilingual: one file per language
     python scripts/open_results_pr.py --target multilingual --language de --model_id my-org/my-model
@@ -85,7 +86,7 @@ LONGFORM_BUCKET = "hf-audio/asr_leaderboard_longform"
 RTFX_MINUS_ONE_LANGUAGES = {"de", "fr", "it", "es", "pt", "nl"}
 
 # Tried in this order when --target is omitted.
-ALL_TARGETS = ["english", "longform", "appen", "dataocean", "voicearena", "multilingual"]
+ALL_TARGETS = ["english", "longform", "appen", "dataocean", "voicearena", "liva", "multilingual"]
 
 # What --api writes into the License column when --license is not given: every
 # one of the 14 API rows in english_short_latest.csv uses exactly this.
@@ -118,10 +119,12 @@ class Target:
         means every " WER" column in the file.
     ignore: scored columns the published file deliberately leaves out; dropped
         without the "absent from the published header" warning.
+    avg_decimals: round the recomputed averages to this many decimals; None keeps
+        them unrounded.
     """
 
     def __init__(self, name, repo_id, filename, bucket, passes, renames=None,
-                 averages=None, ignore=(), api_rtfx=""):
+                 averages=None, ignore=(), api_rtfx="", avg_decimals=None):
         self.name = name
         self.repo_id = repo_id
         self.filename = filename
@@ -135,6 +138,7 @@ class Target:
         # models, multilingual_{de,fr,it,es,pt,nl}.csv use -1. Each target keeps its
         # own file's convention rather than introducing a third.
         self.api_rtfx = api_rtfx
+        self.avg_decimals = avg_decimals
 
 
 def build_targets(language=None):
@@ -182,15 +186,15 @@ def build_targets(language=None):
         ),
         "dataocean": Target(
             "dataocean",
-            "hf-audio/dataocean_shortform_results",
-            "dataocean_short_latest.csv",
+            "hf-audio/open_asr_private_data_results",
+            "dataocean.csv",
             PRIVATE_BUCKET,
             passes=[(["dataocean"], "en")],
         ),
         "appen": Target(
             "appen",
-            "hf-audio/appen_shortform_results",
-            "appen_short_latest.csv",
+            "hf-audio/open_asr_private_data_results",
+            "appen.csv",
             PRIVATE_BUCKET,
             passes=[(["appen"], "en")],
         ),
@@ -198,10 +202,22 @@ def build_targets(language=None):
         # with voi_oiwer (see OIWER_LANGUAGES in normalizer/eval_utils.py).
         "voicearena": Target(
             "voicearena",
-            "hf-audio/voicearena_shortform_results",
-            "voicearena_short_latest.csv",
+            "hf-audio/open_asr_private_data_results",
+            "voicearena.csv",
             PRIVATE_BUCKET,
             passes=[(["voicearena_private"], "en"), (["voicearena_private_hi"], "hi")],
+        ),
+        # Liva-AI accented English (Arabic / West-African accents). The accent
+        # columns carry no " WER" suffix, so the average lists them explicitly.
+        "liva": Target(
+            "liva",
+            "hf-audio/open_asr_private_data_results",
+            "liva.csv",
+            PRIVATE_BUCKET,
+            passes=[(["liva"], "en")],
+            averages={"Avg WER": ["Arabic", "Western African"]},
+            # The mean of two 2-decimal WERs is exact at 3 decimals (e.g. 14.115).
+            avg_decimals=3,
         ),
     }
     if language:
@@ -414,6 +430,35 @@ def upsert(header, rows, model_id, values, metadata, sort, overwrite=False):
     return rows, "added", new_row, []
 
 
+def recompute_averages(target, header, row):
+    """Recompute `target.averages` in place on `row` from its other columns.
+
+    Returns {avg_column: (number of sources present, missing source columns)}.
+    """
+    index = {c: i for i, c in enumerate(header)}
+    counts = {}
+    for avg_column, sources in target.averages.items():
+        if avg_column not in index:
+            continue
+        # English must average only the public sets, not the extra WER columns,
+        # so it lists them; elsewhere every WER column counts.
+        avg_sources = sources or [c for c in header if c.endswith(" WER")]
+        present, missing = [], []
+        for column in avg_sources:
+            raw = row[index[column]] if column in index else ""
+            (present if raw.strip() else missing).append(
+                float(raw) if raw.strip() else column
+            )
+        if present:
+            # Unrounded by default, matching english_short_latest.csv.
+            avg = sum(present) / len(present)
+            if target.avg_decimals is not None:
+                avg = round(avg, target.avg_decimals)
+            row[index[avg_column]] = str(avg)
+        counts[avg_column] = (len(present), missing)
+    return counts
+
+
 def write_csv(header, rows):
     buf = io.StringIO(newline="")
     writer = csv.writer(buf, lineterminator="\n")
@@ -499,30 +544,15 @@ def process(target, args, api, synced):
                 f"      Pass --overwrite to blank them instead."
             )
 
-    index = {c: i for i, c in enumerate(header)}
-    for avg_column, sources in target.averages.items():
-        if avg_column not in index:
-            continue
-        # English must average only the public sets, not the extra WER columns,
-        # so it lists them; elsewhere every WER column counts.
-        avg_sources = sources or [c for c in header if c.endswith(" WER")]
-        present, missing = [], []
-        for column in avg_sources:
-            raw = new_row[index[column]] if column in index else ""
-            (present if raw.strip() else missing).append(
-                float(raw) if raw.strip() else column
-            )
+    for avg_column, (present, missing) in recompute_averages(target, header, new_row).items():
         if missing:
             print(
-                f"WARNING: {len(missing)} of {len(avg_sources)} datasets have no "
+                f"WARNING: {len(missing)} of {present + len(missing)} datasets have no "
                 f"result ({', '.join(missing)}).\n"
-                f"         '{avg_column}' is averaged over the {len(present)} present; "
+                f"         '{avg_column}' is averaged over the {present} present; "
                 f"'RTFx' covers only the datasets this run scored.",
                 file=sys.stderr,
             )
-        if present:
-            # Unrounded, matching english_short_latest.csv.
-            new_row[index[avg_column]] = str(sum(present) / len(present))
     for i, row in enumerate(rows):
         if row and row[0].strip() == row_name:
             rows[i] = new_row
