@@ -18,6 +18,10 @@ log_dir="$(pwd)/results"
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OMP_THREAD_LIMIT=1
 export PYTHONUNBUFFERED=1
 
+uv pip install --system \
+    -r "$script_dir/../requirements/requirements_jobs.txt" \
+    -r "$script_dir/../requirements/requirements_reson8_rumble.txt"
+
 check_download() {
     if [[ -n "$download_pid" ]] && ! kill -0 "$download_pid" 2>/dev/null; then
         wait "$download_pid"
@@ -69,5 +73,3 @@ while IFS= read -r selection; do
     python3 -m reson8_rumble.run_eval --datasets "$selection" \
         --num_engines "$num_engines"
 done <<< "$dataset_spec"
-
-# Exiting the HF Job tears down its container and all server processes.
