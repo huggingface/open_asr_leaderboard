@@ -144,7 +144,8 @@ def main(args):
     is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
     is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
     is_vibevoice = "vibevoice" in args.model_id.lower()
-    is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
+    # also detect Qwen3-ASR fine-tunes whose repo id does not contain "qwen3-asr" (decode + language-prompt handling)
+    is_qwen3_asr = "qwen3-asr" in args.model_id.lower() or getattr(config, "model_type", None) == "qwen3_asr"
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
     # Gemma 4 (incl. the E2B/E4B variants): multimodal chat model, audio goes

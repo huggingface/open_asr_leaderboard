@@ -102,7 +102,8 @@ def main(args):
     is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
-    is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
+    # also detect Qwen3-ASR fine-tunes whose repo id does not contain "qwen3-asr" (decode + language-prompt handling)
+    is_qwen3_asr = "qwen3-asr" in args.model_id.lower() or getattr(config, "model_type", None) == "qwen3_asr"
     is_gemma4 = "gemma-4" in args.model_id.lower()
 
     # Optional prompt for audio language models, newer models should use `apply_transcription_request`

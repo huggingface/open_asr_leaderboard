@@ -29,6 +29,7 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 MODEL_IDs=(
     "Qwen/Qwen3-ASR-0.6B-hf"
     "Qwen/Qwen3-ASR-1.7B-hf"
+    "oruk/orukqwen-asr-1.7b"  # Qwen3-ASR-1.7B post-trained with GSPO + token-level credit assignment, weight-space blended; same -hf layout and prompt
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
