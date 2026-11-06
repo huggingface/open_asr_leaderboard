@@ -26,6 +26,7 @@ MODEL_LANGUAGE_CODES = {
     "nl": "nld",
     "hy": "hye",
     "hi": "hin",
+    "ur": "urd",
 }
 
 
@@ -54,6 +55,7 @@ GEMMA4_LANGUAGE_NAMES = {
     "it": "Italian",
     "nl": "Dutch",
     "pt": "Portuguese",
+    "ur": "Urdu",
 }
 
 
@@ -217,6 +219,9 @@ def main(args):
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
 
     def benchmark(batch, min_new_tokens=None):
+        # Direct google/fleurs uses `transcription`, unlike leaderboard mirrors.
+        if "text" not in batch and "transcription" in batch:
+            batch["text"] = batch["transcription"]
         audios = [audio["array"] for audio in batch["audio"]]
         minibatch_size = len(audios)
         sampling_rate = batch["audio"][0]["sampling_rate"]

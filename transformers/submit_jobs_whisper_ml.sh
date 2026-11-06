@@ -32,8 +32,8 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 # ── Models: "model_id batch_size languages..." ──────────────────────────────
 # Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi"
-    "openai/whisper-large-v3            64 de fr it es pt nl hy hi"
+    "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi ur"
+    "openai/whisper-large-v3            64 de fr it es pt nl hy hi ur"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
@@ -48,6 +48,7 @@ DATASET_CONFIGS=(
     "fleurs pt"
     "fleurs nl"
     "fleurs hy"
+    "fleurs ur"
     "mcv hy"
     "mcv de"
     "mcv es"
@@ -100,7 +101,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         else
             JOB_DATASET="${DATASET_PATH}"
             [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
-            CONFIG_NAME="${DATASET}_${LANGUAGE}"
+            if [[ "$LANGUAGE" == "ur" ]]; then
+                JOB_DATASET="google/fleurs"
+                CONFIG_NAME="ur_pk"
+            else
+                CONFIG_NAME="${DATASET}_${LANGUAGE}"
+            fi
             CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
         fi
         echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
