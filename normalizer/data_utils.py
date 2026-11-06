@@ -103,6 +103,27 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
         text = re.sub(r"(\d+),(\d+)", _decimal, text)
         return text.replace("%", " phần trăm")
 
+    # Vietnamese has two accepted tone-mark placements for open syllables ending in
+    # "oa", "oe", "uy": traditional "hóa", "khỏe", "thủy" and modern "hoá", "khoẻ", "thuỷ".
+    # References and models mix both, so the modern form is mapped to the traditional
+    # one. Only open syllables are touched ("hoán", "khuyết" keep their marks), and
+    # "qu" + "y" is left alone ("quý" is written the same in both styles).
+    _VI_TONE_MOVES = [
+        ("o", "àáảãạ", "òóỏõọ", "a"),
+        ("o", "èéẻẽẹ", "òóỏõọ", "e"),
+        ("u", "ỳýỷỹỵ", "ùúủũụ", "y"),
+    ]
+    _VI_TONE_PATTERNS = [
+        (re.compile(r"(?<!q)" + first + "([" + marked + "])(?!\\w)"), dict(zip(marked, moved)), second)
+        for first, marked, moved, second in _VI_TONE_MOVES
+    ]
+
+    @classmethod
+    def _normalize_vi_tone_placement(cls, text):
+        for pattern, moved, second in cls._VI_TONE_PATTERNS:
+            text = pattern.sub(lambda m: moved[m.group(1)] + second, text)
+        return text
+
     def __call__(self, s, lang=None):
         language_normalizer = self._language_normalizers.get(lang)
         if language_normalizer is not None:
@@ -111,6 +132,8 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
         if lang == "vi":
             s = self._normalize_vi_numbers(s)
         s = super().__call__(s)
+        if lang == "vi":
+            s = self._normalize_vi_tone_placement(s)
         if lang is not None:
             s = self._remove_fillers(s, lang)
             s = self._normalize_numbers(s, lang)
