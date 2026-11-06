@@ -26,6 +26,12 @@ MODEL_LANGUAGE_CODES = {
     "nl": "nld",
     "hy": "hye",
     "hi": "hin",
+    "vi": "vie",
+}
+
+# Nemotron 3.5 ASR prompt keys for languages that have no bare 2-letter entry.
+RNNT_LANGUAGE_LOCALES = {
+    "vi": "vi-VN",
 }
 
 
@@ -54,6 +60,7 @@ GEMMA4_LANGUAGE_NAMES = {
     "it": "Italian",
     "nl": "Dutch",
     "pt": "Portuguese",
+    "vi": "Vietnamese",
 }
 
 
@@ -251,7 +258,8 @@ def main(args):
             # Multilingual RNNT models accept a language prompt;
             # English-only models (e.g. nemotron-speech-streaming-en) do not.
             if "-en" not in args.model_id.lower():
-                rnnt_processor_kwargs["language"] = norm_language
+                # Some languages are only in the prompt dictionary as a locale (e.g. "vi-VN").
+                rnnt_processor_kwargs["language"] = RNNT_LANGUAGE_LOCALES.get(norm_language, norm_language)
             inputs = processor(audios, **rnnt_processor_kwargs)
         elif is_cohere:
             # Cohere ASR requires an explicit language and does not use apply_transcription_request

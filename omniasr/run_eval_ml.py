@@ -25,6 +25,7 @@ NLLB_LANGUAGE_CODES = {
     "pt": "por_Latn",
     "hy": "hye_Armn",
     "hi": "hin_Deva",
+    "vi": "vie_Latn",
 }
 
 def main(args):
