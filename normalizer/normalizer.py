@@ -43,6 +43,76 @@ ADDITIONAL_DIACRITICS = {
 }
 
 
+# Enclosed tag bodies (casefolded, whitespace collapsed) found in the references and
+# predictions of the leaderboard datasets that carry no spoken words.
+_NON_SPEECH_TAGS = frozenset({
+    # vocal sounds
+    "laugh", "laughs", "laughing", "laughter", "both laugh", "both laughing", "chuckle", "chuckles",
+    "cough", "coughs", "coughing", "sigh", "sighs", "sniffs", "gasps", "yawn", "sneezes", "exhales",
+    "inhales", "scoffs", "clears throat", "clear_throat", "lip smacks", "lips smack", "smacks lips",
+    "human sounds", "crying", "humming", "whistles", "singing", "risas", "risate", "rires",
+    # audience
+    "applause", "clapping", "cheering", "crowd cheering", "audience applauding",
+    # music
+    "music", "music playing", "instrumental music", "upbeat music", "gentle music", "intro music",
+    "outro music", "on-hold music", "on hold music", "intro jingle", "outro jingle", "musik", "musique",
+    # noise and audio events
+    "noise", "background noise", "environmental sounds", "sound", "sound effect", "static", "click",
+    "beep", "beeping", "audio beep", "bleep", "buzzer", "buzzing", "notification sound",
+    "phone ringing", "phone rings", "phone vibrates", "phone vibrating", "phone buzzing", "phone buzzes",
+    "phone beeping", "phone beeps", "paper rustling",
+    "silence", "pause", "blank_audio", "no audio", "end of audio", "muted", "audio muted", "audio out",
+    "audio cuts", "audio cuts out", "audio cuts off", "audio drops", "audio skips", "audio glitch",
+    "audio glitching", "audio removal",
+    # unintelligible, overlapping, foreign or redacted speech
+    "unk", "inaudible", "unintelligible", "unintelligible speech", "unclear", "indistinct",
+    "hard speech", "speech", "lyric", "crosstalk", "crosstalking", "interposing voices", "affirmative",
+    "foreign", "foreign language", "foreign language spoken", "speaking foreign language",
+    "speaking in foreign language", "speaking native language", "speaking korean", "speaking polish",
+    "korean translation", "korean interpretation", "censored", "redacted", "expletive", "name unclear",
+    "__", "&nbsp;__&nbsp;",
+    # speaker labels
+    "interviewer", "reporter", "audience member", "unknown speaker", "unknown male speaker",
+    "unidentified male speaker", "unidentified female speaker",
+    # model output markup
+    "asr_text", "verbatum", "span", "/span", "|endoftext|",
+    # CORAAL transcriber notes
+    "atypical pronunciation", "nonstandard pronunciation", "pronounced seen", "i don't know intonation",
+    "whispering to baby", "whispered to baby", "speaks softly", "really quietly", "mocking voice",
+    "laughing while speaking", "laughing while talking", "overlapping laugh", "yawning?",
+    "mouthful of food", "hard to understand because of chewing", "pen clicking",
+    "tapping finger on table", "snapping fingers", "while snapping", "makes rewind noise",
+    "racket in background", "interrupted by engine revving", "mic feedback", "mic distortion",
+    "tape distortion", "tape distortion?", "tape skip", "tape skips", "tape stops", "choppy tape",
+    "polish language", "french language", "creole language",
+})
+_BRACKET_PAIRS = (("(", ")"), ("[", "]"), ("<", ">"), ("（", "）"), ("［", "］"), ("＜", "＞"))
+_BRACKET_CHARACTERS = "".join(opening + closing for opening, closing in _BRACKET_PAIRS)
+_BRACKET_PATTERN = re.compile("|".join(
+    rf"{re.escape(opening)}[^{re.escape(_BRACKET_CHARACTERS)}]*{re.escape(closing)}"
+    for opening, closing in _BRACKET_PAIRS
+))
+
+
+def remove_non_speech_annotations(s: str) -> str:
+    """Remove only explicit enclosed non-speech tags, preserving spoken parentheticals.
+
+    References and ASR outputs can enclose ordinary words, acronyms, or numbers. Only an
+    exact tag body (ignoring case and surrounding whitespace) is removed; other enclosures
+    are left for punctuation cleanup. Match paired, innermost delimiters and repeat after
+    removing nested tags. Spaces keep adjacent words from joining across a removed tag.
+    """
+    def replace(match: Match[str]) -> str:
+        body = " ".join(match.group()[1:-1].casefold().split())
+        return " " if body in _NON_SPEECH_TAGS else match.group()
+
+    while True:
+        cleaned = _BRACKET_PATTERN.sub(replace, s)
+        if cleaned == s:
+            return cleaned
+        s = cleaned
+
+
 def remove_symbols_and_diacritics(s: str, keep=""):
     """
     Replace any other markers, symbols, and punctuations with a space, and drop any diacritics (category 'Mn' and some
@@ -91,8 +161,7 @@ class BasicTextNormalizer:
 
     def __call__(self, s: str):
         s = s.lower()
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = remove_non_speech_annotations(s)
         s = self.clean(s).lower()
 
         if self.split_letters:
@@ -112,8 +181,7 @@ class BasicMultilingualTextNormalizer:
 
     def __call__(self, s: str):
         s = s.lower()
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = remove_non_speech_annotations(s)
         s = self.clean(s).lower()
 
         # Remove punctuation and extra spaces
@@ -723,8 +791,7 @@ class EnglishTextNormalizer:
     def __call__(self, s: str):
         s = s.lower()
 
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = remove_non_speech_annotations(s)
         s = re.sub(self.ignore_patterns, "", s)
         s = re.sub(r"\s+'", "'", s)  # standardize when there's a space before an apostrophe
 

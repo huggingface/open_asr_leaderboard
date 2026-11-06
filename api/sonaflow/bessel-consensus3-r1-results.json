@@ -176,6 +176,8 @@
   "public_benchmark_used_during_development": true,
   "pretraining_overlap": "not established",
   "evidence_note": "Offline replay of archived public evaluation artifacts; not a fresh end-to-end API benchmark. Public data and results were reviewed before release selection. No private-set score or leaderboard rank is claimed.",
-  "entry_level_price_usd_per_audio_hour": null,
-  "pricing_disclosure": "N/A - pricing not publicly announced"
+  "entry_level_price_usd_per_audio_hour": 0.3,
+  "pricing_disclosure": "$0.30 per audio hour; per-second billing, rounded up; $1 minimum prepaid top-up. https://scribe.besselaudio.com/pricing",
+  "public_self_service_url": "https://scribe.besselaudio.com",
+  "public_api_url": "https://scribe.besselaudio.com"
 }

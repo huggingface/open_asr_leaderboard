@@ -72,3 +72,32 @@ HF_TOKEN=<YOUR_TOKEN> \
 RESULTS_BUCKET=<YOUR_BUCKET> \
 bash api/run_api_ml.sh
 ```
+
+## Long-form
+
+`api/run_api_longform.sh` evaluates Earnings21, Earnings22, and all eight CORAAL
+subsets. As above, select a model together with its number of workers using
+`MODEL`. Raw, unnormalized references and predictions are uploaded to
+`hf-audio/asr_leaderboard_private` (override with `RESULTS_BUCKET`).
+
+
+Notes:
+- You may need to use fewer workers than for short-form: each request uploads a recording of up to about an hour, so a run near the API's concurrency limit gets requests rejected (e.g. ElevenLabs answers with `422 ... model_id ... Field required`). A request that fails all its retries is saved as an empty transcript and the run continues, so check for empty predictions once it finishes:
+```bash
+grep -c '"pred_text": ""' api/results/<model-folder>/*.jsonl
+```
+- OpenAI rejects uploads over 25 MB, so its provider sends long recordings in chunks of about 10 minutes, cut at the quietest point near each boundary.
+
+Smoke test:
+```bash
+ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 2" \
+DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
+bash api/run_api_longform.sh
+```
+
+Full run:
+```bash
+ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 2" \
+HF_TOKEN=<YOUR_TOKEN> \
+bash api/run_api_longform.sh
+```

@@ -13,6 +13,7 @@ MIME_MAP = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".mp
 VARIANT_MODELS = {
     "scribe_v1": None,
     "scribe_v2_pro": "zoom-scribe-en-pro",
+    "scribe_v2.1_pro": "zoom-scribe-en-pro-v2.1",
 }
 
 

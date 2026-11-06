@@ -11,14 +11,53 @@ Use **`Sonaflow/bessel-consensus3-r1`** as the model identifier in requests and 
 | Product | Bessel |
 | Release | Consensus3 r1 |
 | Model ID | `Sonaflow/bessel-consensus3-r1` |
-| Access | Hosted API; evaluation credentials provided privately |
+| Access | [Public self-service Beta](https://scribe.besselaudio.com/console#register); dedicated credentials for leaderboard evaluation |
 | Language | English (`en`) |
-| Input | WAV or FLAC; mono/stereo; 8–48 kHz; up to 300 seconds and 24 MiB |
+| Input | Public Scribe: MP3, WAV or FLAC; dedicated evaluation API: WAV or FLAC. Up to 300 seconds and 24 MiB |
 | Output | Normalized English transcript text; punctuation and capitalization are not preserved |
-| Price ($/audio hour) | N/A — pricing not publicly announced |
+| Price ($/audio hour) | [$0.30](https://scribe.besselaudio.com/pricing), billed per second, rounded up; $1 minimum prepaid top-up |
 | Documentation | [Bessel API](https://besselaudio.com/model-card) |
 
-## API
+## Public self-service access
+
+Sign up at [Bessel Scribe](https://scribe.besselaudio.com/console#register) with
+Google or a verified email address, create an API key in the console, and
+transcribe without an invitation or manual access approval. New verified
+accounts receive a one-time five-minute trial, subject to shared daily trial
+capacity. Prepaid top-ups start at $1; successful audio costs $0.30/hour.
+Failed jobs are not charged.
+
+```bash
+export BESSEL_API_URL="https://scribe.besselaudio.com"
+export BESSEL_API_KEY="<your-scribe-api-key>"
+REQUEST_ID=$(python -c 'import uuid; print(uuid.uuid4().hex)')
+
+curl "$BESSEL_API_URL/v1/jobs" \
+  -H "Authorization: Bearer $BESSEL_API_KEY" \
+  -H "Idempotency-Key: $REQUEST_ID" \
+  -F "model=Sonaflow/bessel-consensus3-r1" \
+  -F "language=en" \
+  -F "file=@audio.wav"
+
+# Save the response's id and poll that returned ID:
+curl "$BESSEL_API_URL/v1/jobs/<returned-job-id>" \
+  -H "Authorization: Bearer $BESSEL_API_KEY"
+```
+
+The default is free minutes first. To use prepaid balance directly and preserve
+free minutes, add `-F "billing_mode=paid"`, or select **Use prepaid credits** in
+the console. Explicit paid requests do not depend on shared trial capacity;
+insufficient balance returns `402`. Retry an ambiguous request with the same
+idempotency key and unchanged audio, model, language and billing mode.
+
+Scribe and the dedicated evaluation API have separate keys and job namespaces.
+Public Scribe uses the returned job ID, which differs from the idempotency key.
+Use the dedicated endpoint below with this leaderboard adapter; public Scribe
+keys are not accepted there. The separate multilingual release is not the
+English model submitted in this PR. See [Scribe docs](https://scribe.besselaudio.com/docs)
+for commercial API limits and retention.
+
+## Dedicated evaluation API
 
 Base URL: `https://api.besselaudio.com`. Authenticate with `Authorization: Bearer <API_KEY>`.
 Keep credentials out of source control, screenshots and public logs.
@@ -150,5 +189,4 @@ contracted processing services. Private evaluation transcripts and derived label
 will not be used for model development or tuning. Use only the dedicated
 evaluation API for leaderboard recordings.
 
-Commercial pricing has not been publicly announced. `N/A` does not mean free.
 Leaderboard inclusion and private-set verification are determined by the maintainers.

@@ -12,6 +12,7 @@ fi
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
     # "Sonaflow/bessel-consensus3-r1 1"
+    # "fonada/kapture-v3             16"
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
@@ -22,6 +23,7 @@ MODEL_CONFIGS=(
     # "aquavoice/avalon-v1-en        5"
     # "zoom/scribe_v1                32"
     # "zoom/scribe_v2_pro            8"
+    # "zoom/scribe_v2.1_pro          8"
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
@@ -35,6 +37,7 @@ MODEL_CONFIGS=(
     # "sophea/asr-k1                 16"
     # "sprag/symphony                8"
     # "OtterAI/speech-v3.1           128"
+    # "p99lab/audrey-0.7               64"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -48,11 +51,8 @@ EVAL_DATASETS=(
     "gigaspeech_cleaned:test"
     "spgispeech:test"
     "urgent2024:test"
-    "urgent2024_clean:test"
     "voxpopuli_cleaned_aa:test"
     "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
-    "librispeech:test.clean"
-    "librispeech:test.other"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
@@ -115,6 +115,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
+            -e FONADA_API_KEY="${FONADA_API_KEY:-}" \
             -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
             -e SPEECHMATICS_API_KEY="${SPEECHMATICS_API_KEY:-}" \
             -e AQUAVOICE_API_KEY="${AQUAVOICE_API_KEY:-}" \
@@ -125,6 +126,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
             -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
+            -e P99LAB_API_KEY="${P99LAB_API_KEY:-}" -e P99LAB_API_URL="${P99LAB_API_URL:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
