@@ -15,6 +15,8 @@ RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 ARMENIAN_DATASET_PATH="${ARMENIAN_DATASET_PATH:-Metric-AI/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
+ESLO_TELEPHONY_DATASET_PATH="${ESLO_TELEPHONY_DATASET_PATH:-BrunoHays/eslo-telephony-fr}"
+ACCUEIL_UBS_DATASET_PATH="${ACCUEIL_UBS_DATASET_PATH:-BrunoHays/accueil-ubs-fr}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
@@ -39,6 +41,8 @@ MODEL_CONFIGS=(
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
 # German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
+# "eslo-telephony fr" and "accueil-ubs fr" (French telephony) are standalone
+# single-config repos too (BrunoHays/eslo-telephony-fr, BrunoHays/accueil-ubs-fr);
 # all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
     "fleurs de"
@@ -60,6 +64,8 @@ DATASET_CONFIGS=(
     "mls pt"
     "mls nl"
     "monsoon hi"
+    "eslo-telephony fr"
+    "accueil-ubs fr"
 )
 
 # Optional: restrict this run to specific datasets and/or languages, matched
@@ -95,6 +101,15 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         if [[ "$DATASET" == "monsoon" ]]; then
             # Standalone single-config dataset repo — no --config_name.
             JOB_DATASET="${MONSOON_DATASET_PATH}"
+            CONFIG_ARG="--language=${LANGUAGE}"
+            CONFIG_NAME="(none)"
+        elif [[ "$DATASET" == "eslo-telephony" || "$DATASET" == "accueil-ubs" ]]; then
+            # Standalone single-config French telephony repos — no --config_name.
+            if [[ "$DATASET" == "eslo-telephony" ]]; then
+                JOB_DATASET="${ESLO_TELEPHONY_DATASET_PATH}"
+            else
+                JOB_DATASET="${ACCUEIL_UBS_DATASET_PATH}"
+            fi
             CONFIG_ARG="--language=${LANGUAGE}"
             CONFIG_NAME="(none)"
         else

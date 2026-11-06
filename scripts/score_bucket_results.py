@@ -64,6 +64,9 @@ FAMILY_BUCKETS = {
        ["appen", "dataocean", "liva", "voicearena_private_hi", "voicearena_private"]},
 }
 
+# Extra families scored together with a language's main `ml_<lang>` family.
+ML_EXTRA_FAMILIES = {"fr": ["ml_fr_telephony"]}
+
 # Columns of the combined multilingual CSV summary: (column label, dataset substring).
 ML_CSV_COLUMNS = [
     ("de_covost", "mcv_de_test"),
@@ -85,6 +88,8 @@ ML_CSV_COLUMNS = [
     ("hy_fleurs", "fleurs_hy_test"),
     ("hy_mcv", "mcv_hy_test"),
     ("hi_monsoon", "Monsoon_hi_test"),
+    ("fr_eslo_telephony", "eslo-telephony-fr"),
+    ("fr_accueil_ubs", "accueil-ubs-fr"),
 ]
 
 
@@ -351,7 +356,7 @@ def main():
                         model_id=model_id,
                         multilingual=True,
                         language=language,
-                        families=[f"ml_{language}"],
+                        families=[f"ml_{language}", *ML_EXTRA_FAMILIES.get(language, [])],
                         csv_only=True,
                         **cache_kwargs,
                     )

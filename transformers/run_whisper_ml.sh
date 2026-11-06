@@ -20,6 +20,8 @@ DEVICE_ID=0
 # Available datasets and languages
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
+# French telephony: standalone single-config repos (no --config_name)
+TELEPHONY_DATASETS=("BrunoHays/eslo-telephony-fr" "BrunoHays/accueil-ubs-fr")
 
 # German, French, Italian, Spanish, Portuguese, Dutch, Armenian
 DATASET_NAMES=("fleurs" "mcv" "mls")
@@ -69,6 +71,25 @@ run_evaluation() {
     return $exit_code
 }
 
+# French telephony sets are standalone single-config repos, so no --config_name.
+run_telephony_evaluation() {
+    local model_id=$1
+    local dataset_path=$2
+
+    echo ""
+    echo "Running evaluation: $dataset_path"
+    echo "   Model: $model_id"
+    echo "----------------------------------------"
+
+    python run_eval_ml.py \
+        --model_id="$model_id" \
+        --dataset="$dataset_path" \
+        --split="test" \
+        --device="$DEVICE_ID" \
+        --batch_size="$BATCH_SIZE" \
+        --max_eval_samples=-1
+}
+
 # Main execution
 echo "========================================================"
 echo "Starting Whisper Multilingual Evaluation"
@@ -100,6 +121,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             run_evaluation "$MODEL_ID" "$dataset" "$language"
         done
     done
+
+    if [[ " $MODEL_LANGUAGES " == *" fr "* ]]; then
+        for telephony_dataset in "${TELEPHONY_DATASETS[@]}"; do
+            run_telephony_evaluation "$MODEL_ID" "$telephony_dataset"
+        done
+    fi
 
     echo ""
     echo "========================================================"
