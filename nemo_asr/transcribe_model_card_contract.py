@@ -6,6 +6,18 @@ from typing import Any
 
 MODEL_ID = "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
 MODEL_REVISION = "e6ed81343993185d8c7617c6029c7378b4116a26"
+MODEL_REVISIONS = {
+    MODEL_ID: MODEL_REVISION,
+    f"{MODEL_ID}-FP8": "2b6209f89bec0da576d69183bfdabb3b6c05ade2",
+}
+
+
+def get_model_revision(model_id: str) -> str:
+    try:
+        return MODEL_REVISIONS[model_id]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported model: {model_id}") from exc
+
 
 DEFAULT_PROMPT = (
     "Audio transcription. Language: as spoken. Wording: verbatim, including "

@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${REPO_ROOT}/scripts/submit_utils.sh"
 
-MODEL_ID="nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
+MODEL_ID="${MODEL_ID:-nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B}"
 MODEL_FOLDER="${MODEL_ID//\//-}"
 SPACE="${SPACE:-nvidia/open-asr-nemotron-3dot5-transcribe}"
 FLAVOR="${FLAVOR:-h200}"
@@ -37,6 +37,9 @@ require_submission_environment() {
         echo "ERROR: python is not installed." >&2
         return 2
     }
+    PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}" python -c \
+        'import sys; from transcribe_model_card_contract import get_model_revision; get_model_revision(sys.argv[1])' \
+        "${MODEL_ID}" || return 2
     case "${SPECULATIVE}" in
         off|mtp2|mtp8|dflash2-k7|dflash2-k15) ;;
         *) echo "ERROR: unsupported SPECULATIVE mode: ${SPECULATIVE}" >&2; return 2 ;;
@@ -77,6 +80,7 @@ submit_hf_job() {
         --secrets HF_TOKEN \
         --env HF_AUDIO_DECODER_BACKEND=soundfile \
         --env TOKENIZERS_PARALLELISM=false \
+        --env MODEL_ID="${MODEL_ID}" \
         --env SPECULATIVE="${SPECULATIVE}" \
         "${namespace_args[@]}" \
         --volume "hf://buckets/${RESULTS_BUCKET}:/results" \

@@ -4,17 +4,32 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-MODEL_ID="nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
-MODEL_REVISION="e6ed81343993185d8c7617c6029c7378b4116a26"
+MODEL_ID="${MODEL_ID:-nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B}"
 MODEL_ARCHITECTURE="Nemotron3_5TranscribeForConditionalGeneration"
 NEMO_SPEECH_REVISION="7b05f096d54db47078fd1569a54d1f3ba4a4c51f"
 NEMO_SPEECH_DIR="${NEMO_SPEECH_DIR:-/opt/nemo-speech}"
 VLLM_VERSION="0.32.0"
-MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-/tmp/transcribe-model}"
 DRAFT_MODEL_ID="nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-DFlash2"
 VLLM_ENV="${VLLM_ENV:-/opt/venv}"
 PYTHON_BIN="${PYTHON_BIN:-${VLLM_ENV}/bin/python}"
 HF_CLI="${HF_CLI:-hf}"
+MODEL_REVISION="$(PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}" "${PYTHON_BIN}" -c \
+    'import sys; from transcribe_model_card_contract import get_model_revision; print(get_model_revision(sys.argv[1]))' \
+    "${MODEL_ID}")"
+
+if [[ "${MODEL_ID}" == *-FP8 ]]; then
+    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-/tmp/transcribe-model-fp8}"
+    GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
+    MAX_NUM_SEQS="${MAX_NUM_SEQS:-64}"
+    LIMIT_MM_PER_PROMPT='{"audio":{"count":1,"length":57600000}}'
+    export VLLM_DISABLED_KERNELS="${VLLM_DISABLED_KERNELS:-FlashInferFP8ScaledMMLinearKernel}"
+else
+    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-/tmp/transcribe-model}"
+    GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.94}"
+    MAX_NUM_SEQS="${MAX_NUM_SEQS:-192}"
+    LIMIT_MM_PER_PROMPT='{"audio":{"count":6,"length":120000000}}'
+fi
+
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 SERVER_START_TIMEOUT_S="${SERVER_START_TIMEOUT_S:-1800}"
@@ -80,12 +95,20 @@ import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as config_file:
-    architectures = json.load(config_file).get("architectures", [])
+    config = json.load(config_file)
+architectures = config.get("architectures", [])
 if sys.argv[2] not in architectures:
     raise SystemExit(
         f"checkpoint architecture mismatch: expected {sys.argv[2]!r}, found {architectures!r}"
     )
-' "${MODEL_CACHE_DIR}/config.json" "${MODEL_ARCHITECTURE}"
+if sys.argv[3].endswith("-FP8"):
+    quantization = config.get("quantization_config", {})
+    if quantization.get("quant_method") != "modelopt" or quantization.get("quant_algo") != "FP8":
+        raise SystemExit("checkpoint must declare ModelOpt FP8 quantization")
+    kv_cache = quantization.get("kv_cache_scheme", {})
+    if kv_cache.get("type") != "float" or kv_cache.get("num_bits") != 8:
+        raise SystemExit("checkpoint must declare an FP8 KV-cache scheme")
+' "${MODEL_CACHE_DIR}/config.json" "${MODEL_ARCHITECTURE}" "${MODEL_ID}"
 fi
 
 if [[ -z "${MODEL_TOTAL_PARAMETERS:-}" ]]; then
@@ -95,12 +118,19 @@ import pathlib
 import sys
 from safetensors import safe_open
 
+quantization_suffixes = (
+    (".input_scale", ".weight_scale", ".k_scale", ".v_scale")
+    if sys.argv[2].endswith("-FP8") else ()
+)
 total = 0
 for path in pathlib.Path(sys.argv[1]).rglob("*.safetensors"):
     with safe_open(path, framework="pt", device="cpu") as handle:
-        total += sum(math.prod(handle.get_slice(key).get_shape()) for key in handle.keys())
+        total += sum(
+            math.prod(handle.get_slice(key).get_shape())
+            for key in handle.keys() if not key.endswith(quantization_suffixes)
+        )
 print(total)
-' "${MODEL_CACHE_DIR}")"
+' "${MODEL_CACHE_DIR}" "${MODEL_ID}")"
 fi
 if [[ ! "${MODEL_TOTAL_PARAMETERS}" =~ ^[0-9]+$ || "${MODEL_TOTAL_PARAMETERS}" == "0" ]]; then
     echo "ERROR: could not count checkpoint parameters." >&2
@@ -108,6 +138,10 @@ if [[ ! "${MODEL_TOTAL_PARAMETERS}" =~ ^[0-9]+$ || "${MODEL_TOTAL_PARAMETERS}" =
 fi
 
 if [[ -z "${SERVER_LAUNCHER:-}" ]]; then
+    if [[ "${MODEL_ID}" == *-FP8 ]] && ! command -v nvcc >/dev/null; then
+        echo "ERROR: FP8 inference requires nvcc from a CUDA 13 toolkit on PATH." >&2
+        exit 1
+    fi
     if [[ ! -x "${VLLM_ENV}/bin/vllm" ]]; then
         echo "ERROR: ${VLLM_ENV}/bin/vllm is missing." >&2
         exit 1
@@ -160,10 +194,10 @@ if salm_config.TRANSCRIBE_MTP_ARCHITECTURE != "Nemotron3_5TranscribeMTPModel":
         --port "${PORT}"
         --trust-remote-code
         --dtype bfloat16
-        --gpu-memory-utilization 0.94
+        --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}"
         --max-model-len 65536
         --max-num-batched-tokens 4096
-        --max-num-seqs 192
+        --max-num-seqs "${MAX_NUM_SEQS}"
         --enable-chunked-prefill
         --no-enable-prefix-caching
         --use-replayssm
@@ -171,10 +205,13 @@ if salm_config.TRANSCRIBE_MTP_ARCHITECTURE != "Nemotron3_5TranscribeMTPModel":
         --mamba-cache-mode none
         --mm-processor-cache-gb 0
         --no-async-scheduling
-        --limit-mm-per-prompt '{"audio":{"count":6,"length":120000000}}'
+        --limit-mm-per-prompt "${LIMIT_MM_PER_PROMPT}"
         --reasoning-parser nemotron_v3
         --trust-request-mm-kwargs
     )
+    if [[ "${MODEL_ID}" == *-FP8 ]]; then
+        SERVER_COMMAND+=(--kv-cache-dtype auto)
+    fi
     case "${SPECULATIVE}" in
         off)
             export VLLM_USE_V2_MODEL_RUNNER=0
