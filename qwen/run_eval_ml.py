@@ -4,7 +4,7 @@ import torch
 from qwen_asr import Qwen3ASRModel
 import evaluate
 from normalizer import data_utils
-from normalizer.eval_utils import normalize_compound_pairs
+from normalizer.eval_utils import CER_LANGUAGES, normalize_compound_pairs, print_ml_cer
 import time
 from tqdm import tqdm
 from datasets import load_dataset, Audio
@@ -20,6 +20,7 @@ LANGUAGE_NAMES = {
     "es": "Spanish",
     "pt": "Portuguese",
     "nl": "Dutch",
+    "zh": "Chinese",
 }
 
 def main(args):
@@ -165,6 +166,10 @@ def main(args):
         transcription_time=all_results["transcription_time_s"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if LANGUAGE in CER_LANGUAGES:
+        print_ml_cer(all_results, LANGUAGE)
+        return
 
     norm_refs = [data_utils.ml_normalizer(r, lang=LANGUAGE) for r in all_results["references"]]
     norm_preds = [data_utils.ml_normalizer(p, lang=LANGUAGE) for p in all_results["predictions"]]

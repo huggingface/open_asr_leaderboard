@@ -25,6 +25,8 @@ DATASET_CONFIGS=(
     "fleurs nl ${ML_DATASET_PATH} fleurs_nl fleurs ${ML_CONCURRENCY}"
     "mcv nl ${ML_DATASET_PATH} mcv_nl default ${ML_CONCURRENCY}"
     "mls nl ${ML_DATASET_PATH} mls_nl default ${ML_CONCURRENCY}"
+    "fleurs zh ${ML_DATASET_PATH} fleurs_zh fleurs ${ML_CONCURRENCY}"
+    "aishell1 zh ${ML_DATASET_PATH} aishell1_zh default ${ML_CONCURRENCY}"
     "monsoon hi VoiceArena/Monsoon_hi_test - monsoon_hi ${ML_CONCURRENCY}"
 )
 

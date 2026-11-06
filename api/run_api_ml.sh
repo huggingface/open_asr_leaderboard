@@ -38,7 +38,7 @@ ARMENIAN_DATASET_PATH="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Chinese, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all others are configs of ${DATASET_PATH}. Hindi is scored with voi_oiwer over
 # the dataset's reference lattice (see OIWER_LANGUAGES in normalizer/eval_utils.py).
@@ -50,6 +50,8 @@ DATASET_CONFIGS=(
     "fleurs pt"
     "fleurs nl"
     "fleurs hy"
+    "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"

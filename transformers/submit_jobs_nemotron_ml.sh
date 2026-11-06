@@ -52,6 +52,8 @@ DATASET_CONFIGS=(
     "fleurs nl"
     "mcv nl"
     "mls nl"
+    "fleurs zh"
+    "aishell1 zh"
     "monsoon hi"
 )
 

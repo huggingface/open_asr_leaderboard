@@ -8,8 +8,8 @@ export PYTHONPATH="..":$PYTHONPATH
 # Configuration
 # The language list after each model ID limits that model's evaluations.
 MODEL_CONFIGS=(
-    "openai/whisper-large-v3 de fr it es pt nl hy"
-    "openai/whisper-large-v3-turbo de fr it es pt nl"
+    "openai/whisper-large-v3 de fr it es pt nl hy zh"
+    "openai/whisper-large-v3-turbo de fr it es pt nl zh"
     "facebook/mms-1b-all hy"
     "facebook/seamless-m4t-v2-large hy"
 )
@@ -21,11 +21,12 @@ DEVICE_ID=0
 DATASETS="hf-audio/open-asr-leaderboard-multilingual-datasets"
 ARMENIAN_DATASETS="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 
-# German, French, Italian, Spanish, Portuguese, Dutch, Armenian
-DATASET_NAMES=("fleurs" "mcv" "mls")
-DATASET_LANGS_fleurs="de fr it es pt nl hy"
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese
+DATASET_NAMES=("fleurs" "mcv" "mls" "aishell1")
+DATASET_LANGS_fleurs="de fr it es pt nl hy zh"
 DATASET_LANGS_mcv="de es fr it nl hy"
 DATASET_LANGS_mls="es fr it pt nl"
+DATASET_LANGS_aishell1="zh"
 
 # Function to run evaluation
 run_evaluation() {
