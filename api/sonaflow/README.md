@@ -28,7 +28,7 @@ capacity. Prepaid top-ups start at $1; successful audio costs $0.30/hour.
 Failed jobs are not charged.
 
 ```bash
-export BESSEL_API_URL="https://scribe.besselaudio.com"
+export BESSEL_API_URL="https://api.besselaudio.com"
 export BESSEL_API_KEY="<your-scribe-api-key>"
 REQUEST_ID=$(python -c 'import uuid; print(uuid.uuid4().hex)')
 
@@ -50,12 +50,18 @@ the console. Explicit paid requests do not depend on shared trial capacity;
 insufficient balance returns `402`. Retry an ambiguous request with the same
 idempotency key and unchanged audio, model, language and billing mode.
 
-Scribe and the dedicated evaluation API have separate keys and job namespaces.
-Public Scribe uses the returned job ID, which differs from the idempotency key.
-Use the dedicated endpoint below with this leaderboard adapter; public Scribe
-keys are not accepted there. The separate multilingual release is not the
-English model submitted in this PR. See [Scribe docs](https://scribe.besselaudio.com/docs)
-for commercial API limits and retention.
+Self-service and evaluation keys both use `https://api.besselaudio.com`.
+Their credential scopes and job namespaces remain separate. Public Scribe uses
+the returned job ID, which differs from the idempotency key. This leaderboard
+adapter uses the original evaluation credentials and recovers the original
+evaluation job ID. The English model and version checksums are unchanged.
+
+The previous self-service base URL, `https://scribe.besselaudio.com`, remains
+compatible with the same keys, jobs and billing. Keep the same idempotency key
+and request settings when switching addresses to avoid submitting a new job.
+Existing evaluation addresses and credentials remain supported. The separate
+multilingual release is not the English model submitted in this PR.
+See [Scribe docs](https://scribe.besselaudio.com/docs) for commercial limits and retention.
 
 ## Dedicated evaluation API
 

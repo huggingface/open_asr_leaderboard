@@ -179,5 +179,5 @@
   "entry_level_price_usd_per_audio_hour": 0.3,
   "pricing_disclosure": "$0.30 per audio hour; per-second billing, rounded up; $1 minimum prepaid top-up. https://scribe.besselaudio.com/pricing",
   "public_self_service_url": "https://scribe.besselaudio.com",
-  "public_api_url": "https://scribe.besselaudio.com"
+  "public_api_url": "https://api.besselaudio.com"
 }
