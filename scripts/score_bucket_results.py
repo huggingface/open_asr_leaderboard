@@ -7,6 +7,11 @@ Usage:
     python scripts/score_bucket_results.py --bucket bezzam/asr_leaderboard --local_dir results
     python scripts/score_bucket_results.py --skip_sync   # re-score already-downloaded results
     python scripts/score_bucket_results.py --family appen --family dataocean   # non-default families
+
+    # Private families (appen, dataocean, liva, voicearena_private, voicearena_private_hi)
+    # default to the hf-audio/asr_leaderboard_private bucket. Families from different
+    # buckets can be mixed: each bucket they need is synced into --local_dir.
+    python scripts/score_bucket_results.py --family liva  # Liva-AI accented English
     python scripts/score_bucket_results.py --family voicearena_private_hi  # Hindi private set (voi_oiwer)
     python scripts/score_bucket_results.py --family all  # every detected family
 
@@ -46,8 +51,18 @@ ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi"]
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
 # 'hi' routes through voi_oiwer (see OIWER_LANGUAGES in normalizer/eval_utils.py).
-FAMILIES = ["appen", "dataocean", "public", "extra", "longform", "voicearena_private_hi", "voicearena_private"]
+FAMILIES = ["appen", "dataocean", "liva", "public", "extra", "longform", "voicearena_private_hi", "voicearena_private"]
 FAMILY_LANGUAGES = {"voicearena_private_hi": "hi"}
+
+# Bucket each family's results are written to, when --bucket is not given.
+# Families not listed here live in DEFAULT_BUCKET.
+DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
+PRIVATE_BUCKET = "hf-audio/asr_leaderboard_private"
+FAMILY_BUCKETS = {
+    "longform": "hf-audio/asr_leaderboard_longform",
+    **{family: PRIVATE_BUCKET for family in
+       ["appen", "dataocean", "liva", "voicearena_private_hi", "voicearena_private"]},
+}
 
 # Columns of the combined multilingual CSV summary: (column label, dataset substring).
 ML_CSV_COLUMNS = [
@@ -196,8 +211,10 @@ def main():
         default=None,
         help="HF bucket name (without the hf://buckets/ prefix). Defaults to "
              "hf-audio/asr_leaderboard_multilingual if --multilingual is set, "
-             "hf-audio/asr_leaderboard_longform if --family longform is the only "
-             "family, otherwise hf-audio/asr_leaderboard_h200.",
+             f"otherwise the bucket(s) of the requested families: {PRIVATE_BUCKET} "
+             "for the private families (appen, dataocean, liva, voicearena_private*), "
+             "hf-audio/asr_leaderboard_longform for longform, and "
+             f"{DEFAULT_BUCKET} for the rest.",
     )
     parser.add_argument(
         "--local_dir",
@@ -289,19 +306,22 @@ def main():
             file=sys.stderr,
         )
 
+    families = args.family or ["public"]
+    if "all" in families:
+        families = FAMILIES
+
     if args.bucket:
-        bucket = args.bucket
+        buckets = [args.bucket]
     elif args.multilingual:
-        bucket = "hf-audio/asr_leaderboard_multilingual"
-    elif args.family == ["longform"]:
-        bucket = "hf-audio/asr_leaderboard_longform"
+        buckets = ["hf-audio/asr_leaderboard_multilingual"]
     else:
-        bucket = "hf-audio/asr_leaderboard_h200"
+        buckets = list(dict.fromkeys(FAMILY_BUCKETS.get(f, DEFAULT_BUCKET) for f in families))
     local_dir = args.local_dir or os.path.join(REPO_ROOT, "results")
 
     if not args.skip_sync:
         # With --model_id, only those models' results are downloaded.
-        sync_bucket(bucket, local_dir, hf_token=args.hf_token, model_ids=args.model_id)
+        for bucket in buckets:
+            sync_bucket(bucket, local_dir, hf_token=args.hf_token, model_ids=args.model_id)
     else:
         print(f"Skipping sync — scoring results in: {local_dir}\n")
 
@@ -341,10 +361,6 @@ def main():
         if all_results:
             print_multilingual_csv(all_results)
     else:
-        families = args.family or ["public"]
-        if "all" in families:
-            families = FAMILIES
-
         # Each score_results call applies a single normalizer, so families are
         # grouped by the language they must be scored with and passed one group
         # per call.
@@ -367,7 +383,10 @@ def main():
                     print(f"Skipping families={language_families} model_id={model_id}: {e}")
 
     if not args.no_upload_scores:
-        upload_scores(bucket, local_dir, written_scores, hf_token=args.hf_token)
+        # upload_scores only uploads a score whose manifest is in that bucket, so
+        # each score lands in the bucket its manifest came from.
+        for bucket in buckets:
+            upload_scores(bucket, local_dir, written_scores, hf_token=args.hf_token)
 
 
 if __name__ == "__main__":

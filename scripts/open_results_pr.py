@@ -27,6 +27,7 @@ Usage:
     python scripts/open_results_pr.py --target appen      --model_id my-org/my-model
     python scripts/open_results_pr.py --target dataocean  --model_id my-org/my-model
     python scripts/open_results_pr.py --target voicearena --model_id my-org/my-model
+    python scripts/open_results_pr.py --target liva       --model_id my-org/my-model
 
     # public multilingual: one file per language
     python scripts/open_results_pr.py --target multilingual --language de --model_id my-org/my-model
@@ -85,7 +86,7 @@ LONGFORM_BUCKET = "hf-audio/asr_leaderboard_longform"
 RTFX_MINUS_ONE_LANGUAGES = {"de", "fr", "it", "es", "pt", "nl"}
 
 # Tried in this order when --target is omitted.
-ALL_TARGETS = ["english", "longform", "appen", "dataocean", "voicearena", "multilingual"]
+ALL_TARGETS = ["english", "longform", "appen", "dataocean", "voicearena", "liva", "multilingual"]
 
 # What --api writes into the License column when --license is not given: every
 # one of the 14 API rows in english_short_latest.csv uses exactly this.
@@ -118,10 +119,12 @@ class Target:
         means every " WER" column in the file.
     ignore: scored columns the published file deliberately leaves out; dropped
         without the "absent from the published header" warning.
+    avg_decimals: round the recomputed averages to this many decimals; None keeps
+        them unrounded.
     """
 
     def __init__(self, name, repo_id, filename, bucket, passes, renames=None,
-                 averages=None, ignore=(), api_rtfx=""):
+                 averages=None, ignore=(), api_rtfx="", avg_decimals=None):
         self.name = name
         self.repo_id = repo_id
         self.filename = filename
@@ -135,6 +138,7 @@ class Target:
         # models, multilingual_{de,fr,it,es,pt,nl}.csv use -1. Each target keeps its
         # own file's convention rather than introducing a third.
         self.api_rtfx = api_rtfx
+        self.avg_decimals = avg_decimals
 
 
 def build_targets(language=None):
@@ -202,6 +206,18 @@ def build_targets(language=None):
             "voicearena.csv",
             PRIVATE_BUCKET,
             passes=[(["voicearena_private"], "en"), (["voicearena_private_hi"], "hi")],
+        ),
+        # Liva-AI accented English (Arabic / West-African accents). The accent
+        # columns carry no " WER" suffix, so the average lists them explicitly.
+        "liva": Target(
+            "liva",
+            "hf-audio/open_asr_private_data_results",
+            "liva.csv",
+            PRIVATE_BUCKET,
+            passes=[(["liva"], "en")],
+            averages={"Avg WER": ["Arabic", "Western African"]},
+            # The mean of two 2-decimal WERs is exact at 3 decimals (e.g. 14.115).
+            avg_decimals=3,
         ),
     }
     if language:
@@ -434,8 +450,11 @@ def recompute_averages(target, header, row):
                 float(raw) if raw.strip() else column
             )
         if present:
-            # Unrounded, matching english_short_latest.csv.
-            row[index[avg_column]] = str(sum(present) / len(present))
+            # Unrounded by default, matching english_short_latest.csv.
+            avg = sum(present) / len(present)
+            if target.avg_decimals is not None:
+                avg = round(avg, target.avg_decimals)
+            row[index[avg_column]] = str(avg)
         counts[avg_column] = (len(present), missing)
     return counts
 

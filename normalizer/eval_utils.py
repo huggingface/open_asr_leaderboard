@@ -472,7 +472,7 @@ def score_results(
                   When not 'en', ml_normalizer is used instead of the English normalizer.
                   Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
                   voi_oiwer over a reference lattice instead of plain WER.
-        families: Optional list of family keys ("appen", "dataocean", "voicearena_private",
+        families: Optional list of family keys ("appen", "dataocean", "voicearena_private", "liva",
                   "voicearena_private_hi", "public", "extra", "longform", "ml_de", "ml_fr", "ml_it", "ml_es",
                   "ml_pt", "ml_nl", "ml_hy") restricting which CSV summary blocks are printed.
                   None prints all detected families.
@@ -526,6 +526,8 @@ def score_results(
         dataset_id = ds_fp.replace("DATASET_", "").removesuffix(".jsonl")
         return model_id, dataset_id
 
+    # Display names for family keys whose capitalize() form reads badly.
+    FAMILY_DISPLAY_NAMES = {"liva": "Liva-AI"}
     # CORAAL subsets (bezzam/coraal), macro-averaged into a single long-form column.
     CORAAL_SPLITS = ["ATL", "DCA", "DCB", "DTA", "LES", "PRV", "ROC", "VLD"]
 
@@ -572,6 +574,26 @@ def score_results(
                 ),
                 "dataocean_conversational_segmented_filtered__en_GB": (
                     "Conversational-GB",
+                    "conversational",
+                ),
+            },
+        ),
+        (
+            "liva",
+            "liva",
+            "model,Avg WER,Arabic,Western African",
+            {
+                # The dataset lives in two repos (hf-audio/... built by
+                # scripts/prepare_liva_ai_dataset.py, and the liva-ai/... copy the
+                # submit scripts point at); manifests from either are scored here.
+                "hf-audio-liva_ai_conversational_segmented__arabic": ("Arabic", "conversational"),
+                "liva-ai-liva-ai-conversational-accented__arabic": ("Arabic", "conversational"),
+                "hf-audio-liva_ai_conversational_segmented__western_african": (
+                    "Western African",
+                    "conversational",
+                ),
+                "liva-ai-liva-ai-conversational-accented__western_african": (
+                    "Western African",
                     "conversational",
                 ),
             },
@@ -870,33 +892,43 @@ def score_results(
 
             is_private = any(grp is not None for _lbl, grp in col_map.values())
             if is_private:
-                scripted_wers = [
-                    v
-                    for _ds, (lbl, grp) in col_map.items()
-                    if grp == "scripted" and (v := wer_vals.get(lbl)) is not None
-                ]
-                conversational_wers = [
-                    v
-                    for _ds, (lbl, grp) in col_map.items()
-                    if grp == "conversational" and (v := wer_vals.get(lbl)) is not None
-                ]
+                # One "Avg <group>" column per group, in the order the groups
+                # first appear in col_map ("Avg Scripted", "Avg Conversational"
+                # for appen/dataocean). A family with a single group (liva is
+                # conversational only) gets none: it would repeat the overall
+                # average. Labels are deduplicated first, since a column may be
+                # reached through more than one dataset-id key.
+                group_of = {}
+                for lbl, grp in col_map.values():
+                    group_of.setdefault(lbl, grp)
+                groups = []
+                for grp in group_of.values():
+                    if grp is not None and grp not in groups:
+                        groups.append(grp)
+
                 all_wers = [v for v in wer_vals.values() if v is not None]
                 avg_overall = (
                     round(sum(all_wers) / len(all_wers), 2) if all_wers else ""
                 )
-                avg_scripted = (
-                    round(sum(scripted_wers) / len(scripted_wers), 2)
-                    if scripted_wers
-                    else ""
-                )
-                avg_conv = (
-                    round(sum(conversational_wers) / len(conversational_wers), 2)
-                    if conversational_wers
-                    else ""
-                )
+                avg_group_cols = []
+                if len(groups) > 1:
+                    for grp in groups:
+                        group_wers = [
+                            v
+                            for lbl, g in group_of.items()
+                            if g == grp and (v := wer_vals.get(lbl)) is not None
+                        ]
+                        avg_group_cols.append(
+                            str(round(sum(group_wers) / len(group_wers), 2))
+                            if group_wers
+                            else ""
+                        )
                 print(
-                    f"{csv_model_label},{avg_overall},{avg_scripted},{avg_conv},"
-                    + ",".join(wer_cols)
+                    ",".join(
+                        [str(csv_model_label), str(avg_overall)]
+                        + avg_group_cols
+                        + wer_cols
+                    )
                 )
             else:
                 if family_key in ("public", "longform") or (family_key or "").startswith("ml_"):
@@ -957,8 +989,8 @@ def score_results(
         if family_key.startswith("ml_"):
             family_name = family_key[len("ml_") :]  # "de", "fr", "it", "es", "pt", "nl", "hy"
         else:
-            family_name = (
-                family_key.capitalize()
+            family_name = FAMILY_DISPLAY_NAMES.get(
+                family_key, family_key.capitalize()
             )  # "Appen", "Dataocean", "Public", "Extra"
         # Public block: print only if at least one public dataset key is found
         if presence_substr is None:
