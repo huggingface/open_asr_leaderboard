@@ -4,7 +4,7 @@ import io
 import json
 from typing import Optional
 
-from . import APIProvider, register
+from . import APIProvider, PermanentError, register
 
 MIME_MAP = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".flac": "audio/flac"}
 
@@ -24,6 +24,7 @@ class MicrosoftAzureProvider(APIProvider):
         "pt": "pt-PT",
         "nl": "nl-NL",
         "hi": "hi-IN",
+        "hy": "hy-AM",
     }
 
     def transcribe(
@@ -38,6 +39,9 @@ class MicrosoftAzureProvider(APIProvider):
         api_key = os.getenv("AZURE_API_KEY")
         if not api_key or api_key == "your_api_key":
             raise ValueError("AZURE_API_KEY environment variable not set")
+
+        if language in {"hy", "hy-AM"}:
+            raise PermanentError(f"Language '{language}' is not supported by Azure LLM-speech-2609")
 
         locale = self.LOCALE_DICT.get(language, "")
         definition = {
@@ -78,5 +82,8 @@ class MicrosoftAzureProvider(APIProvider):
         )
         if not resp.ok:
             print(f"Azure API error {resp.status_code}: {resp.text}")
+        if resp.status_code == 400:
+            # Invalid requests (e.g. unsupported locales) will not been retried.
+            raise PermanentError(f"Azure API error 400: {resp.text}")
         resp.raise_for_status()
         return resp.json().get("combinedPhrases", [{}])[0].get("text", "") or "."
