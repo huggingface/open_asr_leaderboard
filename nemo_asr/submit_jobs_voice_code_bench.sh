@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Submit inference on GPU, then CTEM grading in a separate CPU HF Job.
+# Submit inference on GPU, then CTEM grading in a separate GPU HF Job.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +20,6 @@ LOCAL_RESULTS="${SCRIPT_DIR}/results/voice_code_bench/${RUN_ID}"
 
 # Check credentials before spending GPU time. HF_TOKEN may also come from hf auth login.
 python - "$VERIFIER_MODE" "$MAX_EVAL_SAMPLES" <<'PY'
-import os
 import sys
 from huggingface_hub import get_token
 if not get_token():
@@ -33,8 +32,6 @@ if samples != -1 and samples <= 0:
     raise SystemExit("MAX_EVAL_SAMPLES must be -1 or a positive integer.")
 if sys.argv[1] not in {"replay", "live-fill"}:
     raise SystemExit("VERIFIER_MODE must be replay or live-fill.")
-if sys.argv[1] == "live-fill" and not os.environ.get("OPENAI_API_KEY"):
-    raise SystemExit("Set OPENAI_API_KEY for live-fill grading.")
 if sys.argv[1] == "replay":
     raise SystemExit("A fresh inference run has no grading cache. Use the grading-only script to replay an existing run.")
 PY

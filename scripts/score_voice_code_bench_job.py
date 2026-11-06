@@ -1,4 +1,4 @@
-"""HF grading entrypoint: install the pinned verifier and checkpoint its cache."""
+"""HF grading entrypoint: install pinned metric helpers and checkpoint its cache."""
 
 from pathlib import Path
 import os
@@ -18,7 +18,7 @@ def main():
         allow_patterns=["pyproject.toml", "README.md", "LICENSE", "scripts/voice_code_bench/**"],
     )
     subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", package], check=True)
-    from voice_code_bench.verifier import VerifierCache
+    from normalizer.voice_code_bench_judge import VerifierCache
 
     api = HfApi()
     with tempfile.TemporaryDirectory(prefix="vcb-cache-") as cache_dir:
@@ -30,9 +30,8 @@ def main():
                     shutil.copyfile(self.destination, local)
                 super().__init__(local)
 
-            def put(self, entry):
-                super().put(entry)
-                # Atomic cache replacement and file locking happen on local disk.
+            def checkpoint(self):
+                # Atomic replacement and the shared thread lock happen locally.
                 # Publish a complete object through the API instead of relying
                 # on atomic rename/locking support on a bucket mount.
                 api.batch_bucket_files(

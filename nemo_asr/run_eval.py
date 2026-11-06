@@ -186,7 +186,7 @@ def main(args):
     if is_vcb:
         print("RTFX:", round(sum(all_data["durations"]) / total_time, 2))
         print("Score CTEM with python -m normalizer.voice_code_bench --manifest", manifest_path,
-              "--verifier-cache results/voice_code_bench.verifier-cache.json --verifier-mode live-fill")
+              "--verifier-cache results/voice_code_bench.qwen27b-verifier-cache.json --verifier-mode live-fill")
         return
 
     if is_chunked:

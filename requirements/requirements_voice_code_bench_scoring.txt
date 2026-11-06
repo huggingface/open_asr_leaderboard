@@ -1,4 +1,5 @@
-huggingface_hub>=1.13.0,<2
+huggingface_hub>=1.27.0,<2
 tqdm
 regex
 kaldialign==0.12.0
+jsonschema>=4.18,<5
