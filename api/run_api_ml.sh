@@ -31,6 +31,7 @@ MODEL_CONFIGS=(
     # "meta/muse-voice-transcribe-streaming    8"
     # "sprag/symphony                8"
     # "sophea/asr-k1                 16"   # English + German only (DATASETS="fleurs:de mcv:de")
+    # "lokutor/conv-2.0              8"
 )
 
 DATASET_PATH="hf-audio/open-asr-leaderboard-multilingual-datasets"
@@ -202,6 +203,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e LOKUTOR_API_KEY="${LOKUTOR_API_KEY:-}" \
             -e GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
             -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
