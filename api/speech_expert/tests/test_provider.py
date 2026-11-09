@@ -73,7 +73,7 @@ class SpeechExpertProviderTests(unittest.TestCase):
             self.assertEqual(self.call(), "text")
 
     def test_invalid_variants_languages_url_and_prompts_fail_before_upload(self):
-        for args in ({"model_variant": "ElevenLabs-Scribe-v2"}, {"language": "en"}, {"use_url": True}, {"audio_file_path": None}, {"prompt": "Read the reference"}):
+        for args in ({"model_variant": "Unsupported-ASR"}, {"language": "en"}, {"use_url": True}, {"audio_file_path": None}, {"prompt": "Read the reference"}):
             with self.subTest(args=args), patch.object(adapter.requests, "post") as post:
                 with self.assertRaises(registry.PermanentError):
                     self.call(**args)
@@ -82,16 +82,16 @@ class SpeechExpertProviderTests(unittest.TestCase):
     def test_english_profiles_are_explicitly_excluded(self):
         self.assertEqual(adapter.MODEL_LANGUAGES, {
             "SpeechExpert-hy-stream": "hy", "SpeechExpert-STT-HY-Large": "hy"})
-        for model in ("SpeechExpert-STT-EN", "Parakeet-EN", "SpeechExpert-STT-RU", "SpeechExpert-STT-UZ-Large", "Mhery-RNNT"):
+        for model in ("SpeechExpert-STT-EN", "Unsupported-EN", "SpeechExpert-STT-RU", "SpeechExpert-STT-UZ-Large", "Unsupported-ASR"):
             with self.subTest(model=model), patch.object(adapter.requests, "post") as post:
                 with self.assertRaises(registry.PermanentError):
                     self.call(model_variant=model, language="en")
                 post.assert_not_called()
 
-    def test_previous_mhery_streaming_profile_is_not_silently_remapped(self):
+    def test_unsupported_streaming_profile_is_not_silently_remapped(self):
         with patch.object(adapter.requests, "post") as post, patch.object(adapter, "_open_socket") as socket:
             with self.assertRaises(registry.PermanentError):
-                self.call(model_variant="Mhery-RNNT-streaming", language="hy")
+                self.call(model_variant="Unsupported-streaming", language="hy")
             post.assert_not_called()
             socket.assert_not_called()
 

@@ -14,8 +14,8 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    # "speech-expert/SpeechExpert-hy-stream 1"  # Pure Armenian Zipformer; LANGUAGES="hy"
-    # "speech-expert/SpeechExpert-STT-HY-Large 1"  # Armenian only; LANGUAGES="hy"
+    # "speech-expert/SpeechExpert-hy-stream 1"  # Armenian streaming; LANGUAGES="hy"
+    # "speech-expert/SpeechExpert-STT-HY-Large 1"  # Armenian files; LANGUAGES="hy"
     # "fonada/kapture-v3             16"
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"

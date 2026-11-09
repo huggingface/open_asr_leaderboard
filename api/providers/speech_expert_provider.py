@@ -25,7 +25,7 @@ EXTERNAL_MODELS = frozenset({"SpeechExpert-STT-HY-Large"})
 
 @register("speech-expert")
 class SpeechExpertProvider(APIProvider):
-    """Explicit Armenian pure Zipformer streaming or Large file profile.
+    """Armenian streaming or Large file transcription.
 
     Requires SPEECH_EXPERT_API_KEY. SPEECH_EXPERT_BASE_URL overrides the API
     root, for example https://speech-expert.ru/api. Transient errors are
@@ -123,7 +123,7 @@ class SpeechExpertProvider(APIProvider):
         return payload["result"]
 
     def _transcribe_armenian_stream(self, audio_file_path: str) -> str:
-        """Pure Armenian Zipformer previews/finals; no Mhery refinement."""
+        """Receive interim and final Armenian transcripts."""
         from websockets.exceptions import ConnectionClosed, InvalidStatus
 
         pcm = _read_pcm16(audio_file_path)

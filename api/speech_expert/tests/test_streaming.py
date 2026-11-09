@@ -55,7 +55,7 @@ class StreamingTests(unittest.TestCase):
         self.assertEqual(connect.call_args.args, ("wss://speech-expert.ru/api/stt/v1/ws", "private-test-key"))
         return result
 
-    def test_config_pure_zipformer_without_mhery_or_file_fallback(self):
+    def test_streaming_config_without_file_fallback(self):
         self.assertEqual(self.run_stream([{"text": "final", "is_final": True}]), "final")
         self.assertEqual(json.loads(self.socket.sent[0]), {"language": "hy-AM", "model": "Zipformer-Streaming", "privacy_mode": True, "external_ai_consent": False, "enable_automatic_punctuation": False, "diarization": False})
         self.assertEqual(json.loads(self.socket.sent[-1]), {"event": "eof"})
