@@ -14,6 +14,8 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
+    # "speech-expert/SpeechExpert-hy-stream 1"  # Pure Armenian Zipformer; LANGUAGES="hy"
+    # "speech-expert/SpeechExpert-STT-HY-Large 1"  # Armenian only; LANGUAGES="hy"
     # "fonada/kapture-v3             16"
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
@@ -185,6 +187,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e SPEECH_EXPERT_API_KEY="${SPEECH_EXPERT_API_KEY:-}" \
+            -e SPEECH_EXPERT_BASE_URL="${SPEECH_EXPERT_BASE_URL:-}" \
             -e HF_HOME=/tmp/hf_home \
             -e HF_DATASETS_CACHE="${DATASETS_CACHE_DIR}" \
             -e NUMBA_CACHE_DIR=/tmp/numba_cache \
