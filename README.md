@@ -85,7 +85,7 @@ RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash transformers/submit_jobs_whi
 
 For contributors who want to test locally, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
 
-Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
+Each model family has a `run_eval.py` entry point, launched on HF Jobs by a `submit_jobs*.sh` script (e.g. `transformers/submit_jobs_whisper.sh`). `run_eval.py` outputs a JSONL file with predictions and prints WER and RTFx after completion.
 
 # Trade-off plots
 
