@@ -447,6 +447,49 @@ def merge_chunked_manifest(manifest: list):
     return merged
 
 
+SUMMARY_FORMATS = ("markdown", "csv", None)
+
+
+def format_wer(value) -> str:
+    """A WER as printed in the Markdown summaries: two decimals, "-" when missing."""
+    return "-" if value is None else f"{value:.2f}"
+
+
+def format_rtfx(value) -> str:
+    """An RTFx as printed in the Markdown summaries.
+
+    Whole numbers once it is large enough that decimals are noise, two decimals
+    below that (API models and long-form runs can sit near 1), "-" when missing.
+    """
+    if value is None:
+        return "-"
+    return f"{value:.0f}" if value >= 100 else f"{value:.2f}"
+
+
+def markdown_table(header: list, rows: list, left_columns: int = 1) -> str:
+    """A Markdown table, padded so that it also reads as a table in a terminal.
+
+    The first ``left_columns`` columns (labels) are left-aligned, the rest (numbers)
+    right-aligned, both in the padding and in the alignment row, so the table
+    renders the same way once pasted into a PR.
+    """
+    cells = [[str(c) for c in header]] + [[str(c) for c in row] for row in rows]
+    widths = [max(3, *(len(r[i]) for r in cells)) for i in range(len(header))]
+
+    def line(row):
+        padded = [
+            c.ljust(w) if i < left_columns else c.rjust(w)
+            for i, (c, w) in enumerate(zip(row, widths))
+        ]
+        return "| " + " | ".join(padded) + " |"
+
+    align = "|" + "|".join(
+        (":" + "-" * (w + 1)) if i < left_columns else ("-" * (w + 1) + ":")
+        for i, w in enumerate(widths)
+    ) + "|"
+    return "\n".join([line(cells[0]), align] + [line(r) for r in cells[1:]])
+
+
 def score_results(
     directory: str,
     model_id: str = None,
@@ -458,6 +501,7 @@ def score_results(
     recompute: bool = False,
     written_scores: list = None,
     num_workers: int = None,
+    summary_format: str = "markdown",
 ):
     """
     Scores all result files in a directory and returns a composite score over all evaluated datasets.
@@ -467,7 +511,7 @@ def score_results(
         model_id: Optional, model name to filter out result files based on model name.
         multilingual: If True, apply compound word boundary normalization before
                       WER computation. Should only be enabled for non-English benchmarks.
-        csv_only: If True, suppress all output except the CSV summary block.
+        csv_only: If True, suppress all output except the summary block(s).
         language: Language code used for normalization (e.g. 'en', 'de', 'fr').
                   When not 'en', ml_normalizer is used instead of the English normalizer.
                   Languages in OIWER_LANGUAGES (e.g. 'hi') are scored with
@@ -485,10 +529,18 @@ def score_results(
         num_workers: Processes used to align each manifest; None uses every CPU
                    available, 1 aligns serially. The manifests without a stored
                    score share one pool; see align_manifests.
+        summary_format: How each family's summary is printed. "markdown" (default)
+                   prints a table to paste into a PR: Dataset | WER | RTFx with an
+                   average row for a single model, one row per model otherwise.
+                   "csv" prints the published sheets' header and row, which
+                   scripts/open_results_pr.py parses. None prints no summary.
 
     Returns:
         Composite score over all evaluated datasets and a dictionary of all results.
     """
+
+    if summary_format not in SUMMARY_FORMATS:
+        raise ValueError(f"summary_format must be one of {SUMMARY_FORMATS}, got {summary_format!r}")
 
     # Strip trailing slash
     if directory.endswith(os.pathsep):
@@ -618,7 +670,7 @@ def score_results(
             "public",
             None,  # always printed when public datasets are present
             "model,avg,RTFx,License,Size (B),# Languages,Encoder,Decoder,Training data disclosure,"
-            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,LS Clean WER,LS Other WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER",
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER",
             # Keys of hf-audio/open-asr-leaderboard configs carry the repo slug, so
             # that a same-named set from another repo (e.g. the long-form
             # asr-leaderboard-longform_earnings22_test) is not picked up as well.
@@ -636,8 +688,6 @@ def score_results(
                     None,
                 ),
                 "open-asr-leaderboard_gigaspeech_cleaned_test": ("Gigaspeech-Cleaned WER", None),
-                "open-asr-leaderboard_librispeech_test.clean": ("LS Clean WER", None),
-                "open-asr-leaderboard_librispeech_test.other": ("LS Other WER", None),
                 "open-asr-leaderboard_spgispeech_test": ("SPGISpeech WER", None),
                 "open-asr-leaderboard_urgent2024_test": ("URGENT2024 WER", None),
                 "Monsoon_en_IN_test__test": ("Voice Arena Monsoon WER", None),
@@ -648,13 +698,16 @@ def score_results(
             "extra",
             None,  # printed when any of its datasets is present
             "model,AMI WER,Earnings22 WER,Gigaspeech WER,Voxpopuli WER,"
-            "URGENT2024-Clean WER",
+            "URGENT2024-Clean WER,LS Clean WER,LS Other WER",
             {
                 "open-asr-leaderboard_ami_test": ("AMI WER", None),
                 "open-asr-leaderboard_earnings22_test": ("Earnings22 WER", None),
                 "open-asr-leaderboard_gigaspeech_test": ("Gigaspeech WER", None),
                 "open-asr-leaderboard_voxpopuli_test": ("Voxpopuli WER", None),
                 "open-asr-leaderboard_urgent2024_clean_test": ("URGENT2024-Clean WER", None),
+                # LibriSpeech is published but not part of the default average.
+                "open-asr-leaderboard_librispeech_test.clean": ("LS Clean WER", None),
+                "open-asr-leaderboard_librispeech_test.other": ("LS Other WER", None),
             },
         ),
         (
@@ -982,7 +1035,164 @@ def score_results(
 
         print("*" * 80)
 
-    # ── Print one CSV block per detected family ───────────────────────────────
+    # Titles of the Markdown summaries, where the family key reads badly.
+    MARKDOWN_TITLES = {
+        "public": "Short-form",
+        "extra": "Short-form (other splits)",
+        "longform": "Long-form",
+        "liva": "Liva-AI",
+        "voicearena_private": "Voice Arena private (English)",
+        "voicearena_private_hi": "Voice Arena private (Hindi)",
+        "appen": "Appen",
+        "dataocean": "DataOcean",
+    }
+    # Row labels of the Markdown summaries, where the CSV column reads badly.
+    MARKDOWN_LABELS = {"earnings21": "Earnings21", "earnings22": "Earnings22"}
+
+    def matching_results(model_key, ds_substrs):
+        """Result keys of ``model_key`` for any of ``ds_substrs``, each once."""
+        return [
+            rk
+            for rk in results
+            if model_key.rstrip() in rk and any(s in rk for s in ds_substrs)
+        ]
+
+    def pooled_rtfx(result_keys):
+        """Total audio over total inference time; None unless every run is timed."""
+        if not result_keys or any(results[rk]["rtfx"] is None for rk in result_keys):
+            return None
+        audio = sum(results[rk]["audio_length"] for rk in result_keys)
+        time = sum(results[rk]["inference_time"] for rk in result_keys)
+        return audio / time if time else None
+
+    def markdown_rows(model_key, col_map, family_key):
+        """(rows, average rows) of one model's summary: [(label, wer, rtfx), ...].
+
+        Rows are the family's datasets the model has results for, in column order.
+        The average rows follow the published sheets: the plain mean of the WERs,
+        one per group for the private sets that have several (scripted /
+        conversational), and earnings21 / earnings22 / CORAAL-average for long-form.
+        RTFx is pooled (total audio over total time) over the same runs.
+        """
+        substrs_of = defaultdict(list)
+        group_of = {}
+        for ds_substr, (label, grp) in col_map.items():
+            substrs_of[label].append(ds_substr)
+            group_of.setdefault(label, grp)
+
+        rows, used = [], {}
+        for label, substrs in substrs_of.items():
+            wer = find_wer_in(model_key, label, col_map)
+            if wer is None:
+                continue
+            used[label] = matching_results(model_key, substrs)
+            rtfx = find_metric_in(model_key, label, col_map, "rtfx")
+            rows.append((label, wer, rtfx))
+        if not rows:
+            return [], []
+
+        if family_key == "longform":
+            # Only the CORAAL macro-average is published, so the splits fold into one row.
+            wer_vals = {label: wer for label, wer, _ in rows}
+            coraal_avg, avg = longform_averages(wer_vals)
+            coraal_keys = [rk for lbl, rks in used.items() if lbl.startswith("coraal_") for rk in rks]
+            rows = [r for r in rows if not r[0].startswith("coraal_")]
+            if coraal_avg is not None:
+                rows.append(("CORAAL", coraal_avg, pooled_rtfx(coraal_keys)))
+            rows = [(MARKDOWN_LABELS.get(lbl, lbl), wer, rtfx) for lbl, wer, rtfx in rows]
+            all_keys = [rk for rks in used.values() for rk in rks]
+            return rows, [("Average", avg, pooled_rtfx(all_keys))]
+
+        if family_key == "extra":
+            # Unrelated splits kept for reference; an average of them means nothing.
+            return rows, []
+
+        averages = []
+        groups = list(dict.fromkeys(group_of[lbl] for lbl, _, _ in rows if group_of[lbl]))
+        if len(groups) > 1:
+            for grp in groups:
+                members = [(lbl, wer) for lbl, wer, _ in rows if group_of[lbl] == grp]
+                keys = [rk for lbl, _ in members for rk in used[lbl]]
+                averages.append(
+                    (
+                        f"Average {grp}",
+                        sum(w for _, w in members) / len(members),
+                        pooled_rtfx(keys),
+                    )
+                )
+        if len(rows) > 1:
+            all_keys = [rk for rks in used.values() for rk in rks]
+            averages.append(
+                ("Average", sum(w for _, w, _ in rows) / len(rows), pooled_rtfx(all_keys))
+            )
+        return rows, averages
+
+    def print_markdown_block(col_map, family_key, title):
+        from normalizer.model_ids import to_hub_id  # deferred, as in _normalize
+
+        per_model = {}
+        for model_key in composite_wer:
+            rows, averages = markdown_rows(model_key, col_map, family_key)
+            if rows:
+                # parse_filepath splits the org at the first hyphen, which is wrong
+                # for hyphenated orgs (abr-ai, ibm-granite, ...); to_hub_id is not.
+                label = original_model_id or to_hub_id(model_key.strip().replace("/", "-", 1))
+                per_model[label] = (rows, averages)
+        if not per_model:
+            return
+
+        print()
+        if len(per_model) == 1:
+            # One model: datasets down the side, so the table stays narrow.
+            (label, (rows, averages)), = per_model.items()
+            print(f"**{title}** — `{label}`")
+            print()
+            table = [(lbl, format_wer(w), format_rtfx(r)) for lbl, w, r in rows]
+            table += [(f"**{lbl}**", format_wer(w), format_rtfx(r)) for lbl, w, r in averages]
+            print(markdown_table(["Dataset", "WER", "RTFx"], table))
+        else:
+            # Several models (e.g. a whole bucket): one row each, WER per dataset,
+            # with the averages and pooled RTFx up front.
+            # The overall "Average" leads, then any per-group averages.
+            avg_labels = list(dict.fromkeys(a[0] for _, avgs in per_model.values() for a in avgs))
+            avg_labels.sort(key=lambda a: a != "Average")
+            ds_labels = list(dict.fromkeys(r[0] for rows, _ in per_model.values() for r in rows))
+            # No overall RTFx without an "Average" row or a single dataset (e.g. extra).
+            show_rtfx = "Average" in avg_labels or all(len(r) == 1 for r, _ in per_model.values())
+            print(f"**{title}** (WER)")
+            print()
+            table = []
+            for label, (rows, averages) in per_model.items():
+                avg = dict((a[0], a[1]) for a in averages)
+                # The overall RTFx: of the "Average" row, or of the only dataset.
+                rtfx = next((a[2] for a in averages if a[0] == "Average"), None)
+                if rtfx is None and len(rows) == 1:
+                    rtfx = rows[0][2]
+                wer = {r[0]: r[1] for r in rows}
+                table.append(
+                    [label]
+                    + [format_wer(avg.get(a)) for a in avg_labels]
+                    + ([format_rtfx(rtfx)] if show_rtfx else [])
+                    + [format_wer(wer.get(d)) for d in ds_labels]
+                )
+            rtfx_col = ["RTFx"] if show_rtfx else []
+            print(markdown_table(["Model"] + avg_labels + rtfx_col + ds_labels, table))
+
+    def print_summary(header, col_map, family_key, family_name, per_dataset_rtfx=False):
+        if summary_format == "csv":
+            print_csv_block(header, col_map, family_key, family_name, per_dataset_rtfx)
+        elif summary_format == "markdown":
+            if family_key.startswith("ml_"):
+                title = f"Multilingual ({family_name})"
+            else:
+                title = MARKDOWN_TITLES.get(family_key, family_name)
+            # Columns are labelled "<dataset> WER" in the sheets; the table header says WER.
+            md_map = {
+                k: (lbl.removesuffix(" WER"), grp) for k, (lbl, grp) in col_map.items()
+            }
+            print_markdown_block(md_map, family_key, title)
+
+    # ── Print one summary block per detected family ───────────────────────────
     for family_key, presence_substr, header, col_map in FAMILY_CONFIGS:
         if families is not None and family_key not in families:
             continue
@@ -996,7 +1206,7 @@ def score_results(
         if presence_substr is None:
             has_public = any(ds_substr in all_dataset_ids for ds_substr in col_map)
             if has_public:
-                print_csv_block(
+                print_summary(
                     header,
                     col_map,
                     family_key,
@@ -1005,6 +1215,6 @@ def score_results(
                 )
         else:
             if presence_substr in all_dataset_ids:
-                print_csv_block(header, col_map, family_key, family_name)
+                print_summary(header, col_map, family_key, family_name)
 
     return composite_wer, results

@@ -329,6 +329,8 @@ def score_one(local_dir, model_id, families, language, recompute=False, written_
                 local_dir,
                 model_id=model_id,
                 csv_only=True,
+                # The CSV block is the published sheets' row format; parsed below.
+                summary_format="csv",
                 language=language,
                 families=families,
                 use_cache=True,

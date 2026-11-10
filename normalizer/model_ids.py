@@ -26,10 +26,13 @@ HYPHENATED_ORGS = frozenset(
     {
         "ARTPARK-IISc",
         "AutoArk-AI",
+        "Musci-research",
+        "OpenLLM-France",
         "OpenMOSS-Team",
         "abr-ai",
         "distil-whisper",
         "efficient-speech",
+        "futo-org",
         "ibm-granite",
         "zai-org",
     }
