@@ -181,6 +181,31 @@ async def run_requests(
     return rows, elapsed
 
 
+DURATION_COLUMNS = ("audio_length_s", "duration", "duration_s")
+
+
+def audio_duration(row, audio_path):
+    """Duration in seconds from the row's metadata, else from the file header.
+
+    The header read does not decode the audio, so staging stays cheap; librosa
+    is the fallback for formats libsndfile cannot open.
+    """
+    duration = next((row[k] for k in DURATION_COLUMNS if row.get(k) is not None), None)
+    if duration is None:
+        try:
+            import soundfile
+
+            duration = soundfile.info(str(audio_path)).duration
+        except Exception:
+            import librosa
+
+            duration = librosa.get_duration(path=str(audio_path))
+    duration = float(duration)
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError(f"Expected a positive audio duration, got {duration} for {audio_path}")
+    return duration
+
+
 def prepare_inputs(args, audio_dir):
     """Stage original encoded files; leave decoding and resampling to vLLM."""
     from normalizer import data_utils
@@ -200,9 +225,6 @@ def prepare_inputs(args, audio_dir):
         text = reference if multilingual else data_utils.normalizer(reference)
         if not data_utils.is_target_text_in_range(text):
             continue
-        duration = row.get("audio_length_s", row.get("duration"))
-        if duration is None or not math.isfinite(float(duration)) or float(duration) <= 0:
-            raise ValueError("Expected positive audio duration metadata")
         encoded = row["audio"]
         audio_path = audio_dir / str(len(samples))
         if encoded.get("bytes") is not None:
@@ -217,8 +239,9 @@ def prepare_inputs(args, audio_dir):
                 shutil.copyfile(source, audio_path)
         if not audio_path.stat().st_size:
             raise ValueError("Empty audio file")
+        duration = audio_duration(row, audio_path)
         samples.append(Sample(
-            len(samples), audio_path, reference, float(duration),
+            len(samples), audio_path, reference, duration,
             data_utils.extract_audio_filepath_from_sample(row),
             {key: row[key] for key in data_utils.CHUNK_METADATA_KEYS} if chunked else {},
         ))
