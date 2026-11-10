@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download all results from an HF bucket and print a CSV summary.
+"""Download all results from an HF bucket and print a Markdown summary.
 
 Usage:
     python scripts/score_bucket_results.py
@@ -7,6 +7,11 @@ Usage:
     python scripts/score_bucket_results.py --bucket bezzam/asr_leaderboard --local_dir results
     python scripts/score_bucket_results.py --skip_sync   # re-score already-downloaded results
     python scripts/score_bucket_results.py --family appen --family dataocean   # non-default families
+
+    # Private families (appen, dataocean, liva, voicearena_private, voicearena_private_hi)
+    # default to the hf-audio/asr_leaderboard_private bucket. Families from different
+    # buckets can be mixed: each bucket they need is synced into --local_dir.
+    python scripts/score_bucket_results.py --family liva  # Liva-AI accented English
     python scripts/score_bucket_results.py --family voicearena_private_hi  # Hindi private set (voi_oiwer)
     python scripts/score_bucket_results.py --family all  # every detected family
 
@@ -38,7 +43,14 @@ from collections import defaultdict
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from normalizer.eval_utils import CER_LANGUAGES, SCORE_SUFFIX, score_results
+from normalizer.eval_utils import (
+    CER_LANGUAGES,
+    SCORE_SUFFIX,
+    format_rtfx,
+    format_wer,
+    markdown_table,
+    score_results,
+)
 
 # Languages covered by the multilingual (FLEURS/MCV/MLS + Hindi Monsoon) benchmarks.
 ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi", "zh"]
@@ -46,80 +58,128 @@ ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi", "zh"]
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
 # 'hi' routes through voi_oiwer (see OIWER_LANGUAGES in normalizer/eval_utils.py).
-FAMILIES = ["appen", "dataocean", "public", "extra", "longform", "voicearena_private_hi", "voicearena_private"]
+FAMILIES = ["appen", "dataocean", "liva", "public", "extra", "longform", "voicearena_private_hi", "voicearena_private"]
 FAMILY_LANGUAGES = {"voicearena_private_hi": "hi"}
 
-# Columns of the combined multilingual CSV summary: (column label, dataset substring).
-ML_CSV_COLUMNS = [
-    ("de_covost", "mcv_de_test"),
-    ("de_fleurs", "fleurs_de_test"),
-    ("fr_covost", "mcv_fr_test"),
-    ("fr_mls", "mls_fr_test"),
-    ("fr_fleurs", "fleurs_fr_test"),
-    ("it_covost", "mcv_it_test"),
-    ("it_mls", "mls_it_test"),
-    ("it_fleurs", "fleurs_it_test"),
-    ("es_covost", "mcv_es_test"),
-    ("es_mls", "mls_es_test"),
-    ("es_fleurs", "fleurs_es_test"),
-    ("pt_mls", "mls_pt_test"),
-    ("pt_fleurs", "fleurs_pt_test"),
-    ("nl_covost", "mcv_nl_test"),
-    ("nl_mls", "mls_nl_test"),
-    ("nl_fleurs", "fleurs_nl_test"),
-    ("hy_fleurs", "fleurs_hy_test"),
-    ("hy_mcv", "mcv_hy_test"),
-    ("hi_monsoon", "Monsoon_hi_test"),
-    ("zh_fleurs", "fleurs_zh_test"),
-    ("zh_aishell1", "aishell1_zh_test"),
-]
+# Bucket each family's results are written to, when --bucket is not given.
+# Families not listed here live in DEFAULT_BUCKET.
+DEFAULT_BUCKET = "hf-audio/asr_leaderboard_h200"
+PRIVATE_BUCKET = "hf-audio/asr_leaderboard_private"
+FAMILY_BUCKETS = {
+    "longform": "hf-audio/asr_leaderboard_longform",
+    **{family: PRIVATE_BUCKET for family in
+       ["appen", "dataocean", "liva", "voicearena_private_hi", "voicearena_private"]},
+}
+
+# Datasets of the multilingual tables, in column order: (column label, dataset prefix).
+# A language's manifest for a dataset is "<prefix>_<lang>_test".
+ML_TABLE_DATASETS = [("FLEURS", "fleurs"), ("MCV", "mcv"), ("MLS", "mls")]
+# Languages scored on their own sets get their own table rather than a row of mostly
+# empty FLEURS / MCV / MLS columns: Hindi on Voice Arena Monsoon (with voi_oiwer),
+# Chinese on FLEURS and AISHELL-1 (with CER, see CER_LANGUAGES).
+ML_SEPARATE_LANGUAGES = {
+    "hi": [("Monsoon", "Monsoon")],
+    "zh": [("FLEURS", "fleurs"), ("AISHELL-1", "aishell1")],
+}
 
 
-def print_multilingual_csv(all_results: dict) -> None:
-    """Print a combined CSV summary across all multilingual results.
+def _model_results(all_results: dict) -> dict:
+    """{model: {result key: result}} over the score_results output."""
+    per_model = defaultdict(dict)
+    for key, value in all_results.items():
+        per_model[key.split(" | ")[0].strip()][key] = value
+    return per_model
 
-    Columns: model, RTFx, <one column per language/dataset>, Avg.
-    Avg is over the WER columns only: CER_LANGUAGES columns are left out.
+
+def _language_row(model_results: dict, language: str, datasets: list):
+    """(per-dataset WERs, average WER, pooled RTFx) of one language, or None."""
+    wers, timed = [], []
+    for _label, prefix in datasets:
+        match = next(
+            (v for k, v in model_results.items() if f"{prefix}_{language}_test" in k), None
+        )
+        wers.append(match["wer"] if match else None)
+        if match:
+            timed.append(match)
+    present = [w for w in wers if w is not None]
+    if not present:
+        return None
+    rtfx = None
+    if timed and all(v.get("rtfx") is not None for v in timed):
+        time = sum(v["inference_time"] for v in timed)
+        rtfx = sum(v["audio_length"] for v in timed) / time if time else None
+    return wers, sum(present) / len(present), rtfx
+
+
+def print_multilingual_summary(all_results: dict, languages: list) -> None:
+    """Print the multilingual results as Markdown tables, ready to paste into a PR.
+
+    One table of FLEURS / MCV / MLS with a row per language (and per model, when
+    several were scored), then one table per language scored on its own sets (Hindi,
+    Chinese). Averages are the plain mean of the language's dataset WERs; RTFx is
+    pooled (total audio over total time) over the same runs, except in a single
+    model's own-set table, which has one row and RTFx per dataset. Chinese is
+    scored with CER, and its table is labelled so.
     """
-    # Group results per model.
-    model_keys = sorted({key.split(" | ")[0].strip() for key in all_results})
+    from normalizer.model_ids import to_hub_id
 
-    print()
-    print("*" * 80)
-    print("CSV Summary (multilingual):")
-    print("*" * 80)
-    header = ["model", "RTFx"] + [label for label, _ in ML_CSV_COLUMNS] + ["Avg"]
-    print(",".join(header))
+    per_model = {
+        to_hub_id(model.replace("/", "-", 1)): results
+        for model, results in sorted(_model_results(all_results).items())
+    }
+    several = len(per_model) > 1
+    model_col = ["Model"] if several else []
 
-    for model_key in model_keys:
-        model_results = {k: v for k, v in all_results.items() if k.split(" | ")[0].strip() == model_key}
+    shared = [lang for lang in languages if lang not in ML_SEPARATE_LANGUAGES]
+    rows = []
+    for model, results in per_model.items():
+        for lang in shared:
+            row = _language_row(results, lang, ML_TABLE_DATASETS)
+            if row:
+                wers, avg, rtfx = row
+                rows.append(
+                    ([model] if several else [])
+                    + [lang, format_wer(avg)]
+                    + [format_wer(w) for w in wers]
+                    + [format_rtfx(rtfx)]
+                )
+    title_model = "" if several else f" — `{next(iter(per_model))}`"
+    if rows:
+        header = model_col + ["Lang", "Avg WER"] + [lbl for lbl, _ in ML_TABLE_DATASETS] + ["RTFx"]
+        print()
+        print(f"**Multilingual**{title_model}")
+        print()
+        print(markdown_table(header, rows, left_columns=len(model_col) + 1))
 
-        wer_vals = []
-        for _label, ds_substr in ML_CSV_COLUMNS:
-            wer = next(
-                (v["wer"] for k, v in model_results.items() if ds_substr in k),
-                None,
+    for lang, datasets in ML_SEPARATE_LANGUAGES.items():
+        if lang not in languages:
+            continue
+        # CER results are stored under "wer" too (see score_results).
+        metric = "CER" if lang in CER_LANGUAGES else "WER"
+        rows = []
+        for model, results in per_model.items():
+            if several:
+                row = _language_row(results, lang, datasets)
+                if row:
+                    wers, _avg, rtfx = row
+                    rows.append([model] + [format_wer(w) for w in wers] + [format_rtfx(rtfx)])
+                continue
+            # One model: a row per dataset, each with its own RTFx.
+            for dataset in datasets:
+                row = _language_row(results, lang, [dataset])
+                if row:
+                    (wer,), _avg, rtfx = row
+                    rows.append([dataset[0], format_wer(wer), format_rtfx(rtfx)])
+        if rows:
+            header = (
+                ["Model"] + [f"{lbl} {metric}" for lbl, _ in datasets] + ["RTFx"]
+                if several
+                else ["Dataset", metric, "RTFx"]
             )
-            wer_vals.append(wer)
-
-        # RTFx over all multilingual datasets with timing info.
-        audio = sum(v["audio_length"] for v in model_results.values()
-                    if v.get("audio_length") and v.get("inference_time"))
-        time = sum(v["inference_time"] for v in model_results.values()
-                   if v.get("audio_length") and v.get("inference_time"))
-        rtfx = str(round(audio / time, 2)) if time else ""
-
-        present = [
-            v
-            for (label, _), v in zip(ML_CSV_COLUMNS, wer_vals)
-            if v is not None and label.split("_")[0] not in CER_LANGUAGES
-        ]
-        avg = str(round(sum(present) / len(present), 2)) if present else ""
-
-        cols = [model_key, rtfx] + [str(v) if v is not None else "" for v in wer_vals] + [avg]
-        print(",".join(cols))
-
-    print("*" * 80)
+            print()
+            print(f"**Multilingual ({lang})**{title_model}")
+            print()
+            print(markdown_table(header, rows))
 
 
 def model_sync_patterns(model_id: str) -> list:
@@ -203,8 +263,10 @@ def main():
         default=None,
         help="HF bucket name (without the hf://buckets/ prefix). Defaults to "
              "hf-audio/asr_leaderboard_multilingual if --multilingual is set, "
-             "hf-audio/asr_leaderboard_longform if --family longform is the only "
-             "family, otherwise hf-audio/asr_leaderboard_h200.",
+             f"otherwise the bucket(s) of the requested families: {PRIVATE_BUCKET} "
+             "for the private families (appen, dataocean, liva, voicearena_private*), "
+             "hf-audio/asr_leaderboard_longform for longform, and "
+             f"{DEFAULT_BUCKET} for the rest.",
     )
     parser.add_argument(
         "--local_dir",
@@ -227,7 +289,7 @@ def main():
         default=None,
         choices=FAMILIES + ["all"],
         metavar="FAMILY",
-        help="Dataset family to include in the CSV summary (can be repeated). "
+        help="Dataset family to include in the summary (can be repeated). "
              f"Choices: {', '.join(FAMILIES)}, all. Defaults to public. "
              "Families requiring a non-English normalizer (e.g. voicearena_private_hi) are "
              "scored in a separate pass. Ignored when --multilingual is set.",
@@ -296,19 +358,22 @@ def main():
             file=sys.stderr,
         )
 
+    families = args.family or ["public"]
+    if "all" in families:
+        families = FAMILIES
+
     if args.bucket:
-        bucket = args.bucket
+        buckets = [args.bucket]
     elif args.multilingual:
-        bucket = "hf-audio/asr_leaderboard_multilingual"
-    elif args.family == ["longform"]:
-        bucket = "hf-audio/asr_leaderboard_longform"
+        buckets = ["hf-audio/asr_leaderboard_multilingual"]
     else:
-        bucket = "hf-audio/asr_leaderboard_h200"
+        buckets = list(dict.fromkeys(FAMILY_BUCKETS.get(f, DEFAULT_BUCKET) for f in families))
     local_dir = args.local_dir or os.path.join(REPO_ROOT, "results")
 
     if not args.skip_sync:
         # With --model_id, only those models' results are downloaded.
-        sync_bucket(bucket, local_dir, hf_token=args.hf_token, model_ids=args.model_id)
+        for bucket in buckets:
+            sync_bucket(bucket, local_dir, hf_token=args.hf_token, model_ids=args.model_id)
     else:
         print(f"Skipping sync — scoring results in: {local_dir}\n")
 
@@ -317,7 +382,7 @@ def main():
         sys.exit(1)
 
     # Score the requested models; csv_only=True suppresses per-dataset and
-    # composite output, printing only the CSV summary block.
+    # composite output, printing only the summary tables.
     model_ids = args.model_id or [None]  # None means all models
     written_scores = []
     cache_kwargs = dict(
@@ -340,18 +405,16 @@ def main():
                         language=language,
                         families=[f"ml_{language}"],
                         csv_only=True,
+                        # The combined tables below replace one table per language.
+                        summary_format=None,
                         **cache_kwargs,
                     )
                     all_results.update(results)
                 except ValueError as e:
                     print(f"Skipping language={language} model_id={model_id}: {e}")
         if all_results:
-            print_multilingual_csv(all_results)
+            print_multilingual_summary(all_results, languages)
     else:
-        families = args.family or ["public"]
-        if "all" in families:
-            families = FAMILIES
-
         # Each score_results call applies a single normalizer, so families are
         # grouped by the language they must be scored with and passed one group
         # per call.
@@ -374,7 +437,10 @@ def main():
                     print(f"Skipping families={language_families} model_id={model_id}: {e}")
 
     if not args.no_upload_scores:
-        upload_scores(bucket, local_dir, written_scores, hf_token=args.hf_token)
+        # upload_scores only uploads a score whose manifest is in that bucket, so
+        # each score lands in the bucket its manifest came from.
+        for bucket in buckets:
+            upload_scores(bucket, local_dir, written_scores, hf_token=args.hf_token)
 
 
 if __name__ == "__main__":
