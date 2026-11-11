@@ -8,8 +8,9 @@ import soundfile as sf
 
 from . import APIProvider, PermanentError, register
 
-# Yoob ASR: OpenAI-compatible POST /v1/audio/transcriptions, English. The audio goes as the raw request body (16 kHz mono
-# FLAC), options as query parameters. The API takes up to an hour per request, but the edge proxy closes requests that run
+# Yoob ASR: OpenAI-compatible POST /v1/audio/transcriptions. The audio goes as the raw request body (16 kHz mono FLAC),
+# options (model, language, response format) as query parameters. English is the default; other languages are sent in
+# `language` (the API answers 400 unsupported_language for a language the model does not support). The API takes up to an hour per request, but the edge proxy closes requests that run
 # past ~100 s, so recordings longer than CHUNK_S are sent in pieces cut at the quietest point within SEARCH_S seconds before
 # each nominal boundary (the API itself cuts every request into <= 30 s pieces the same way).
 # run_api.sh passes YOOB_API_URL even when unset (as ""), so an empty value means the default.
@@ -40,12 +41,12 @@ def _chunk_bounds(audio):
 
 @register("yoob")
 class YoobProvider(APIProvider):
-    def _post(self, model, audio, api_key):
+    def _post(self, model, audio, api_key, language="en"):
         buf = io.BytesIO()
         sf.write(buf, audio, SR, format="FLAC")
         resp = requests.post(
             ENDPOINT,
-            params={"model": model, "response_format": "text"},
+            params={"model": model, "response_format": "text", "language": language or "en"},
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "audio/flac"},
             data=buf.getvalue(),
             timeout=300,
@@ -70,9 +71,6 @@ class YoobProvider(APIProvider):
             raise ValueError("YOOB_API_KEY environment variable not set")
         if model_variant not in VARIANT_MODELS:
             raise PermanentError(f"Unknown Yoob model 'yoob/{model_variant}'. Known: " + ", ".join(f"yoob/{m}" for m in VARIANT_MODELS))
-        if language != "en":
-            raise PermanentError("yoob-asr-2 is English only")
-
         if use_url:
             raw = requests.get(sample["row"]["audio"][0]["src"], timeout=120).content
             audio, sr = sf.read(io.BytesIO(raw), dtype="float32")
@@ -89,5 +87,5 @@ class YoobProvider(APIProvider):
 
         model = VARIANT_MODELS[model_variant]
         bounds = _chunk_bounds(audio)
-        texts = [self._post(model, audio[s:e], api_key) for s, e in zip(bounds[:-1], bounds[1:])]
+        texts = [self._post(model, audio[s:e], api_key, language) for s, e in zip(bounds[:-1], bounds[1:])]
         return " ".join(t for t in texts if t) or "."
