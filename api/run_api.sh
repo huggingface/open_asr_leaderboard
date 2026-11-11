@@ -35,7 +35,7 @@ MODEL_CONFIGS=(
     # "sprag/symphony                8"
     # "OtterAI/speech-v3.1           128"
     # "p99lab/audrey-0.7               64"
-    # "yoob/yoob-asr-2               16"
+    # "yoob/yoob-asr-pro-v1          16"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 

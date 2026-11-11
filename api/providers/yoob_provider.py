@@ -19,7 +19,8 @@ CHUNK_S = 600
 SEARCH_S = 30
 FRAME_S = 0.1
 
-VARIANT_MODELS = {"yoob-asr-2": "yoob-asr-2"}
+# yoob-asr-pro-v1 is the current name of the model first submitted as yoob-asr-2 (the old id still works as an alias).
+VARIANT_MODELS = {"yoob-asr-pro-v1": "yoob-asr-pro-v1", "yoob-asr-2": "yoob-asr-pro-v1"}
 
 
 def _chunk_bounds(audio):
