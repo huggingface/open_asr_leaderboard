@@ -14,6 +14,7 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
+    # "yoob/yoob-asr-pro-v1          16"   # measured on de, es, fr, it, nl, pt (not hy, hi)
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
@@ -193,6 +194,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
             -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
             -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
+            -e YOOB_API_KEY="${YOOB_API_KEY:-}" -e YOOB_API_URL="${YOOB_API_URL:-}" \
             -e SPEECHMATICS_API_KEY="${SPEECHMATICS_API_KEY:-}" \
             -e AQUAVOICE_API_KEY="${AQUAVOICE_API_KEY:-}" \
             -e ZOOM_API_KEY="${ZOOM_API_KEY:-}" \
