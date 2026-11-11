@@ -155,8 +155,12 @@ DATASETS_CACHE_DIR="/hf_cache/datasets_api"
 # as root, and the containers run as the current user (see --user below).
 mkdir -p "${RUNDIR}/results" "${HF_CACHE_DIR}"
 
-echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
-docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
+# SKIP_BUILD=1 reuses an image already built before it
+# starts several of these in parallel (concurrent builds of one tag can race).
+if [[ -z "${SKIP_BUILD:-}" ]]; then
+    echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
+    docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
+fi
 
 echo "========================================================"
 echo "Starting Multilingual API ASR Evaluation"

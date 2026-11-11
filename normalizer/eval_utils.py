@@ -1182,7 +1182,7 @@ def score_results(
             )
         return rows, averages
 
-    def print_markdown_block(col_map, family_key, title):
+    def print_markdown_block(col_map, family_key, title, metric="WER"):
         from normalizer.model_ids import to_hub_id  # deferred, as in _normalize
 
         per_model = {}
@@ -1204,7 +1204,7 @@ def score_results(
             print()
             table = [(lbl, format_wer(w), format_rtfx(r)) for lbl, w, r in rows]
             table += [(f"**{lbl}**", format_wer(w), format_rtfx(r)) for lbl, w, r in averages]
-            print(markdown_table(["Dataset", "WER", "RTFx"], table))
+            print(markdown_table(["Dataset", metric, "RTFx"], table))
         else:
             # Several models (e.g. a whole bucket): one row each, WER per dataset,
             # with the averages and pooled RTFx up front.
@@ -1214,7 +1214,7 @@ def score_results(
             ds_labels = list(dict.fromkeys(r[0] for rows, _ in per_model.values() for r in rows))
             # No overall RTFx without an "Average" row or a single dataset (e.g. extra).
             show_rtfx = "Average" in avg_labels or all(len(r) == 1 for r, _ in per_model.values())
-            print(f"**{title}** (WER)")
+            print(f"**{title}** ({metric})")
             print()
             table = []
             for label, (rows, averages) in per_model.items():
@@ -1241,11 +1241,13 @@ def score_results(
                 title = f"Multilingual ({family_name})"
             else:
                 title = MARKDOWN_TITLES.get(family_key, family_name)
-            # Columns are labelled "<dataset> WER" in the sheets; the table header says WER.
+            # Columns are labelled "<dataset> WER" (or "CER" for CER_LANGUAGES) in
+            # the sheets; the table header names the metric instead.
+            metric = "CER" if any(lbl.endswith(" CER") for lbl, _ in col_map.values()) else "WER"
             md_map = {
-                k: (lbl.removesuffix(" WER"), grp) for k, (lbl, grp) in col_map.items()
+                k: (lbl.removesuffix(f" {metric}"), grp) for k, (lbl, grp) in col_map.items()
             }
-            print_markdown_block(md_map, family_key, title)
+            print_markdown_block(md_map, family_key, title, metric)
 
     # ── Print one summary block per detected family ───────────────────────────
     for family_key, presence_substr, header, col_map in FAMILY_CONFIGS:
