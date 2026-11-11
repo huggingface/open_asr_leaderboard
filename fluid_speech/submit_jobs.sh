@@ -8,7 +8,7 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-ALTICDEV/open-asr-leaderboard-fluid-speech}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-fluid-speech}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 ORG_NAME="${ORG_NAME:-}"
@@ -29,6 +29,7 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 MODEL_CONFIGS=(
     "FluidVoice-Labs/fluid-speech-pro 128"
 )
+MODEL_REVISION="${MODEL_REVISION:-36481f6c9d353a301df1524dd0124eaf9212713e}"
 
 # ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
 # dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
@@ -39,8 +40,6 @@ DATASET_CONFIGS=(
     "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test"
     "voxpopuli_cleaned_aa test"
-    "librispeech test.clean"
-    "librispeech test.other"
     "spgispeech test"
     "urgent2024 test"
     "urgent2024_clean test"
@@ -79,7 +78,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         MODE_ARG=""
         [[ " ${CLEAN_MODE_DATASETS} " == *" ${DATASET} "* ]] && MODE_ARG="--clean_mode"
 
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE} ${MODE_ARG}"
+        echo "Submitting job: model=${MODEL_ID}@${MODEL_REVISION:0:7} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE} ${MODE_ARG}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -96,6 +95,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
+                    --model_revision=${MODEL_REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \

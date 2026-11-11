@@ -59,13 +59,14 @@ def state_dict_of(nemo_path):
         return torch.load(os.path.join(tmp, member.name), map_location="cpu", weights_only=True)
 
 
-def resolve(model_id):
+def resolve(model_id, revision=None):
+    """Local .nemo path, or the repo's single .nemo file at `revision` (a commit sha pins it)."""
     if os.path.exists(model_id):
         return model_id
     from huggingface_hub import hf_hub_download, list_repo_files
-    nemo_files = [f for f in list_repo_files(model_id) if f.endswith(".nemo")]
+    nemo_files = [f for f in list_repo_files(model_id, revision=revision) if f.endswith(".nemo")]
     assert len(nemo_files) == 1, f"expected one .nemo file in {model_id}, found {nemo_files}"
-    return hf_hub_download(model_id, nemo_files[0])
+    return hf_hub_download(model_id, nemo_files[0], revision=revision)
 
 
 def split_clean_mode(state):
@@ -88,8 +89,8 @@ def fold_clean_mode(state, adapter, scale):
     return state
 
 
-def load(model_id, map_location=None, clean_mode=False):
-    path = resolve(model_id)
+def load(model_id, map_location=None, clean_mode=False, revision=None):
+    path = resolve(model_id, revision)
     model = ASRModel.restore_from(path, map_location=map_location, strict=False)
     spec = model.cfg.fluid_speech
     attach(model, spec.insert_dim, spec.insert_kernel)

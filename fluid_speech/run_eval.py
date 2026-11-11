@@ -42,7 +42,11 @@ def main(args):
 
     # Hub repo id or local .nemo; adds the model's extra encoder block, then loads every tensor strictly.
     # --clean_mode selects the edited (non-verbatim) transcription style; submit_jobs.sh sets it per dataset.
-    asr_model = fluid_speech.load(args.model_id, map_location=device, clean_mode=args.clean_mode)
+    # --model_revision pins the checkpoint, so every dataset and both modes load the same file.
+    asr_model = fluid_speech.load(
+        args.model_id, map_location=device, clean_mode=args.clean_mode, revision=args.model_revision
+    )
+    print(f"Model revision: {args.model_revision or 'latest'}")
     print(f"Transcription mode: {'clean (edited)' if args.clean_mode else 'verbatim'}")
     
     asr_model.to(compute_dtype)
@@ -256,6 +260,12 @@ if __name__ == "__main__":
         "--streaming",
         action="store_true",
         help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
+    )
+    parser.add_argument(
+        "--model_revision",
+        type=str,
+        default=None,
+        help="Hub revision (commit sha) of the model repo. Default: latest.",
     )
     parser.add_argument(
         "--clean_mode",
