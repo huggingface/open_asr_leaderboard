@@ -38,7 +38,7 @@ MODEL_CONFIGS=(
     # "sophea/asr-k1                 16"
     # "sprag/symphony                8"
     # "OtterAI/speech-v3.1           128"
-    # "p99lab/audrey-0.7               64"
+    # "p99lab/audrey-1                 64"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
