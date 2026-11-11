@@ -11,7 +11,7 @@ Models are joined on the reference text, so only clips every selected model
 transcribed are shown; manifests keyed `sample_<i>` are therefore usable too.
 
 Usage:
-    python benchmark_fitting/show_flagged_spans.py --preds_dir results --dataset voxpopuli_test
+    python benchmark_fitting/show_flagged_spans.py --preds_dir results --dataset voxpopuli_cleaned_aa_test
     python benchmark_fitting/show_flagged_spans.py --preds_dir results --dataset ami_test \
         --models model-a,model-b --class spelling --limit 20 --html spans.html
 """
@@ -192,7 +192,7 @@ def render_html(dataset, models, samples, hypotheses, total) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--preds_dir", required=True, help="Directory of prediction manifests.")
-    parser.add_argument("--dataset", required=True, help="Dataset tag, e.g. voxpopuli_test.")
+    parser.add_argument("--dataset", required=True, help="Dataset tag, e.g. voxpopuli_cleaned_aa_test.")
     parser.add_argument("--models", default=None, help="Comma-separated model ids. Default: every model found.")
     parser.add_argument(
         "--class",

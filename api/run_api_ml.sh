@@ -14,6 +14,7 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
+    # "fonada/kapture-v3             16"
     # "yoob/yoob-asr-pro-v1          16"   # measured on de, es, fr, it, nl, pt (not hy, hi)
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
@@ -22,7 +23,9 @@ MODEL_CONFIGS=(
     # "speechmatics/enhanced         4"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
+    # "reson8/rumble-2               16"
     # "microsoft/azure-speech-07-2026  4"
+    # "microsoft/azure-speech-09-2026  4"
     # "modulate/multilingual         25"
     # "soniox/stt-async-v5           20"
     # "gemini/gemini-3.5-transcribe  16"
@@ -192,6 +195,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
+            -e FONADA_API_KEY="${FONADA_API_KEY:-}" \
             -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
             -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
             -e YOOB_API_KEY="${YOOB_API_KEY:-}" -e YOOB_API_URL="${YOOB_API_URL:-}" \
