@@ -43,10 +43,17 @@ from collections import defaultdict
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from normalizer.eval_utils import SCORE_SUFFIX, format_rtfx, format_wer, markdown_table, score_results
+from normalizer.eval_utils import (
+    CER_LANGUAGES,
+    SCORE_SUFFIX,
+    format_rtfx,
+    format_wer,
+    markdown_table,
+    score_results,
+)
 
 # Languages covered by the multilingual (FLEURS/MCV/MLS + Hindi Monsoon) benchmarks.
-ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi"]
+ML_LANGUAGES = ["de", "fr", "it", "es", "pt", "nl", "hy", "hi", "zh"]
 
 # Dataset families selectable via --family, and the language each is scored with.
 # Families not listed in FAMILY_LANGUAGES are scored with the English normalizer;
@@ -67,9 +74,13 @@ FAMILY_BUCKETS = {
 # Datasets of the multilingual tables, in column order: (column label, dataset prefix).
 # A language's manifest for a dataset is "<prefix>_<lang>_test".
 ML_TABLE_DATASETS = [("FLEURS", "fleurs"), ("MCV", "mcv"), ("MLS", "mls")]
-# Hindi is scored on its own set (Voice Arena Monsoon, with voi_oiwer), so it gets
-# its own table rather than a row of mostly empty FLEURS / MCV / MLS columns.
-ML_SEPARATE_LANGUAGES = {"hi": [("Monsoon", "Monsoon")]}
+# Languages scored on their own sets get their own table rather than a row of mostly
+# empty FLEURS / MCV / MLS columns: Hindi on Voice Arena Monsoon (with voi_oiwer),
+# Chinese on FLEURS and AISHELL-1 (with CER, see CER_LANGUAGES).
+ML_SEPARATE_LANGUAGES = {
+    "hi": [("Monsoon", "Monsoon")],
+    "zh": [("FLEURS", "fleurs"), ("AISHELL-1", "aishell1")],
+}
 
 
 def _model_results(all_results: dict) -> dict:
@@ -104,9 +115,11 @@ def print_multilingual_summary(all_results: dict, languages: list) -> None:
     """Print the multilingual results as Markdown tables, ready to paste into a PR.
 
     One table of FLEURS / MCV / MLS with a row per language (and per model, when
-    several were scored), then one table per language scored on its own set (Hindi).
-    Averages are the plain mean of the language's dataset WERs; RTFx is pooled
-    (total audio over total time) over the same runs.
+    several were scored), then one table per language scored on its own sets (Hindi,
+    Chinese). Averages are the plain mean of the language's dataset WERs; RTFx is
+    pooled (total audio over total time) over the same runs, except in a single
+    model's own-set table, which has one row and RTFx per dataset. Chinese is
+    scored with CER, and its table is labelled so.
     """
     from normalizer.model_ids import to_hub_id
 
@@ -141,21 +154,27 @@ def print_multilingual_summary(all_results: dict, languages: list) -> None:
     for lang, datasets in ML_SEPARATE_LANGUAGES.items():
         if lang not in languages:
             continue
+        # CER results are stored under "wer" too (see score_results).
+        metric = "CER" if lang in CER_LANGUAGES else "WER"
         rows = []
         for model, results in per_model.items():
-            row = _language_row(results, lang, datasets)
-            if not row:
-                continue
-            wers, _avg, rtfx = row
             if several:
-                rows.append([model] + [format_wer(w) for w in wers] + [format_rtfx(rtfx)])
-            else:
-                rows += [[lbl, format_wer(w), format_rtfx(rtfx)] for (lbl, _), w in zip(datasets, wers)]
+                row = _language_row(results, lang, datasets)
+                if row:
+                    wers, _avg, rtfx = row
+                    rows.append([model] + [format_wer(w) for w in wers] + [format_rtfx(rtfx)])
+                continue
+            # One model: a row per dataset, each with its own RTFx.
+            for dataset in datasets:
+                row = _language_row(results, lang, [dataset])
+                if row:
+                    (wer,), _avg, rtfx = row
+                    rows.append([dataset[0], format_wer(wer), format_rtfx(rtfx)])
         if rows:
             header = (
-                ["Model"] + [lbl for lbl, _ in datasets] + ["RTFx"]
+                ["Model"] + [f"{lbl} {metric}" for lbl, _ in datasets] + ["RTFx"]
                 if several
-                else ["Dataset", "WER", "RTFx"]
+                else ["Dataset", metric, "RTFx"]
             )
             print()
             print(f"**Multilingual ({lang})**{title_model}")

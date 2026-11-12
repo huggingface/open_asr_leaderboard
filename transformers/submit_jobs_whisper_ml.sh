@@ -32,12 +32,12 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 # ── Models: "model_id batch_size languages..." ──────────────────────────────
 # Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi"
-    "openai/whisper-large-v3            64 de fr it es pt nl hy hi"
+    "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi zh"
+    "openai/whisper-large-v3            64 de fr it es pt nl hy hi zh"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
@@ -49,6 +49,8 @@ DATASET_CONFIGS=(
     "fleurs nl"
     "fleurs hy"
     "mcv hy"
+    "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"

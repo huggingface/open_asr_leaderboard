@@ -10,6 +10,7 @@ from normalizer import (
     EnglishTextNormalizer,
 )
 
+from .chinese_normalizer import ChineseTextNormalizer
 from .eval_utils import (
     merge_chunked_manifest,
     normalize_compound_pairs,
@@ -41,7 +42,10 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
 
     def __init__(self, remove_diacritics: bool = True):
         super().__init__(remove_diacritics)
-        self._language_normalizers = {"hy": ArmenianTextNormalizer()}
+        self._language_normalizers = {
+            "hy": ArmenianTextNormalizer(),
+            "zh": ChineseTextNormalizer(),
+        }
         # Pre-compile filler patterns. Each filler word is passed through the
         # base normalization itself, so the pattern matches the normalized
         # text exactly (base normalization may strip punctuation such as "…"

@@ -29,6 +29,7 @@ LANGUAGE_CODE_TO_NAME = {
     "it": "Italian",
     "nl": "Dutch",
     "pt": "Portuguese",
+    "zh": "Mandarin Chinese",
 }
 
 # Documented limit for file transcription (realtime caps the session at 60 min).

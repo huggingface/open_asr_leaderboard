@@ -39,7 +39,7 @@ ARMENIAN_DATASET_PATH="Metric-AI/open-asr-leaderboard-multilingual-datasets"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Chinese, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all others are configs of ${DATASET_PATH}. Hindi is scored with voi_oiwer over
 # the dataset's reference lattice (see OIWER_LANGUAGES in normalizer/eval_utils.py).
@@ -51,6 +51,8 @@ DATASET_CONFIGS=(
     "fleurs pt"
     "fleurs nl"
     "fleurs hy"
+    "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -153,8 +155,12 @@ DATASETS_CACHE_DIR="/hf_cache/datasets_api"
 # as root, and the containers run as the current user (see --user below).
 mkdir -p "${RUNDIR}/results" "${HF_CACHE_DIR}"
 
-echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
-docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
+# SKIP_BUILD=1 reuses an image already built before it
+# starts several of these in parallel (concurrent builds of one tag can race).
+if [[ -z "${SKIP_BUILD:-}" ]]; then
+    echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
+    docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
+fi
 
 echo "========================================================"
 echo "Starting Multilingual API ASR Evaluation"
