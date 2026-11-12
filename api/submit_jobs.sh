@@ -81,9 +81,6 @@ DATASET_CONFIGS=(
 filter_only_datasets || exit 1
 
 
-# Datasets that require a lexical-format prompt for microsoft models
-LEXICAL_DATASETS="librispeech gigaspeech"
-
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID MODEL_MAX_WORKERS <<< "$model_cfg"
@@ -105,8 +102,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         fi
 
         PROMPT_ARG=""
-        if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" $DATASET "* ]]; then
-            PROMPT_ARG="--prompt 'Output must be in lexical format.'"
+        if [[ "$MODEL_ID" == "microsoft/azure-speech-09-2026" && "$DATASET" == "spgispeech" ]]; then
+            # SPGISpeech references remove some repetitions, so disable Azure's verbatim prompt.
+            PROMPT_ARG="--prompt="
         fi
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT}"
