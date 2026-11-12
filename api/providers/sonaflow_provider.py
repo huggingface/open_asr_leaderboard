@@ -5,8 +5,10 @@ Once a job might have been accepted, all recovery uses the SAME request ID.
 Failures are PermanentError so the runner cannot silently start another job.
 """
 import os
+import threading
 import time
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -18,6 +20,38 @@ VARIANT = "bessel-consensus3-r1"
 MODEL_ID = "Sonaflow/bessel-consensus3-r1"
 PROFILE_SHA256 = "5c0bcaad39f97b37f6dd073e26dc65b41f6a3919af8befc6580cbe31b30d80c4"
 RUNTIME_SHA256 = "84ad4385c75b5260bc8ba58eacb328112e2d34805a5bca30d224e88738d83899"
+
+_CLIENTS = threading.local()
+
+
+class _WorkerSession:
+    def __init__(self, url, key):
+        self.url, self.key = url, key
+        self.session = requests.Session()
+        self.session.trust_env = False
+
+    def close(self):
+        close = getattr(getattr(self, "session", None), "close", None)
+        if close:
+            close()
+
+    def __del__(self):
+        self.close()
+
+
+def _http_session(url, key):
+    # One connection pool per synchronous worker, never shared across threads.
+    # Only sockets are reused; every invocation rechecks the release contract
+    # and receives a fresh request identity. No audio or result is cached.
+    client = getattr(_CLIENTS, "value", None)
+    if client is None or client.url != url or client.key != key:
+        if client is not None:
+            client.close()
+        client = _WorkerSession(url, key)
+        _CLIENTS.value = client
+    return client.session
+
+
 @register("Sonaflow")
 class BesselProvider(APIProvider):
     def transcribe(self, model_variant, audio_file_path, sample, use_url=False,
@@ -46,11 +80,15 @@ class BesselProvider(APIProvider):
         # A unique invocation ID avoids cross-recording and cross-run result caches.
         headers = {"Authorization": "Bearer " + key, "Idempotency-Key": identity}
         deadline = time.monotonic() + 7200
-        with requests.Session() as session:
+        with nullcontext(_http_session(url, key)) as session:
             session.trust_env = False
             session.headers.update(headers)
 
             def exchange(method, suffix, **kwargs):
+                if suffix == "/v1/jobs" or suffix.startswith("/v1/jobs/"):
+                    # Optional bounded wait returns immediately on completion.
+                    # Older deployments may ignore it; normal polling still works.
+                    kwargs["params"] = {"wait": 20}
                 try:
                     r = session.request(method, url + suffix, timeout=(15, 60),
                                         allow_redirects=False, **kwargs)
