@@ -5,7 +5,6 @@ Once a job might have been accepted, all recovery uses the SAME request ID.
 Failures are PermanentError so the runner cannot silently start another job.
 """
 import os
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -19,21 +18,6 @@ VARIANT = "bessel-consensus3-r1"
 MODEL_ID = "Sonaflow/bessel-consensus3-r1"
 PROFILE_SHA256 = "5c0bcaad39f97b37f6dd073e26dc65b41f6a3919af8befc6580cbe31b30d80c4"
 RUNTIME_SHA256 = "84ad4385c75b5260bc8ba58eacb328112e2d34805a5bca30d224e88738d83899"
-_UPLOAD_LOCK = threading.Lock()
-_NEXT_UPLOAD = {}
-
-
-def _pace_upload(url, deadline):
-    # Parallel workers poll independently; spread uploads to avoid bursts.
-    with _UPLOAD_LOCK:
-        now = time.monotonic()
-        scheduled = max(now, _NEXT_UPLOAD.get(url, now))
-        _NEXT_UPLOAD[url] = scheduled + 3.0
-    if scheduled > now:
-        time.sleep(min(scheduled - now, max(0, deadline - now)))
-    return time.monotonic() < deadline
-
-
 @register("Sonaflow")
 class BesselProvider(APIProvider):
     def transcribe(self, model_variant, audio_file_path, sample, use_url=False,
@@ -111,8 +95,6 @@ class BesselProvider(APIProvider):
                     if value and value.get("status") != "not_found":
                         accepted = True
                         break
-                if not _pace_upload(url, deadline):
-                    break
                 value = exchange("POST", "/v1/jobs",
                     files={"file": ("audio.wav", audio, "audio/wav")},
                     data={"model": MODEL_ID, "language": "en"})
