@@ -11,7 +11,7 @@ fi
 
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
-    # "Sonaflow/bessel-consensus3-r1 1"
+    # "Sonaflow/bessel-consensus3-r1 10"
     # "fonada/kapture-v3             16"
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"

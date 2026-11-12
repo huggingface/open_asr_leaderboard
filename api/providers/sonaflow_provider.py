@@ -5,6 +5,7 @@ Once a job might have been accepted, all recovery uses the SAME request ID.
 Failures are PermanentError so the runner cannot silently start another job.
 """
 import os
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -18,6 +19,19 @@ VARIANT = "bessel-consensus3-r1"
 MODEL_ID = "Sonaflow/bessel-consensus3-r1"
 PROFILE_SHA256 = "5c0bcaad39f97b37f6dd073e26dc65b41f6a3919af8befc6580cbe31b30d80c4"
 RUNTIME_SHA256 = "84ad4385c75b5260bc8ba58eacb328112e2d34805a5bca30d224e88738d83899"
+_UPLOAD_LOCK = threading.Lock()
+_NEXT_UPLOAD = {}
+
+
+def _pace_upload(url, deadline):
+    # Parallel workers poll independently; spread uploads to avoid bursts.
+    with _UPLOAD_LOCK:
+        now = time.monotonic()
+        scheduled = max(now, _NEXT_UPLOAD.get(url, now))
+        _NEXT_UPLOAD[url] = scheduled + 3.0
+    if scheduled > now:
+        time.sleep(min(scheduled - now, max(0, deadline - now)))
+    return time.monotonic() < deadline
 
 
 @register("Sonaflow")
@@ -58,6 +72,12 @@ class BesselProvider(APIProvider):
                                         allow_redirects=False, **kwargs)
                 except requests.RequestException:
                     return None
+                if r.status_code == 429 and method == "POST":
+                    try:
+                        delay = int(r.headers.get("Retry-After", "10"))
+                    except (TypeError, ValueError):
+                        delay = 10
+                    return {"retry_after_seconds": min(60, max(1, delay))}
                 if r.status_code in (408, 429, 500, 502, 503, 504):
                     return None
                 if r.status_code == 404 and method == "GET":
@@ -82,20 +102,31 @@ class BesselProvider(APIProvider):
                 raise PermanentError("Bessel Consensus3 r1 endpoint contract is unavailable or mismatched; no audio submitted")
             accepted = False
             value = None
-            for attempt in range(6):
+            attempt = 0
+            capacity_wait = False
+            while attempt < 6 and time.monotonic() < deadline:
                 # GET before a repeated POST resolves lost responses without replay.
-                if attempt:
+                if attempt or capacity_wait:
                     value = exchange("GET", "/v1/jobs/" + identity)
                     if value and value.get("status") != "not_found":
                         accepted = True
                         break
+                if not _pace_upload(url, deadline):
+                    break
                 value = exchange("POST", "/v1/jobs",
                     files={"file": ("audio.wav", audio, "audio/wav")},
                     data={"model": MODEL_ID, "language": "en"})
+                if value and "retry_after_seconds" in value:
+                    # Queue pressure may outlast transport retries on long recordings.
+                    # Preserve this ID and the original end-to-end deadline.
+                    capacity_wait = True
+                    time.sleep(min(value["retry_after_seconds"], max(0, deadline - time.monotonic())))
+                    continue
                 if value:
                     accepted = True
                     break
                 time.sleep(min(2 ** attempt, 10))
+                attempt += 1
             del audio
             if not accepted:
                 raise PermanentError(f"Bessel submission unresolved; preserve request {identity}; do not rerun")
