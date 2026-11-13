@@ -95,6 +95,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_CONFIG="$DATASET"
         fi
 
+        PROMPT_ARG=""
+        if [[ "$MODEL_ID" == "microsoft/azure-speech-09-2026" && "$DATASET" == "spgispeech" ]]; then
+            # SPGISpeech references remove some repetitions, so disable Azure's verbatim prompt.
+            PROMPT_ARG="--prompt="
+        fi
+
         docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
@@ -135,7 +141,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS}
+                    --max_workers=${MAX_WORKERS} \
+                    ${PROMPT_ARG}
             "
     done
 
