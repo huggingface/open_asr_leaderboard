@@ -82,6 +82,14 @@ ML_SEPARATE_LANGUAGES = {
     "zh": [("FLEURS", "fleurs"), ("AISHELL-1", "aishell1")],
 }
 
+# Extra families scored together with a language's main `ml_<lang>` family.
+ML_EXTRA_FAMILIES = {"fr": ["ml_fr_telephony"]}
+# Standalone single-config repos (manifest names do not follow "<prefix>_<lang>_test"):
+# {language: (table label, [(column label, substring of the manifest name)])}.
+ML_EXTRA_TABLES = {
+    "fr": ("telephony", [("ESLO Telephony", "eslo-telephony-fr"), ("Accueil UBS", "accueil-ubs-fr")]),
+}
+
 
 def _model_results(all_results: dict) -> dict:
     """{model: {result key: result}} over the score_results output."""
@@ -91,12 +99,13 @@ def _model_results(all_results: dict) -> dict:
     return per_model
 
 
-def _language_row(model_results: dict, language: str, datasets: list):
+def _language_row(model_results: dict, language: str, datasets: list,
+                  pattern: str = "{prefix}_{language}_test"):
     """(per-dataset WERs, average WER, pooled RTFx) of one language, or None."""
     wers, timed = [], []
     for _label, prefix in datasets:
         match = next(
-            (v for k, v in model_results.items() if f"{prefix}_{language}_test" in k), None
+            (v for k, v in model_results.items() if pattern.format(prefix=prefix, language=language) in k), None
         )
         wers.append(match["wer"] if match else None)
         if match:
@@ -151,7 +160,14 @@ def print_multilingual_summary(all_results: dict, languages: list) -> None:
         print()
         print(markdown_table(header, rows, left_columns=len(model_col) + 1))
 
-    for lang, datasets in ML_SEPARATE_LANGUAGES.items():
+    own_set_tables = [
+        (lang, lang, datasets, "{prefix}_{language}_test")
+        for lang, datasets in ML_SEPARATE_LANGUAGES.items()
+    ] + [
+        (lang, f"{lang}, {label}", datasets, "{prefix}")
+        for lang, (label, datasets) in ML_EXTRA_TABLES.items()
+    ]
+    for lang, table_name, datasets, pattern in own_set_tables:
         if lang not in languages:
             continue
         # CER results are stored under "wer" too (see score_results).
@@ -159,14 +175,14 @@ def print_multilingual_summary(all_results: dict, languages: list) -> None:
         rows = []
         for model, results in per_model.items():
             if several:
-                row = _language_row(results, lang, datasets)
+                row = _language_row(results, lang, datasets, pattern)
                 if row:
                     wers, _avg, rtfx = row
                     rows.append([model] + [format_wer(w) for w in wers] + [format_rtfx(rtfx)])
                 continue
             # One model: a row per dataset, each with its own RTFx.
             for dataset in datasets:
-                row = _language_row(results, lang, [dataset])
+                row = _language_row(results, lang, [dataset], pattern)
                 if row:
                     (wer,), _avg, rtfx = row
                     rows.append([dataset[0], format_wer(wer), format_rtfx(rtfx)])
@@ -177,7 +193,7 @@ def print_multilingual_summary(all_results: dict, languages: list) -> None:
                 else ["Dataset", metric, "RTFx"]
             )
             print()
-            print(f"**Multilingual ({lang})**{title_model}")
+            print(f"**Multilingual ({table_name})**{title_model}")
             print()
             print(markdown_table(header, rows))
 
@@ -403,7 +419,7 @@ def main():
                         model_id=model_id,
                         multilingual=True,
                         language=language,
-                        families=[f"ml_{language}"],
+                        families=[f"ml_{language}", *ML_EXTRA_FAMILIES.get(language, [])],
                         csv_only=True,
                         # The combined tables below replace one table per language.
                         summary_format=None,
