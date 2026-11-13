@@ -39,6 +39,7 @@ MODEL_CONFIGS=(
     # "sprag/symphony                8"
     # "OtterAI/speech-v3.1           128"
     # "p99lab/audrey-0.7               64"
+    # "yoob/yoob-asr-pro-v1          16"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -132,6 +133,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
             -e P99LAB_API_KEY="${P99LAB_API_KEY:-}" -e P99LAB_API_URL="${P99LAB_API_URL:-}" \
+            -e YOOB_API_KEY="${YOOB_API_KEY:-}" -e YOOB_API_URL="${YOOB_API_URL:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \

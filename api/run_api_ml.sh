@@ -15,6 +15,7 @@ fi
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
     # "fonada/kapture-v3             16"
+    # "yoob/yoob-asr-pro-v1          16"   # de es fr it nl pt only: hy and hi return 400 unsupported_language (LANGUAGES="de es fr it nl pt")
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
@@ -203,6 +204,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e FONADA_API_KEY="${FONADA_API_KEY:-}" \
             -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
             -e SOPHEA_API_KEY="${SOPHEA_API_KEY:-}" -e SOPHEA_API_URL="${SOPHEA_API_URL:-}" \
+            -e YOOB_API_KEY="${YOOB_API_KEY:-}" -e YOOB_API_URL="${YOOB_API_URL:-}" \
             -e SPEECHMATICS_API_KEY="${SPEECHMATICS_API_KEY:-}" \
             -e AQUAVOICE_API_KEY="${AQUAVOICE_API_KEY:-}" \
             -e ZOOM_API_KEY="${ZOOM_API_KEY:-}" \
