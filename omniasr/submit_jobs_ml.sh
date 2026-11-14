@@ -32,14 +32,14 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 # ── Models: "model_id batch_size" (conservative batch size due to LLM memory requirements) ──
 # Each model entry also lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "facebook/omniASR-CTC-300M-v2   64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-CTC-1B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-CTC-3B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-CTC-7B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-LLM-300M-v2   64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-LLM-1B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-LLM-3B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-LLM-7B-v2     64 de fr it es pt nl hi hy zh"
+    "facebook/omniASR-CTC-300M-v2   64 de fr it es pt nl hi hy zh vi"
+    "facebook/omniASR-CTC-1B-v2     64 de fr it es pt nl hi hy zh vi"
+    "facebook/omniASR-CTC-3B-v2     64 de fr it es pt nl hi hy zh vi"
+    "facebook/omniASR-CTC-7B-v2     64 de fr it es pt nl hi hy zh vi"
+    "facebook/omniASR-LLM-300M-v2   64 de fr it es pt nl hi hy zh vi"
+    "facebook/omniASR-LLM-1B-v2     64 de fr it es pt nl hi hy zh vi"
+    "facebook/omniASR-LLM-3B-v2     64 de fr it es pt nl hi hy zh vi"
+    "facebook/omniASR-LLM-7B-v2     64 de fr it es pt nl hi hy zh vi"
     # "facebook/omniASR-CTC-300M      64 hy"
     # "facebook/omniASR-CTC-1B        64 hy"
     # "facebook/omniASR-CTC-3B        64 hy"
@@ -52,7 +52,7 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi, Vietnamese
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
@@ -62,6 +62,7 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs vi"
     "fleurs hy"
     "mcv hy"
     "fleurs zh"
@@ -71,6 +72,7 @@ DATASET_CONFIGS=(
     "mcv fr"
     "mcv it"
     "mcv nl"
+    "mcv vi"
     "mls es"
     "mls fr"
     "mls it"
