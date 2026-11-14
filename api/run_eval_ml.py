@@ -66,11 +66,14 @@ def transcribe_with_retry(
     model_name: str,
     audio_file_path: Optional[str],
     sample: dict,
-    max_retries=10,
+    max_retries=None,
     use_url=False,
     language="en",
     prompt=None,
 ):
+    if max_retries is None:
+        # U2: one initial call plus two retries; other providers retain ten retries.
+        max_retries = 2 if model_name.startswith("U2/") else 10
     provider, variant = get_provider(model_name)
     kwargs = dict(use_url=use_url, language=language)
     if prompt is not None:
@@ -93,7 +96,7 @@ def transcribe_with_retry(
                     sample["audio"]["sampling_rate"],
                     format="WAV",
                 )
-            delay = 1
+            delay = getattr(e, "retry_after", 1) if model_name.startswith("U2/") else 1
             print(
                 f"API Error: {str(e)}. Retrying in {delay}s... (Attempt {retries}/{max_retries})"
             )
@@ -188,10 +191,13 @@ def transcribe_dataset(
         transcription_time = time.time() - start
         return reference, transcription, audio_duration, transcription_time
 
+    failed_samples = 0
+    failed_indices = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_sample = {
             executor.submit(process_sample, sample): sample for sample in ds
         }
+        future_to_index = {future: index for index, future in enumerate(future_to_sample)}
         for future in tqdm(
             concurrent.futures.as_completed(future_to_sample),
             total=len(future_to_sample),
@@ -204,6 +210,11 @@ def transcribe_dataset(
                 results["references"].append(reference)
                 results["audio_length_s"].append(audio_duration)
                 results["transcription_time_s"].append(transcription_time)
+            else:
+                failed_samples += 1
+                failed_indices.append(future_to_index[future])
+
+    successful_samples = len(results["predictions"])
 
     # Filter empty references (consistent with English pipeline's prepare_data)
     filtered = [
@@ -230,6 +241,24 @@ def transcribe_dataset(
     )
 
     print("Results saved at path:", manifest_path)
+    if model_name.startswith("U2/"):
+        coverage = {
+            "expected_samples": len(future_to_sample),
+            "successful_samples": successful_samples,
+            "failed_samples": failed_samples,
+            "failed_sample_indices": sorted(failed_indices),
+            "scored_samples": len(results["predictions"]),
+            "filtered_successful_references": successful_samples - len(results["predictions"]),
+            "request_success_rate": successful_samples / len(future_to_sample) if future_to_sample else None,
+            "complete_requests": failed_samples == 0,
+            "failure_policy": "Upstream behavior: failed requests excluded; score successful samples only",
+        }
+        with open(manifest_path + ".coverage.json", "w", encoding="utf-8") as stream:
+            json.dump(coverage, stream, indent=2)
+        print("U2 sample coverage:", json.dumps(coverage))
+        if not results["predictions"]:
+            print("U2 WER unavailable: no scored samples; continuing with other datasets.")
+            return
 
     if language in CER_LANGUAGES:
         print_ml_cer(results, language)
