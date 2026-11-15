@@ -15,7 +15,7 @@ fi
 # ── Models: "model_id max_workers" ───────────────────────────────────────────
 MODEL_CONFIGS=(
     # "fonada/kapture-v3             16"
-    # "yoob/yoob-asr-pro-v1          16"   # de es fr it nl pt only: hy and hi return 400 unsupported_language (LANGUAGES="de es fr it nl pt")
+    # "yoob/yoob-asr-pro-v1          16"   # de es fr it nl pt zh hi (hy returns 400 unsupported_language): LANGUAGES="de es fr it nl pt zh hi"
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
