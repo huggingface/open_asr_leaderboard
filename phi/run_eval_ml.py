@@ -5,6 +5,12 @@ from transformers import AutoModelForCausalLM, AutoProcessor, StoppingCriteria, 
 import evaluate
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs
+try:
+    from normalizer.eval_utils import CER_LANGUAGES, print_ml_cer
+except ImportError:
+    # submit_jobs_ml.sh uses the Space's copy of normalizer/, which may predate
+    # CER scoring. Every language then prints WER; score_results computes the CER.
+    CER_LANGUAGES = ()
 import time
 from tqdm import tqdm
 from datasets import load_dataset, Audio
@@ -64,7 +70,7 @@ def main(args):
     # consistent with the API models, which always pass the language.
     LANGUAGE_NAMES = {
         "en": "English", "de": "German", "fr": "French", "it": "Italian",
-        "es": "Spanish", "pt": "Portuguese", "nl": "Dutch",
+        "es": "Spanish", "pt": "Portuguese", "nl": "Dutch", "zh": "Chinese",
     }
     lang_name = LANGUAGE_NAMES.get(LANGUAGE)
     user_prompt = f"Transcribe the {lang_name} audio clip into text." if lang_name else args.user_prompt
@@ -215,6 +221,10 @@ def main(args):
         audio_filepaths=all_results["audio_filepath"],
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if LANGUAGE in CER_LANGUAGES:
+        print_ml_cer(all_results, LANGUAGE)
+        return
 
     norm_refs = [data_utils.ml_normalizer(r, lang=LANGUAGE) for r in all_results["references"]]
     norm_preds = [data_utils.ml_normalizer(p, lang=LANGUAGE) for p in all_results["predictions"]]

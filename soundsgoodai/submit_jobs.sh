@@ -57,7 +57,7 @@ fi
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
-#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+#   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 if [[ -n ${ONLY_DATASETS:-} ]]; then
     read -ra WANTED <<< ${ONLY_DATASETS}
     SELECTED=()

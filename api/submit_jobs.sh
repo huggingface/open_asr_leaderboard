@@ -56,6 +56,7 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-06-2026  4"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
+    # "reson8/rumble-2               16"
 )
 
 # ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
@@ -66,8 +67,6 @@ DATASET_CONFIGS=(
     "ami_cleaned test"
     "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test"
-    "librispeech test.clean"
-    "librispeech test.other"
     "spgispeech test"
     "urgent2024 test"
     "urgent2024_clean test"
@@ -77,12 +76,9 @@ DATASET_CONFIGS=(
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
-#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+#   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
 
-
-# Datasets that require a lexical-format prompt for microsoft models
-LEXICAL_DATASETS="librispeech gigaspeech"
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
@@ -105,8 +101,9 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         fi
 
         PROMPT_ARG=""
-        if [[ "$MODEL_ID" == microsoft/* ]] && [[ " $LEXICAL_DATASETS " == *" $DATASET "* ]]; then
-            PROMPT_ARG="--prompt 'Output must be in lexical format.'"
+        if [[ "$MODEL_ID" == "microsoft/azure-speech-09-2026" && "$DATASET" == "spgispeech" ]]; then
+            # SPGISpeech references remove some repetitions, so disable Azure's verbatim prompt.
+            PROMPT_ARG="--prompt="
         fi
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT}"
