@@ -44,6 +44,8 @@ DATASET_CONFIGS=(
     "mls_it test hf-audio/open-asr-leaderboard-multilingual-datasets mls_it it"
     "mls_pt test hf-audio/open-asr-leaderboard-multilingual-datasets mls_pt pt"
     "mls_nl test hf-audio/open-asr-leaderboard-multilingual-datasets mls_nl nl"
+    "fleurs_zh test hf-audio/open-asr-leaderboard-multilingual-datasets fleurs_zh zh"
+    "aishell1_zh test hf-audio/open-asr-leaderboard-multilingual-datasets aishell1_zh zh"
     "monsoon_hi test VoiceArena/Monsoon_hi_test - hi"
 )
 # Optional: restrict this run to specific datasets, matched against the first

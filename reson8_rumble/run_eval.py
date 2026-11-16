@@ -29,6 +29,7 @@ LANGUAGE_NAMES = {
     "it": "Italian",
     "nl": "Dutch",
     "pt": "Portuguese",
+    "zh": "Chinese",
 }
 
 
