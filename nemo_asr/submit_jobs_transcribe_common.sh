@@ -82,6 +82,7 @@ submit_hf_job() {
         --env TOKENIZERS_PARALLELISM=false \
         --env MODEL_ID="${MODEL_ID}" \
         --env SPECULATIVE="${SPECULATIVE}" \
+        --env SERVER_START_TIMEOUT_S="${SERVER_START_TIMEOUT_S:-1800}" \
         "${namespace_args[@]}" \
         --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
         "hf.co/spaces/${SPACE}" \

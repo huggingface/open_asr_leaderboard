@@ -319,27 +319,57 @@ print(ids[0])
 fi
 
 cd "${WORK_DIR}"
-set +e
-PYTHONPATH="${SCRIPT_DIR}:${REPO_ROOT}:${PYTHONPATH:-}" \
-    "${PYTHON_BIN}" "${EVALUATOR_SCRIPT}" \
-        --model_id "${MODEL_ID}" \
-        --model_revision "${MODEL_REVISION}" \
-        --served_model_name "${SERVED_MODEL_NAME}" \
-        --server_url "http://${HOST}:${PORT}/v1" \
-        "$@"
-eval_status=$?
-set -e
 
-if [[ ${eval_status} -ne 0 ]]; then
-    echo "ERROR: evaluator exited with status ${eval_status}." >&2
-    tail -n 200 "${SERVER_LOG}" >&2 || true
-    exit "${eval_status}"
-fi
+# Run the evaluator once for one dataset (args in "$@") against the running server and
+# copy its manifest to RESULTS_DEST_DIR. Returns non-zero on failure.
+run_one_dataset() {
+    local status=0
+    rm -rf "${WORK_DIR}/results"
+    set +e
+    PYTHONPATH="${SCRIPT_DIR}:${REPO_ROOT}:${PYTHONPATH:-}" \
+        "${PYTHON_BIN}" "${EVALUATOR_SCRIPT}" \
+            --model_id "${MODEL_ID}" \
+            --model_revision "${MODEL_REVISION}" \
+            --served_model_name "${SERVED_MODEL_NAME}" \
+            --server_url "http://${HOST}:${PORT}/v1" \
+            "$@"
+    status=$?
+    set -e
+    if [[ ${status} -ne 0 ]]; then
+        echo "ERROR: evaluator exited with status ${status}." >&2
+        tail -n 200 "${SERVER_LOG}" >&2 || true
+        return "${status}"
+    fi
+    local manifests
+    mapfile -t manifests < <(find "${WORK_DIR}/results" -maxdepth 1 -type f -name '*.jsonl' -print)
+    if [[ ${#manifests[@]} -ne 1 ]]; then
+        echo "ERROR: expected one result manifest, found ${#manifests[@]}." >&2
+        return 1
+    fi
+    mkdir -p "${RESULTS_DEST_DIR}"
+    cp -- "${manifests[0]}" "${RESULTS_DEST_DIR}/"
+}
 
-mapfile -t manifests < <(find "${WORK_DIR}/results" -maxdepth 1 -type f -name '*.jsonl' -print)
-if [[ ${#manifests[@]} -ne 1 ]]; then
-    echo "ERROR: expected one result manifest, found ${#manifests[@]}." >&2
-    exit 1
+if [[ -n "${EVAL_ARGS_FILE:-}" ]]; then
+    # One server, many datasets: each line of EVAL_ARGS_FILE holds the evaluator arguments
+    # for one dataset. The vLLM startup/compile above is paid once for all of them. A failing
+    # dataset does not stop the others; the job exits non-zero if any failed.
+    failed=()
+    total=0
+    while IFS= read -r line; do
+        [[ -n "${line//[[:space:]]/}" ]] || continue
+        total=$((total + 1))
+        read -r -a dataset_args <<<"${line}"
+        echo "=== [${total}] ${line}"
+        if ! run_one_dataset "${dataset_args[@]}"; then
+            failed+=("${line}")
+        fi
+    done <"${EVAL_ARGS_FILE}"
+    echo "Finished ${total} dataset(s); ${#failed[@]} failed."
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        printf 'FAILED: %s\n' "${failed[@]}" >&2
+        exit 1
+    fi
+else
+    run_one_dataset "$@"
 fi
-mkdir -p "${RESULTS_DEST_DIR}"
-cp -- "${manifests[0]}" "${RESULTS_DEST_DIR}/"

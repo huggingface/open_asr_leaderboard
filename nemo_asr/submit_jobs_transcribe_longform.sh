@@ -39,6 +39,22 @@ require_submission_environment
 prepare_injection
 start_submission_logs longform
 
+if [[ "${SINGLE_JOB:-1}" == "1" ]]; then
+    # One HF Job for the whole track: vLLM starts (and JIT-compiles) once and every dataset
+    # is evaluated against the same server. Set SINGLE_JOB=0 for one job per dataset.
+    ARGS_QUOTED=""
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r label dataset_path config split prompt_profile concurrency <<<"${cfg}"
+        line="--dataset_path=${dataset_path} --dataset=${config} --split=${split} --language=en --prompt_profile=${prompt_profile} --batch_size=${concurrency} --warmup_samples=${LONGFORM_WARMUP_SAMPLES} --max_eval_samples=${MAX_EVAL_SAMPLES} --request_timeout_s=${REQUEST_TIMEOUT_S} --max_retries=${MAX_RETRIES} --streaming --longform_chunk_seconds=${LONGFORM_CHUNK_SECONDS} --longform_chunk_overlap_seconds=${LONGFORM_CHUNK_OVERLAP_SECONDS} --longform_record_batch_size=${LONGFORM_RECORD_BATCH_SIZE}"
+        ARGS_QUOTED+=" '${line}'"
+    done
+    echo "Submitting one longform job for ${#DATASET_CONFIGS[@]} datasets"
+    job_command="${LOCAL_NORMALIZER_INJECT} ${LOCAL_SCRIPT_INJECT} \
+printf '%s\\n'${ARGS_QUOTED} > /tmp/eval_args.txt; \
+EVAL_ARGS_FILE=/tmp/eval_args.txt RESULTS_DEST_DIR=/results/${MODEL_FOLDER} bash /app/run_transcribe.sh"
+    submit_hf_job "longform-all" "${job_command}"
+else
+
 for cfg in "${DATASET_CONFIGS[@]}"; do
     read -r label dataset_path config split prompt_profile concurrency <<<"${cfg}"
     echo "Submitting long-form job: ${label}"
@@ -54,6 +70,7 @@ RESULTS_DEST_DIR=/results/${MODEL_FOLDER} bash /app/run_transcribe.sh \
 --longform_record_batch_size=${LONGFORM_RECORD_BATCH_SIZE}"
     submit_hf_job "longform-${label}" "${job_command}"
 done
+fi
 
 print_jobs_url
 wait_for_submitted_jobs
