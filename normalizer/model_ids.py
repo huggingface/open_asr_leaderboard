@@ -26,10 +26,13 @@ HYPHENATED_ORGS = frozenset(
     {
         "ARTPARK-IISc",
         "AutoArk-AI",
+        "Musci-research",
+        "OpenLLM-France",
         "OpenMOSS-Team",
         "abr-ai",
         "distil-whisper",
         "efficient-speech",
+        "futo-org",
         "ibm-granite",
         "zai-org",
     }
@@ -39,7 +42,7 @@ HYPHENATED_ORGS = frozenset(
 # The eval scripts for these models take a bare or framework-specific model card
 # on the command line: `omniasr/run_eval_ml.py` maps
 # "facebook/omniASR-LLM-7B" to the "omniASR_LLM_7B" card NeMo/omnilingual want,
-# and `nemo_asr/run_parakeet.sh` passes NVIDIA's names without their org. API
+# and `nemo_asr/submit_jobs_parakeet.sh` passes some NVIDIA names without their org. API
 # providers are run under `api/`'s provider name, which can differ from the org
 # the row is published under.
 BUCKET_ID_OVERRIDES = {

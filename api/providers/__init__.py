@@ -70,5 +70,6 @@ from . import (
     soniox_provider,
     speechmatics_provider,
     sprag_provider,
+    yoob_provider,
     zoom_provider,
 )

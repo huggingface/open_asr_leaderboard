@@ -26,7 +26,9 @@ MODEL_CONFIGS=(
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
+    # "reson8/rumble-2               16"
     # "microsoft/azure-speech-07-2026  4"
+    # "microsoft/azure-speech-09-2026  4"
     # "modulate/multilingual          25"
     # "gladia/solaria-3             20"
     # "meta/muse-voice-transcribe    8"
@@ -38,6 +40,7 @@ MODEL_CONFIGS=(
     # "OtterAI/speech-v3.1           128"
     # "p99lab/audrey-0.7               64"
     # "opusclip/steno-v1-preview     32"
+    # "yoob/yoob-asr-pro-v1          16"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -94,6 +97,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_CONFIG="$DATASET"
         fi
 
+        PROMPT_ARG=""
+        if [[ "$MODEL_ID" == "microsoft/azure-speech-09-2026" && "$DATASET" == "spgispeech" ]]; then
+            # SPGISpeech references remove some repetitions, so disable Azure's verbatim prompt.
+            PROMPT_ARG="--prompt="
+        fi
+
         docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
@@ -126,6 +135,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
             -e P99LAB_API_KEY="${P99LAB_API_KEY:-}" -e P99LAB_API_URL="${P99LAB_API_URL:-}" \
             -e OPUSCLIP_API_KEY="${OPUSCLIP_API_KEY:-}" -e OPUSCLIP_API_URL="${OPUSCLIP_API_URL:-}" \
+            -e YOOB_API_KEY="${YOOB_API_KEY:-}" -e YOOB_API_URL="${YOOB_API_URL:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
@@ -135,7 +145,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS}
+                    --max_workers=${MAX_WORKERS} \
+                    ${PROMPT_ARG}
             "
     done
 
