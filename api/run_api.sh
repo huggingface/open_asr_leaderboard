@@ -30,6 +30,7 @@ MODEL_CONFIGS=(
     # "microsoft/azure-speech-07-2026  4"
     # "microsoft/azure-speech-09-2026  4"
     # "modulate/multilingual          25"
+    # "modulate/velma-2-stt-batch     25"
     # "gladia/solaria-3             20"
     # "meta/muse-voice-transcribe    8"
     # "meta/muse-voice-transcribe-streaming    8"
