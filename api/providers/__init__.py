@@ -60,6 +60,7 @@ from . import (
     microsoft_azure_provider,
     modulate_provider,
     openai_provider,
+    opusclip_provider,
     otterai_provider,
     p99lab_provider,
     reson8_provider,
