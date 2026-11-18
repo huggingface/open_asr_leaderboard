@@ -30,6 +30,7 @@ MODEL_IDs=(
     "Qwen/Qwen3-ASR-0.6B-hf"
     "Qwen/Qwen3-ASR-1.7B-hf"
     "Musci-research/Musci-ASR-qwen-1019-hf"
+    "oruk/orukqwen-asr-1.7b"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
