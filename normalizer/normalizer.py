@@ -86,6 +86,8 @@ _NON_SPEECH_TAGS = frozenset({
     "tape distortion", "tape distortion?", "tape skip", "tape skips", "tape stops", "choppy tape",
     "polish language", "french language", "creole language",
 })
+# Numbered diarization markers some models emit between turns, e.g. "<spk:0>" / "<spk:1>".
+_SPEAKER_TAG = re.compile(r"spk:\d+")
 _BRACKET_PAIRS = (("(", ")"), ("[", "]"), ("<", ">"), ("（", "）"), ("［", "］"), ("＜", "＞"))
 _BRACKET_CHARACTERS = "".join(opening + closing for opening, closing in _BRACKET_PAIRS)
 _BRACKET_PATTERN = re.compile("|".join(
@@ -104,7 +106,7 @@ def remove_non_speech_annotations(s: str) -> str:
     """
     def replace(match: Match[str]) -> str:
         body = " ".join(match.group()[1:-1].casefold().split())
-        return " " if body in _NON_SPEECH_TAGS else match.group()
+        return " " if body in _NON_SPEECH_TAGS or _SPEAKER_TAG.fullmatch(body) else match.group()
 
     while True:
         cleaned = _BRACKET_PATTERN.sub(replace, s)

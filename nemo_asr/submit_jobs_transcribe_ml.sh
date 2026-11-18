@@ -47,6 +47,23 @@ require_submission_environment
 prepare_injection
 start_submission_logs multilingual
 
+if [[ "${SINGLE_JOB:-1}" == "1" ]]; then
+    # One HF Job for the whole track: vLLM starts (and JIT-compiles) once and every dataset
+    # is evaluated against the same server. Set SINGLE_JOB=0 for one job per dataset.
+    ARGS_QUOTED=""
+    for cfg in "${DATASET_CONFIGS[@]}"; do
+        read -r dataset language dataset_path config prompt_profile concurrency <<<"${cfg}"
+        [[ "${config}" == "-" ]] && config=""
+        line="--dataset_path=${dataset_path} --dataset=${config} --split=test --language=${language} --prompt_profile=${prompt_profile} --batch_size=${concurrency} --warmup_samples=${ML_WARMUP_SAMPLES} --max_eval_samples=${MAX_EVAL_SAMPLES} --request_timeout_s=${REQUEST_TIMEOUT_S} --max_retries=${MAX_RETRIES}"
+        ARGS_QUOTED+=" '${line}'"
+    done
+    echo "Submitting one multilingual job for ${#DATASET_CONFIGS[@]} datasets"
+    job_command="${LOCAL_NORMALIZER_INJECT} ${LOCAL_SCRIPT_INJECT} \
+printf '%s\\n'${ARGS_QUOTED} > /tmp/eval_args.txt; \
+EVAL_ARGS_FILE=/tmp/eval_args.txt RESULTS_DEST_DIR=/results/${MODEL_FOLDER} bash /app/run_transcribe.sh"
+    submit_hf_job "multilingual-all" "${job_command}"
+else
+
 for cfg in "${DATASET_CONFIGS[@]}"; do
     read -r dataset language dataset_path config prompt_profile concurrency <<<"${cfg}"
     [[ "${config}" == "-" ]] && config=""
@@ -60,6 +77,7 @@ RESULTS_DEST_DIR=/results/${MODEL_FOLDER} bash /app/run_transcribe.sh \
 --request_timeout_s=${REQUEST_TIMEOUT_S} --max_retries=${MAX_RETRIES}"
     submit_hf_job "multilingual-${dataset}-${language}" "${job_command}"
 done
+fi
 
 print_jobs_url
 wait_for_submitted_jobs

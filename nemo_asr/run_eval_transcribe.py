@@ -29,10 +29,11 @@ from transcribe_eval_helpers import (
 )
 from transcribe_model_card_contract import (
     MODEL_ID,
-    MODEL_REVISION,
+    MODEL_REVISIONS,
     PROMPTS,
     build_chat_completion_request,
     cleanup_generation_loops,
+    get_model_revision,
 )
 from normalizer import data_utils
 
@@ -416,9 +417,9 @@ def evaluate(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_id", default=MODEL_ID)
-    parser.add_argument("--model_revision", default=MODEL_REVISION)
-    parser.add_argument("--served_model_name", default=MODEL_ID)
+    parser.add_argument("--model_id", default=MODEL_ID, choices=sorted(MODEL_REVISIONS))
+    parser.add_argument("--model_revision", default=None)
+    parser.add_argument("--served_model_name", default=None)
     parser.add_argument("--server_url", default="http://127.0.0.1:8000/v1")
     parser.add_argument("--dataset_path", required=True)
     parser.add_argument("--dataset", default="")
@@ -443,10 +444,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_retries", type=int, default=2)
     args = parser.parse_args()
 
-    if args.model_id != MODEL_ID:
-        parser.error(f"--model_id must remain pinned to {MODEL_ID}")
-    if args.model_revision != MODEL_REVISION:
-        parser.error(f"--model_revision must remain pinned to {MODEL_REVISION}")
+    expected_revision = get_model_revision(args.model_id)
+    if args.model_revision is None:
+        args.model_revision = expected_revision
+    elif args.model_revision != expected_revision:
+        parser.error(f"--model_revision must remain pinned to {expected_revision}")
+    if args.served_model_name is None:
+        args.served_model_name = args.model_id
     if args.batch_size <= 0:
         parser.error("--batch_size must be positive")
     if args.longform_record_batch_size <= 0:
