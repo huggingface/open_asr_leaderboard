@@ -29,7 +29,6 @@ MODEL_CONFIGS=(
     # "reson8/rumble-2               16"
     # "microsoft/azure-speech-07-2026  4"
     # "microsoft/azure-speech-09-2026  4"
-    # "modulate/multilingual          25"
     # "modulate/velma-2-stt-batch     25"
     # "gladia/solaria-3             20"
     # "meta/muse-voice-transcribe    8"
@@ -59,7 +58,7 @@ EVAL_DATASETS=(
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
-#   DATASETS="urgent2024:test urgent2024_clean:test" MODEL="modulate/multilingual 25" bash run_api.sh
+#   DATASETS="urgent2024:test urgent2024_clean:test" MODEL="modulate/velma-2-stt-batch 25" bash run_api.sh
 if [[ -n "${DATASETS:-}" ]]; then
     read -ra EVAL_DATASETS <<< "$DATASETS"
 fi
