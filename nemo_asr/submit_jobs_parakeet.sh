@@ -29,6 +29,7 @@ MODEL_CONFIGS=(
     "nvidia/parakeet-tdt-0.6b-v3 128"
     "nvidia/parakeet-tdt-0.6b-v2 128"
     "nvidia/parakeet-ctc-1.1b 128"
+    "qvac/TranscribePsy-250M-EU-sub 128"
     # "nvidia/parakeet-rnnt-1.1b 128"
     # "nvidia/parakeet-rnnt-0.6b 128"
     # "nvidia/parakeet-ctc-0.6b 128"

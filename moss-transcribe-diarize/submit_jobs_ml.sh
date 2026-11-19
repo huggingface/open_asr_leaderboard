@@ -30,6 +30,8 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -81,6 +83,7 @@ pids=()
 for config in "${DATASET_CONFIGS[@]}"; do
     read -r dataset language <<< "${config}"
     config_name="${dataset}_${language}"
+    dataset_path="${DATASET_PATH}"
     echo "Submitting model=${MODEL_ID} config=${config_name} batch_size=${BATCH_SIZE}"
 
     (
@@ -99,7 +102,7 @@ for config in "${DATASET_CONFIGS[@]}"; do
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id='${MODEL_ID}' \
                     --model_revision='${MODEL_REVISION}' \
-                    --dataset='${DATASET_PATH}' \
+                    --dataset='${dataset_path}' \
                     --config_name='${config_name}' \
                     --language='${language}' \
                     --split='test' \
@@ -139,7 +142,8 @@ missing=0
 for config in "${DATASET_CONFIGS[@]}"; do
     read -r dataset language <<< "${config}"
     config_name="${dataset}_${language}"
-    expected="MODEL_${MODEL_FOLDER}_DATASET_${DATASET_PATH//\//-}_${config_name}_test.jsonl"
+    dataset_path="${DATASET_PATH}"
+    expected="MODEL_${MODEL_FOLDER}_DATASET_${dataset_path//\//-}_${config_name}_test.jsonl"
     if [[ ! -f "${RUN_RESULTS}/${expected}" ]]; then
         echo "Missing result: ${expected}" >&2
         missing=1

@@ -9,3 +9,5 @@ peft
 soundfile
 kaldialign
 voi_oiwer
+opencc
+wetext

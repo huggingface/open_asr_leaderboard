@@ -19,7 +19,7 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
   [**VoiceCodeBench**](https://huggingface.co/datasets/besimple-ai/voice-code-bench) evaluates exact entity recovery on 300 English workplace recordings. Its CTEM score is higher-is-better and is reported separately from WER. See the [Parakeet harness and scoring instructions](voice_code_bench.md) for this initial integration.
 
 * **Multilingual Benchmark:**
-  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes FLEURS, MCV and MLS. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used. The Armenian FLEURS and MCV test sets are hosted under [Metric-AI/open-asr-leaderboard-multilingual-datasets](https://huggingface.co/datasets/Metric-AI/open-asr-leaderboard-multilingual-datasets).
+  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes FLEURS, MCV and MLS. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used. The Armenian FLEURS and MCV test sets are hosted under [Metric-AI/open-asr-leaderboard-multilingual-datasets](https://huggingface.co/datasets/Metric-AI/open-asr-leaderboard-multilingual-datasets). Chinese (Mandarin) is evaluated on FLEURS and [AISHELL-1](https://www.openslr.org/33/) and scored with CER instead of WER.
 
 
 * **Private datasets:** 
@@ -88,7 +88,7 @@ RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash transformers/submit_jobs_whi
 
 For contributors who want to test locally, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
 
-Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
+Each model family has a `run_eval.py` entry point, launched on HF Jobs by a `submit_jobs*.sh` script (e.g. `transformers/submit_jobs_whisper.sh`). `run_eval.py` outputs a JSONL file with predictions and prints WER and RTFx after completion.
 
 # Trade-off plots
 
