@@ -32,7 +32,7 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Model ────────────────────────────────────────────────────────────────────
 MODEL_ID="TheStageAI/thewhisper-large-v3-turbo"
-REVISION="442e538e190820a123d7bf22ebf092d213aa744a"  # pins the configs and the compiled engines
+REVISION="1d8f88121a4daf48b3710389c4a24840381dea21"  # pins the configs and the compiled engines
 MODE="XL"             # engine size
 CHUNK_LENGTH=30       # engine input window, seconds
 BATCH_SIZE=256        # largest batch of the H200 engines
