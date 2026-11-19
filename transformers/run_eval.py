@@ -445,8 +445,11 @@ def main(args):
             # Strip input prompt tokens
             pred_text = processor.decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_ctc:
-            # don't use skip_special_tokens as it collapses double letters
-            pred_text = processor.batch_decode(pred_ids)
+            if config.model_type == "omniasr_ctc":
+                pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+            else:
+                # don't use skip_special_tokens as it collapses double letters
+                pred_text = processor.batch_decode(pred_ids)
         else:
             pred_text = processor.decode(pred_ids, skip_special_tokens=True)
 
