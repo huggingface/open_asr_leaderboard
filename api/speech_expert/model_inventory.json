@@ -1,0 +1,43 @@
+{
+  "prepared_at": "2026-11-09",
+  "status": "draft_full_evaluation_pending",
+  "language": "hy",
+  "language_count": 1,
+  "billing_currency": "RUB",
+  "usd_estimate": {
+    "rub_per_usd": 82.1386,
+    "effective_date": "2026-11-07"
+  },
+  "profiles": [
+    {
+      "leaderboard_model_id": "speech-expert/SpeechExpert-hy-stream",
+      "mode": "streaming",
+      "transport": "websocket",
+      "transcripts": ["interim", "final"],
+      "entry_level_rub_per_hour": 16.8,
+      "approx_usd_per_hour": 0.2045,
+      "billing_increment": "started_second",
+      "real_time_pacing_included_in_elapsed_time": true,
+      "external_audio_consent": false
+    },
+    {
+      "leaderboard_model_id": "speech-expert/SpeechExpert-STT-HY-Large",
+      "mode": "file_transcription",
+      "transport": "http_multipart_file",
+      "entry_level_rub_per_hour": 600,
+      "approx_usd_per_hour": 7.3047,
+      "minimum_billable_seconds": 15,
+      "external_audio_consent": true
+    }
+  ],
+  "evaluation": {
+    "adapter_tests": "passed",
+    "public_api_smoke_checks": "passed",
+    "full_wer_rtfx": "pending",
+    "training_overlap_review": "pending; public FLEURS/Common Voice data used in development or training",
+    "private_audio_handling_review": "pending_for_both_profiles",
+    "dedicated_maintainer_credentials": "pending"
+  },
+  "documentation": "https://speech-expert.ru/documentation/api/stt-v1/",
+  "demo": "https://huggingface.co/spaces/Strij911/speech-expert-mixed-language-asr"
+}
