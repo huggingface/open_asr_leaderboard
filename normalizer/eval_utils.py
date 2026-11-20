@@ -567,7 +567,7 @@ def score_results(
                   Languages in CER_LANGUAGES (e.g. 'zh') are scored with CER.
         families: Optional list of family keys ("appen", "dataocean", "voicearena_private", "liva",
                   "voicearena_private_hi", "public", "extra", "longform", "ml_de", "ml_fr", "ml_it", "ml_es",
-                  "ml_pt", "ml_nl", "ml_hy", "ml_zh") restricting which CSV summary blocks are printed.
+                  "ml_pt", "ml_nl", "ml_hy", "ml_zh", "ml_fr_telephony") restricting which CSV summary blocks are printed.
                   None prints all detected families.
         use_cache: If True, read each manifest's score from its `.score.json` file
                    (see SCORE_SUFFIX) when one matches, and write one when not.
@@ -809,6 +809,21 @@ def score_results(
             f"{ML_DATASET_LABELS[dataset]} {metric_name}" for dataset in datasets
         )
         FAMILY_CONFIGS.append((f"ml_{lang}", f"_{lang}_test", header, col_map))
+
+    # French telephony (call-center) sets: standalone single-config repos
+    # (BrunoHays/eslo-telephony-fr, BrunoHays/accueil-ubs-fr), so their results
+    # files do not follow the `<dataset>_<lang>_test` pattern of the families above.
+    FAMILY_CONFIGS.append(
+        (
+            "ml_fr_telephony",
+            None,
+            "model,RTFx,ESLO Telephony WER,Accueil UBS WER",
+            {
+                "eslo-telephony-fr": ("ESLO Telephony WER", None),
+                "accueil-ubs-fr": ("Accueil UBS WER", None),
+            },
+        )
+    )
 
     # Restrict scoring to only the datasets relevant to the requested families.
     # Without this, files outside the requested families would still be scored
