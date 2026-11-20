@@ -56,6 +56,7 @@ from . import (
     fonada_provider,
     gemini_provider,
     gladia_provider,
+    lokutor_provider,
     meta_provider,
     microsoft_azure_provider,
     modulate_provider,
