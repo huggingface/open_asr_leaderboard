@@ -46,7 +46,7 @@ MODEL_IDs=(
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Hindi, Vietnamese
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all others are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
@@ -56,11 +56,13 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs vi"
     "mcv de"
     "mcv es"
     "mcv fr"
     "mcv it"
     "mcv nl"
+    "mcv vi"
     "mls es"
     "mls fr"
     "mls it"
