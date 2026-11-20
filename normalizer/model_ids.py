@@ -34,6 +34,7 @@ HYPHENATED_ORGS = frozenset(
         "efficient-speech",
         "futo-org",
         "ibm-granite",
+        "ishiki-labs",
         "zai-org",
     }
 )
