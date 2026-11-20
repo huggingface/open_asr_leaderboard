@@ -15,6 +15,7 @@ MODEL_CONFIGS=(
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
+    # "eesi-ai/nur-v1                1"
     # "elevenlabs/scribe_v2          8"
     # "revai/machine                 4"
     # "revai/fusion                  4"
@@ -121,6 +122,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e OTTERAI_API_KEY -e OTTERAI_API_URL \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
+            -e EESI_API_KEY="${EESI_API_KEY:-}" -e EESI_API_URL="${EESI_API_URL:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
             -e FONADA_API_KEY="${FONADA_API_KEY:-}" \
             -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
