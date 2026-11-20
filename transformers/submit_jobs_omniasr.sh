@@ -1,18 +1,17 @@
 #!/bin/bash
-# Local script to submit HF Jobs for OmniASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# Local script to submit HF Jobs for OmniASR evaluation through Transformers.
+# Usage: HF_TOKEN=hf_... bash submit_jobs_omniasr.sh
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-omniasr}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
-LANGUAGE="eng_Latn"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -25,10 +24,12 @@ LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval.py) || exit 1
 # job (so normalizer changes take effect without updating the HF Space).
 LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
-# ── Models ────────────────────────────────────────────────────────────────────
+# ── Models: "model_id [max_new_tokens]" ──────────────────────────────────────
+# max_new_tokens only applies to the auto-regressive (LLM) variant; the CTC
+# variant rejects it.
 MODEL_CONFIGS=(
-    "omniASR_CTC_7B_v2"
-    "omniASR_LLM_7B_v2"
+    "hf-audio/omniasr-llm-7b-v2 500"
+    "hf-audio/omniasr-ctc-7b-v2"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
@@ -53,7 +54,10 @@ filter_only_datasets || exit 1
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
-for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID MAX_NEW_TOKENS <<< "$model_cfg"
+    MAX_NEW_TOKENS_ARG=""
+    [ -n "$MAX_NEW_TOKENS" ] && MAX_NEW_TOKENS_ARG="--max_new_tokens=${MAX_NEW_TOKENS}"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -80,7 +84,6 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
             --flavor "$FLAVOR" \
             --timeout 8h \
             --secrets HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
@@ -94,8 +97,8 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
                     --split=${SPLIT} \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --max_eval_samples=-1 \
-                    --language=${LANGUAGE} &&
+                    --max_eval_samples=${MAX_EVAL_SAMPLES:--1} \
+                    ${MAX_NEW_TOKENS_ARG} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &
