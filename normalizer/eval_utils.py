@@ -719,7 +719,8 @@ def score_results(
             "public",
             None,  # always printed when public datasets are present
             "model,avg,RTFx,License,Size (B),# Languages,Encoder,Decoder,Training data disclosure,"
-            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER",
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER,"
+            "VoiceCodeBench WER",
             # Keys of hf-audio/open-asr-leaderboard configs carry the repo slug, so
             # that a same-named set from another repo (e.g. the long-form
             # asr-leaderboard-longform_earnings22_test) is not picked up as well.
@@ -741,6 +742,9 @@ def score_results(
                 "open-asr-leaderboard_urgent2024_test": ("URGENT2024 WER", None),
                 "Monsoon_en_IN_test__test": ("Voice Arena Monsoon WER", None),
                 "open-asr-leaderboard_voxpopuli_cleaned_aa_test": ("Voxpopuli-AA-Cleaned WER", None),
+                # VoiceCodeBench: its WER is part of the default average. Its entity metric, CTEM, is scored
+                # separately (voice_code_bench.md) and is never averaged with WERs.
+                "besimple-ai-voice-code-bench_default_test": ("VoiceCodeBench WER", None),
             },
         ),
         (
@@ -831,20 +835,6 @@ def score_results(
         if len(result_files) == 0:
             raise ValueError(
                 f"No result files found in {directory} matching families {families}"
-            )
-
-    # Validate every selected manifest before reading cached WER scores or
-    # starting batch scoring. CTEM must never enter WER averages, even when a
-    # stale score cache exists or a VoiceCodeBench manifest has been renamed.
-    for result_file in result_files:
-        _, dataset_id = parse_filepath(result_file)
-        if "besimple-ai-voice-code-bench" in dataset_id.lower() or any(
-            "voice_code_bench_revision" in row for row in read_manifest(result_file)
-        ):
-            raise ValueError(
-                "VoiceCodeBench uses CTEM, not WER. Score this manifest separately with "
-                "python -m normalizer.voice_code_bench --manifest " + result_file
-                + " --verifier-cache <cache.json>. Keep it outside WER result directories."
             )
 
     # Compute WER results per dataset, and RTFx over all datasets

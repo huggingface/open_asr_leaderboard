@@ -24,7 +24,7 @@ MODEL_REVISION = "8c0b3d30f3ae96f5c7f774de704bf0ada83e422a"
 RUNTIME_IMAGE = "vllm/vllm-openai:v0.28.0-cu129"
 RUNTIME = {"model": MODEL, "revision": MODEL_REVISION, "tokenizer_revision": MODEL_REVISION,
            "image": RUNTIME_IMAGE, "dtype": "bfloat16", "max_model_len": 32768,
-           "max_num_seqs": 16, "gpu_memory_utilization": 0.9,
+           "max_num_seqs": 64, "gpu_memory_utilization": 0.9,
            "reasoning_parser": "qwen3", "generation_config": "vllm"}
 ENDPOINT = "http://127.0.0.1:8000/v1/chat/completions"
 PROMPT_PATH = Path(__file__).with_name("voice_code_bench_prompt.txt")
@@ -201,7 +201,8 @@ def local_runtime(log_path):
     """Own one pinned vLLM server for the grading run; replay needs no server."""
     from importlib.metadata import version
 
-    if version("vllm") != "0.28.0":
+    # Compare the release only: a CUDA build reports a local suffix, e.g. "0.28.0+cu129" in the -cu129 image.
+    if version("vllm").split("+")[0] != "0.28.0":
         raise RuntimeError(f"Use the tested grading image: {RUNTIME_IMAGE}.")
     # Refuse to use an unrelated server already listening on our endpoint.
     with socket.socket() as probe:
@@ -209,7 +210,7 @@ def local_runtime(log_path):
     command = [sys.executable, "-m", "vllm.entrypoints.openai.api_server",
                "--model", MODEL, "--revision", MODEL_REVISION,
                "--tokenizer-revision", MODEL_REVISION, "--served-model-name", MODEL,
-               "--dtype", "bfloat16", "--max-model-len", "32768", "--max-num-seqs", "16",
+               "--dtype", "bfloat16", "--max-model-len", "32768", "--max-num-seqs", str(RUNTIME["max_num_seqs"]),
                "--gpu-memory-utilization", "0.9", "--reasoning-parser", "qwen3",
                "--generation-config", "vllm", "--language-model-only",
                "--no-enable-log-requests", "--host", "127.0.0.1", "--port", "8000"]
@@ -258,8 +259,9 @@ def verify_entity_matches(datapoint, transcript, *, cache, cache_mode):
     return parse_response(response, request)
 
 
-def verify_manifest(manifest, targets, *, cache, cache_mode, workers):
+def verify_manifest(manifest, targets, *, cache, cache_mode, workers=None):
     """Own the local runtime, bound requests, and preserve manifest order."""
+    workers = RUNTIME["max_num_seqs"] if workers is None else workers
     if workers < 1:
         raise ValueError("Verifier workers must be positive.")
     if cache_mode not in ("replay", "live-fill"):

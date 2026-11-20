@@ -58,7 +58,7 @@ def load_data(args):
     return dataset.map(attach_audio, load_from_cache_file=False).cast_column("audio", Audio())
 
 
-def score_manifest(manifest, metadata, *, cache, cache_mode="replay", allow_partial=False, workers=16):
+def score_manifest(manifest, metadata, *, cache, cache_mode="replay", allow_partial=False, workers=None):
     from voice_code_bench.metrics import score_entity_capture
     from .voice_code_bench_judge import VERIFIER_ID, MODEL, RUNTIME, config_digest, verify_manifest
 
@@ -127,7 +127,8 @@ def main(*, cache_factory=None):
     parser.add_argument("--verifier-mode", choices=["replay", "live-fill"], default="replay",
                         help="live-fill starts the pinned local GPU model for cache misses.")
     parser.add_argument("--allow-partial", action="store_true")
-    parser.add_argument("--verifier-workers", type=int, default=16, help="Maximum simultaneous judge requests.")
+    parser.add_argument("--verifier-workers", type=int, default=None,
+                        help="Maximum simultaneous judge requests (default: the judge runtime's max_num_seqs, 64).")
     args = parser.parse_args()
 
     from huggingface_hub import hf_hub_download

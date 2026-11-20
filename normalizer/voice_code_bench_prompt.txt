@@ -64,6 +64,12 @@ Use these type-specific rules:
     implicit. Number words/digits and harmless grouping within a numeric component
     are allowed; wrong/extra digits or extra version components are not.
 
+11. Spoken zero: in a run of spoken digits (digit words or digits, e.g. "five O nine
+    one", "one oh one"), a standalone O, o or oh between digit tokens is the spoken
+    zero and counts as digit 0 when the target component is numeric. A letter O
+    written inside a token ("AB-O529", "FS8O") or an "oh" set off as an interjection
+    is not.
+
 Reject unsupported lexical letters/digits/components, even when intent is obvious.
 An exact allowed alternative must support all unchanged parts too. Never recover
 missing information from gold. Inspect all relevant occurrences before rejecting;
@@ -165,6 +171,11 @@ Synthetic checks of uniquely recoverable content:
   can identify different serials; gold cannot choose which was meant.
 - Port6160 versus "port616. Oh, then the alert changed": absent if Oh could
   be an interjection. "port six one six zero" is present.
+- Extension7101; "extension number seven one O one": present.
+- IP203.0.113.29; "two zero three dot O dot one one three dot two nine": present.
+- ID BOP-5091-AZ; "B O P dash five O nine one dash A Z": present. The literal
+  written "BOP-5O91-AZ": absent.
+- Spelled A E R O versus "A E R 0": absent (a digit in place of the letter).
 - Amount$428 versus "400. $28": absent; adding numeric fragments to match gold
   is not a unique reading. "four hundred twenty eight dollars" is present.
 - VariableRATE_LIMIT versus "RATE_underscore_LIMIT": absent; literal named

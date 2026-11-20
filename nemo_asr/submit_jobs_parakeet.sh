@@ -1,6 +1,9 @@
 #!/bin/bash
 # Local script to submit HF Jobs for Parakeet ASR evaluation.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_parakeet.sh
+#        HF_TOKEN=hf_... ONLY_DATASETS="voice_code_bench" bash submit_jobs_parakeet.sh   # just VoiceCodeBench
+# VoiceCodeBench is scored with CTEM and WER.
+# At the end a separate GPU job grades each model's transcripts (see scripts/submit_utils.sh, voice_code_bench.md).
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.
@@ -12,6 +15,9 @@ RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 ORG_NAME="${ORG_NAME:-}"
 FLAVOR="${FLAVOR:-h200}"
+
+# VoiceCodeBench (WER in the public average; CTEM graded at the end by a GPU job per model, ~25 min, ~$2 each):
+# helpers and options (VCB_SCORING, VCB_JUDGE, PUBLISH_RESULTS) are in scripts/submit_utils.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -28,8 +34,8 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 MODEL_CONFIGS=(
     "nvidia/parakeet-tdt-0.6b-v3 128"
     "nvidia/parakeet-tdt-0.6b-v2 128"
-    "nvidia/parakeet-ctc-1.1b 128"
     "qvac/TranscribePsy-250M-EU-sub 128"
+    # "nvidia/parakeet-ctc-1.1b 128"
     # "nvidia/parakeet-rnnt-1.1b 128"
     # "nvidia/parakeet-rnnt-0.6b 128"
     # "nvidia/parakeet-ctc-0.6b 128"
@@ -55,6 +61,7 @@ DATASET_CONFIGS=(
     "urgent2024 test"
     "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
@@ -62,6 +69,8 @@ DATASET_CONFIGS=(
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
 
+# Is VoiceCodeBench among the datasets of this run?
+vcb_init
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
@@ -82,6 +91,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
+        vcb_dataset_config
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
@@ -131,4 +141,9 @@ from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
+
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade

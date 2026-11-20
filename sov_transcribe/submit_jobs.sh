@@ -1,6 +1,9 @@
 #!/bin/bash
 # Local script to submit HF Jobs for SOV-Transcribe-1 (vLLM + the model repo's vLLM plugin) ASR evaluation.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job grades its CTEM
+# (~$2; see scripts/submit_utils.sh and voice_code_bench.md). It runs with the verbatim prompt, like the other
+# verbatim datasets.
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.
@@ -46,12 +49,14 @@ DATASET_CONFIGS=(
     "urgent2024 test"
     "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 # Transcription mode (PROMPTS in run_eval.py), per the model card's evaluation protocol: "clean" (no fillers or
 # accidental repetitions) for SPGISpeech's non-verbatim references, "verbatim_latin" for Voice Arena Monsoon's
@@ -79,6 +84,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
+        vcb_dataset_config
 
         PROMPT_STYLE="verbatim"
         [[ " ${CLEAN_DATASETS} " == *" ${DATASET} "* ]] && PROMPT_STYLE="clean"
@@ -136,4 +142,8 @@ from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade
