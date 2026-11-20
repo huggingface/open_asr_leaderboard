@@ -719,7 +719,8 @@ def score_results(
             "public",
             None,  # always printed when public datasets are present
             "model,avg,RTFx,License,Size (B),# Languages,Encoder,Decoder,Training data disclosure,"
-            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER",
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER,"
+            "VoiceCodeBench WER",
             # Keys of hf-audio/open-asr-leaderboard configs carry the repo slug, so
             # that a same-named set from another repo (e.g. the long-form
             # asr-leaderboard-longform_earnings22_test) is not picked up as well.
@@ -741,6 +742,9 @@ def score_results(
                 "open-asr-leaderboard_urgent2024_test": ("URGENT2024 WER", None),
                 "Monsoon_en_IN_test__test": ("Voice Arena Monsoon WER", None),
                 "open-asr-leaderboard_voxpopuli_cleaned_aa_test": ("Voxpopuli-AA-Cleaned WER", None),
+                # VoiceCodeBench: its WER is part of the default average. Its entity metric, CTEM, is scored
+                # separately (voice_code_bench.md) and is never averaged with WERs.
+                "besimple-ai-voice-code-bench_default_test": ("VoiceCodeBench WER", None),
             },
         ),
         (
