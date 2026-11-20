@@ -3,7 +3,6 @@
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_ml.sh
-# The TheStage AI token for the compiled engines is set below (THESTAGE_AUTH_TOKEN).
 #        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_ml.sh
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
@@ -15,7 +14,7 @@ SPACE="${SPACE:-hf-audio/open-asr-leaderboard-thewhisper}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
-FLAVOR="${FLAVOR:-h200}"  # compiled engines are published for H200 (and H100, A100, L40S, RTX 4090/5090)
+FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 # TheStage AI token for downloading the compiled engines; passed to every job as a secret.
 export THESTAGE_AUTH_TOKEN="${THESTAGE_AUTH_TOKEN:-th_Har1cDb3EWLfNLtrfXaPwBc9cev6BtSNNUYiZd8r}"
@@ -33,14 +32,14 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Model ────────────────────────────────────────────────────────────────────
 MODEL_ID="TheStageAI/thewhisper-large-v3-turbo"
-REVISION="6592b6933656513345c5e7a65523a0de3e30d5a3"  # pins the configs and the compiled engines
+REVISION="1d8f88121a4daf48b3710389c4a24840381dea21"  # pins the configs and the compiled engines
 MODE="XL"             # engine size
 CHUNK_LENGTH=30       # engine input window, seconds
-BATCH_SIZE=256        # largest batch of the H200 engines (built for batches 1-256; the H100 ones for 1-128)
+BATCH_SIZE=256        # largest batch of the H200 engines
 MODEL_CONFIGS=("${MODEL_ID} ${BATCH_SIZE}")
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch
+# German, French, Italian, Spanish, Portuguese, Dutch, Chinese, Hindi
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all others are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
@@ -50,6 +49,7 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -60,6 +60,8 @@ DATASET_CONFIGS=(
     "mls it"
     "mls pt"
     "mls nl"
+    "aishell1 zh"
+    "monsoon hi"
 )
 
 # Optional: restrict this run to specific datasets and/or languages, matched
