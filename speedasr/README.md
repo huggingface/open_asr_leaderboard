@@ -21,7 +21,7 @@ bash speedasr/submit_jobs.sh
 
 By default, the launcher copies the checked-in `run_eval.py` to `/app/leaderboard/run_eval.py` in the job, using the repository's shared launcher helper. Set `USE_LOCAL_SCRIPT=0` to use the evaluator bundled in the Space.
 
-The launcher defaults to the Space and bucket linked above. It starts **one H200 job at a time**, with a **one-hour runtime limit per job**, and explicitly checks terminal job status before starting the next dataset. Failed or canceled jobs stop the run. `hf jobs run` streaming its logs does not itself establish successful job completion in Hub CLI 1.18.0.
+The launcher defaults to the Space and bucket linked above. It uses the Hugging Face SDK to submit **one H200 job at a time** with a **one-hour runtime limit per job**. Each job must save its prediction manifest and metadata and reach `COMPLETED` before the launcher continues to the next dataset.
 
 The default selection contains AMI Cleaned, GigaSpeech Cleaned, VoxPopuli Cleaned AA, Earnings22 Cleaned AA Chunked, SPGISpeech, URGENT2024 and Monsoon English. `INCLUDE_URGENT_CLEAN=1` adds the optional clean URGENT set; it remains outside the seven-set public mean. Earnings22 is evaluated in full and scored at parent-session level.
 
@@ -44,6 +44,6 @@ Each run gets a unique UTC `RUN_ID`. Jobs persist JSONL manifests, metadata and 
 
 The launcher records the model pin, Space source commit and available Job image metadata, and stops if the Space source/build changes between datasets. `SPACE_REVISION=<full-Space-commit-SHA>` can require a particular source commit. Hub 1.18.0's documented Space-image shorthand has no separate image-revision parameter; a recorded source SHA is not an OCI image-digest pin.
 
-The package also contains independently checked RTX 3090 Ti local results: seven-public-set mean WER **6.9043%** and pooled RTFx **192.6293**. Those are local measurements, not H200 results. Public cloud results and private-set evaluation must be reported separately; private sets are evaluated by the leaderboard maintainers.
+The [official-filtered local rescore](https://huggingface.co/SpeedAudio261119/SpeedASR-v1-65M/blob/6ca2db465b582b13944ceb6276561a349efb43ed/benchmark_results/local_3090ti_20261119/official_filter_rescore.json) reports a seven-public-set mean WER of **6.8871%** over **69,884 clips** from saved RTX 3090 Ti predictions. The original local inference run recorded **192.6293 RTFx**. Report public H200 results separately. The leaderboard maintainers evaluate the private sets.
 
 Model metadata: Apache-2.0; 0.065551059B parameters; one language (English); Zipformer encoder; stateless transducer decoder. See the model card for the disclosed training information and limitations.

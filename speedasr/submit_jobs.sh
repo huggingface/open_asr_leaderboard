@@ -77,10 +77,6 @@ for wanted in "${requested[@]}"; do
     exit 2
   fi
 done
-namespace_args=()
-if [[ -n ${ORG_NAME:-} ]]; then
-  namespace_args=(--namespace "$ORG_NAME")
-fi
 source "$SCRIPT_DIR/../scripts/submit_utils.sh"
 LOCAL_SCRIPT_INJECT=$(local_script_inject "$SCRIPT_DIR" run_eval.py:leaderboard/run_eval.py) || exit 1
 if [[ -e "$LOCAL_RESULTS/run_config.json" ]]; then
@@ -124,7 +120,13 @@ mkdir -p "$OUT"
 finish() {
   code=$?
   trap - EXIT
-  cp results/*.jsonl results/*.meta.json "$OUT/" 2>/dev/null || true
+  if (( code == 0 )); then
+    if ! cp results/*.jsonl results/*.meta.json "$OUT/"; then
+      code=1
+    fi
+  else
+    cp results/*.jsonl results/*.meta.json "$OUT/" 2>/dev/null || true
+  fi
   printf '{"exit_code": %s}\n' "$code" > "$OUT/job_exit.json"
   exit "$code"
 }
@@ -167,36 +169,51 @@ if space.sha != config["space_revision"] or getattr(stage, "value", stage) not i
     raise SystemExit("Space source/build changed during this run; stop before launching another job.")
 PY
   printf 'Launching %s on one %s; runtime limit %s\n' "$label" "$FLAVOR" "$TIMEOUT"
-  # In 1.18.0, non-detached jobs run streams logs but does not test final status.
-  # Capture the ID explicitly and inspect it below. Bare --secrets HF_TOKEN
-  # reads the token from the environment without putting its value in argv.
-  hf jobs run --detach --format json --flavor "$FLAVOR" --timeout "$TIMEOUT" \
-    "${namespace_args[@]}" --secrets HF_TOKEN \
-    --label "model=$MODEL_ID" --label "run_id=$RUN_ID" --label "dataset=$label" \
-    --env HF_AUDIO_DECODER_BACKEND=soundfile \
-    --env "SPEEDASR_MODEL_ID=$MODEL_ID" --env "SPEEDASR_MODEL_REVISION=$MODEL_REVISION" \
-    --env "SPEEDASR_MODEL_FOLDER=$MODEL_FOLDER" --env "SPEEDASR_RUN_ID=$RUN_ID" \
-    --env "SPEEDASR_DATASET_LABEL=$label" --env "SPEEDASR_DATASET_PATH=$dataset_path" \
-    --env "SPEEDASR_DATASET_CONFIG=$dataset_config" --env "SPEEDASR_BATCH_SIZE=$BATCH_SIZE" \
-    --env "SPEEDASR_BATCH_AUDIO_SECONDS=$BATCH_AUDIO_SECONDS" \
-    --env "SPEEDASR_TORCH_THREADS=$TORCH_THREADS" \
-    --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
-    "hf.co/spaces/${SPACE}" bash -c "$JOB_COMMAND" > "$LOCAL_RESULTS/jobs/${label}.launch.json"
-
-  if "$PYTHON" - "$LOCAL_RESULTS/jobs/${label}.launch.json" "$LOCAL_RESULTS/jobs/${label}.status.json" "$LOCAL_RESULTS/run_config.json" <<'PY'
+  # The SDK returns a structured job ID so status checks do not depend on CLI output.
+  if "$PYTHON" - "$LOCAL_RESULTS" "$label" "$dataset_path" "$dataset_config" "$JOB_COMMAND" <<'PY'
 import json
 import os
 import sys
 import time
-from huggingface_hub import HfApi
+from pathlib import Path
+from huggingface_hub import HfApi, Volume
 
-with open(sys.argv[1], encoding="utf-8") as f:
-    launched = json.load(f)
-with open(sys.argv[3], encoding="utf-8") as f:
+local_results, label, dataset_path, dataset_config, job_command = sys.argv[1:]
+local_results = Path(local_results)
+with (local_results / "run_config.json").open(encoding="utf-8") as f:
     run_config = json.load(f)
-job_id = launched["id"]
-api = HfApi()
+api = HfApi(token=os.environ["HF_TOKEN"])
 namespace = os.getenv("ORG_NAME") or None
+model_id = run_config["MODEL_ID"]
+env = {
+    "HF_AUDIO_DECODER_BACKEND": "soundfile",
+    "SPEEDASR_MODEL_ID": model_id,
+    "SPEEDASR_MODEL_REVISION": run_config["MODEL_REVISION"],
+    "SPEEDASR_MODEL_FOLDER": model_id.replace("/", "-"),
+    "SPEEDASR_RUN_ID": run_config["RUN_ID"],
+    "SPEEDASR_DATASET_LABEL": label,
+    "SPEEDASR_DATASET_PATH": dataset_path,
+    "SPEEDASR_DATASET_CONFIG": dataset_config,
+    "SPEEDASR_BATCH_SIZE": run_config["BATCH_SIZE"],
+    "SPEEDASR_BATCH_AUDIO_SECONDS": run_config["BATCH_AUDIO_SECONDS"],
+    "SPEEDASR_TORCH_THREADS": run_config["TORCH_THREADS"],
+}
+job = api.run_job(
+    image=f"hf.co/spaces/{run_config['SPACE']}",
+    command=["bash", "-c", job_command],
+    flavor=run_config["FLAVOR"],
+    timeout=run_config["TIMEOUT"],
+    namespace=namespace,
+    env=env,
+    secrets={"HF_TOKEN": os.environ["HF_TOKEN"]},
+    labels={"model": model_id, "run_id": run_config["RUN_ID"], "dataset": label},
+    volumes=[Volume(type="bucket", source=run_config["RESULTS_BUCKET"], mount_path="/results")],
+)
+job_id = job.id
+with (local_results / "jobs" / f"{label}.launch.json").open("w", encoding="utf-8") as f:
+    json.dump({"id": job_id, "url": job.url}, f, indent=2)
+    f.write("\n")
+
 last = None
 terminal = {"COMPLETED", "CANCELED", "ERROR", "DELETED"}
 try:
@@ -208,7 +225,7 @@ try:
                 "model_revision": os.environ["MODEL_REVISION"],
                 "space_revision_at_submission": run_config["space_revision"],
                 "space_id": job.space_id, "docker_image": job.docker_image}
-        with open(sys.argv[2], "w", encoding="utf-8") as f:
+        with (local_results / "jobs" / f"{label}.status.json").open("w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
         if stage != last:
