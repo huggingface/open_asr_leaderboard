@@ -9,8 +9,10 @@ import soundfile as sf
 from . import APIProvider, PermanentError, register
 
 # Yoob ASR: OpenAI-compatible POST /v1/audio/transcriptions. The audio goes as the raw request body (16 kHz mono FLAC),
-# options (model, language, response format) as query parameters. English is the default; other languages are sent in
-# `language` (the API answers 400 unsupported_language for a language the model does not support). The API takes up to an hour per request, but the edge proxy closes requests that run
+# options (model, language, response format) as query parameters. Supports 39 languages (ar, bg, bn, bs, cs, da, de, el,
+# en, es, et, fi, fr, he, hi, hr, hu, id, it, ja, ko, lt, lv, ms, mt, nl, pl, pt, ro, ru, sk, sl, sv, th, tr, uk, vi,
+# yue, zh), auto-detects the language when `language` is omitted, and answers 400 unsupported_language for unsupported
+# codes. The API takes up to an hour per request, but the edge proxy closes requests that run
 # past ~100 s, so recordings longer than CHUNK_S are sent in pieces cut at the quietest point within SEARCH_S seconds before
 # each nominal boundary (the API itself cuts every request into <= 30 s pieces the same way).
 # run_api.sh passes YOOB_API_URL even when unset (as ""), so an empty value means the default.
