@@ -30,6 +30,7 @@ MODEL_CONFIGS=(
     "openai/whisper-large-v3-turbo      1024"
     "openai/whisper-large-v3            128"
     "distil-whisper/distil-large-v3.5   1024"
+    "igunosalabs/Unose-Huen-Small      128"
     # "openai/whisper-tiny.en           128"
     # "openai/whisper-small.en          128"
     # "openai/whisper-base.en           128"
