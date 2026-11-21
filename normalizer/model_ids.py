@@ -35,6 +35,7 @@ HYPHENATED_ORGS = frozenset(
         "futo-org",
         "hf-audio",
         "ibm-granite",
+        "ishiki-labs",
         "zai-org",
     }
 )
