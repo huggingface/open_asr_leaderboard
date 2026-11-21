@@ -182,6 +182,9 @@ def main(a):
     for _ in range(a.warmup_steps):
         model.transcribe_batch([dummy], sample_rate=16000)
     sync()
+    cuda_batch_retries = getattr(model, "cuda_batch_retries", None)
+    if cuda_batch_retries is not None:
+        cuda_batch_retries.clear()
     if device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(device)
         model.max_gpu_allocated_bytes = 0
@@ -238,6 +241,7 @@ def main(a):
         "device": device,
         "gpu_name": torch.cuda.get_device_name(device) if device.startswith("cuda") else None,
         "peak_gpu_allocated_bytes": model.max_gpu_allocated_bytes if device.startswith("cuda") else None,
+        "cuda_batch_retries": cuda_batch_retries,
         "python": platform.python_version(), "torch": torch.__version__,
         "package_versions": {n: importlib.metadata.version(n) for n in ("k2", "kaldifeat", "numpy", "datasets", "huggingface_hub")},
         "manifest_sha256": sha256(manifest),
