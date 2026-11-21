@@ -145,6 +145,7 @@ def main(args):
     is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
     is_vibevoice = "vibevoice" in args.model_id.lower()
     is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
+    is_omniasr_alm = config.model_type == "omniasr"
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
     # Gemma 4 (incl. the E2B/E4B variants): multimodal chat model, audio goes
@@ -301,7 +302,7 @@ def main(args):
                     sampling_rate=sampling_rate,
                     format=["wav"] * len(audios),
                 )
-            elif is_qwen3_asr:
+            elif is_qwen3_asr or is_omniasr_alm:
                 inputs = processor.apply_transcription_request(audios, language=args.language)
             else:
                 inputs = processor.apply_transcription_request(audios)
@@ -316,8 +317,8 @@ def main(args):
                 padding=True,
                 return_attention_mask=True,
             )
-        elif not model.can_generate():
-            # CTC pre-processing: normalize to mean 0, std 1
+        elif not model.can_generate() or config.model_type == "omniasr_ctc":
+            # CTC pre-processing: normalize to mean 0, std 1 (OmniASR CTC can generate() but needs no 30 s padding)
             inputs = processor(
                 audios,
                 sampling_rate=sampling_rate,
@@ -401,8 +402,11 @@ def main(args):
         elif has_transcription_processor:
             pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_ctc:
-            # don't use skip_special_tokens as it collapses double letters
-            pred_text = processor.batch_decode(pred_ids)
+            if config.model_type == "omniasr_ctc":
+                pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+            else:
+                # don't use skip_special_tokens as it collapses double letters
+                pred_text = processor.batch_decode(pred_ids)
         else:
             pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 

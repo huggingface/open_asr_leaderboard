@@ -1,16 +1,16 @@
 #!/bin/bash
-# Local script to submit HF Jobs for multilingual omniASR evaluation.
+# Local script to submit HF Jobs for multilingual OmniASR (Transformers) evaluation.
 # Evaluates on FLEURS, MCV (Mozilla Common Voice), and MLS (Multilingual LibriSpeech).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
-# Usage: HF_TOKEN=hf_... bash submit_jobs_ml.sh
-#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_ml.sh
+# Usage: HF_TOKEN=hf_... bash submit_jobs_omniasr_ml.sh
+#        HF_TOKEN=hf_... ONLY_LANGUAGES="nl" bash submit_jobs_omniasr_ml.sh
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-omniasr}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 ARMENIAN_DATASET_PATH="${ARMENIAN_DATASET_PATH:-Metric-AI/open-asr-leaderboard-multilingual-datasets}"
@@ -29,26 +29,17 @@ LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval_ml.py) || exi
 # job (so normalizer changes take effect without updating the HF Space).
 LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
-# ── Models: "model_id batch_size" (conservative batch size due to LLM memory requirements) ──
-# Each model entry also lists the languages selected for benchmark jobs.
+# ── Models: "model_id batch_size languages..." ──────────────────────────────
+# Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "facebook/omniASR-CTC-300M-v2   64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-CTC-1B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-CTC-3B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-CTC-7B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-LLM-300M-v2   64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-LLM-1B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-LLM-3B-v2     64 de fr it es pt nl hi hy zh"
-    "facebook/omniASR-LLM-7B-v2     64 de fr it es pt nl hi hy zh"
-    # "facebook/omniASR-CTC-300M      64 hy"
-    # "facebook/omniASR-CTC-1B        64 hy"
-    # "facebook/omniASR-CTC-3B        64 hy"
-    # "facebook/omniASR-CTC-7B        64"
-    # "facebook/omniASR-LLM-300M      64 hy"
-    # "facebook/omniASR-LLM-1B        64 hy"
-    # "facebook/omniASR-LLM-3B        64 hy"
-    # "facebook/omniASR-LLM-7B        64"
-
+    "hf-audio/omniasr-ctc-300m-v2 64 de fr it es pt nl hi hy zh"
+    "hf-audio/omniasr-ctc-1b-v2 64 de fr it es pt nl hi hy zh"
+    "hf-audio/omniasr-ctc-3b-v2 64 de fr it es pt nl hi hy zh"
+    "hf-audio/omniasr-ctc-7b-v2 64 de fr it es pt nl hi hy zh"
+    "hf-audio/omniasr-llm-300m-v2 64 de fr it es pt nl hi hy zh"
+    "hf-audio/omniasr-llm-1b-v2 64 de fr it es pt nl hi hy zh"
+    "hf-audio/omniasr-llm-3b-v2 64 de fr it es pt nl hi hy zh"
+    "hf-audio/omniasr-llm-7b-v2 64 de fr it es pt nl hi hy zh"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
@@ -88,8 +79,11 @@ filter_only_datasets_languages || exit 1
 # ── Submit one job per model/dataset/language combination ───────────────────
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID BATCH_SIZE MODEL_LANGUAGES <<< "$model_cfg"
-    # Sanitize model ID for use as a folder name (e.g. "facebook/omniASR" -> "facebook-omniASR")
+    # Sanitize model ID for use as a folder name (e.g. "openai/whisper" -> "openai-whisper")
     MODEL_FOLDER="${MODEL_ID//\//-}"
+    # Only the auto-regressive (ALM) variant takes max_new_tokens; the CTC variant rejects it.
+    MAX_NEW_TOKENS_ARG=""
+    [[ "$MODEL_ID" == *-llm-* ]] && MAX_NEW_TOKENS_ARG="--max_new_tokens=500"
 
     MODEL_DATASET_CONFIGS=()
     for cfg in "${DATASET_CONFIGS[@]}"; do
@@ -112,13 +106,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         if [[ "$DATASET" == "monsoon" ]]; then
             # Standalone single-config dataset repo — no --config_name.
             JOB_DATASET="${MONSOON_DATASET_PATH}"
-            CONFIG_ARG=""
+            CONFIG_ARG="--language=${LANGUAGE}"
             CONFIG_NAME="(none)"
         else
             JOB_DATASET="${DATASET_PATH}"
             [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
             CONFIG_NAME="${DATASET}_${LANGUAGE}"
-            CONFIG_ARG="--config_name=${CONFIG_NAME}"
+            CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
         fi
         echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
@@ -129,7 +123,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             --flavor "$FLAVOR" \
             --timeout 8h \
             --secrets HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND="soundfile" \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
@@ -140,14 +133,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --model_id=${MODEL_ID} \
                     --dataset=${JOB_DATASET} \
                     ${CONFIG_ARG} \
-                    --language=${LANGUAGE} \
                     --split=test \
                     --device=0 \
                     --batch_size=${BATCH_SIZE} \
-                    --max_eval_samples=-1 &&
+                    --max_eval_samples=${MAX_EVAL_SAMPLES:--1} ${MAX_NEW_TOKENS_ARG} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
-            " > /dev/null 2>&1 &
+            " > /dev/null 2>&1 &    # suppress output and run in background
     done
     if [ -n "$ORG_NAME" ]; then
         echo "For live status see: https://huggingface.co/organizations/${ORG_NAME}/settings/jobs"
