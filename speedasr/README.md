@@ -4,10 +4,10 @@ Offline English Zipformer transducer with **65,551,059 parameters**. Inference u
 
 - [Public model and inference package](https://huggingface.co/SpeedAudio261119/SpeedASR-v1-65M/tree/a6f5cacea359929b52ae41b77f6f634441cf0546)
 - [Evaluation Docker Space](https://huggingface.co/spaces/SpeedAudio/open-asr-leaderboard-speedasr)
-- [Batched `run_eval.py` adapter](https://huggingface.co/SpeedAudio261119/SpeedASR-v1-65M/blob/a6f5cacea359929b52ae41b77f6f634441cf0546/leaderboard/run_eval.py)
+- [Batched evaluation entry point](run_eval.py)
 - [Results bucket](https://huggingface.co/buckets/SpeedAudio/speedasr-open-asr-results)
 
-The Space contains the complete runtime; this directory supplies its HF Jobs launcher. The adapter uses the official `normalizer/data_utils.py` for data loading and manifest writing, and saves raw references/predictions plus Earnings22 parent/chunk metadata. The container pins the official scorer to `4a113dd90c9ffd011d7d3d105da76980d511d029`. Checkpoint, tokenizer and configuration are downloaded from the immutable model revision above.
+The Space supplies the model runtime and pins the official scorer to `4a113dd90c9ffd011d7d3d105da76980d511d029`. This directory contains the evaluator and the HF Jobs launcher. The evaluator uses the official `normalizer/data_utils.py` for data loading and manifest writing, and saves raw references/predictions plus Earnings22 parent/chunk metadata. The checkpoint, tokenizer and configuration come from the immutable model revision above.
 
 ## Run the public English short-form track
 
@@ -18,6 +18,8 @@ python -m pip install 'huggingface_hub==1.18.0'
 # Set HF_TOKEN in the process environment; do not put it in a script or commit.
 bash speedasr/submit_jobs.sh
 ```
+
+By default, the launcher copies the checked-in `run_eval.py` to `/app/leaderboard/run_eval.py` in the job, using the repository's shared launcher helper. Set `USE_LOCAL_SCRIPT=0` to use the evaluator bundled in the Space.
 
 The launcher defaults to the Space and bucket linked above. It starts **one H200 job at a time**, with a **one-hour runtime limit per job**, and explicitly checks terminal job status before starting the next dataset. Failed or canceled jobs stop the run. `hf jobs run` streaming its logs does not itself establish successful job completion in Hub CLI 1.18.0.
 

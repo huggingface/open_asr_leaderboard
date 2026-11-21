@@ -81,6 +81,8 @@ namespace_args=()
 if [[ -n ${ORG_NAME:-} ]]; then
   namespace_args=(--namespace "$ORG_NAME")
 fi
+source "$SCRIPT_DIR/../scripts/submit_utils.sh"
+LOCAL_SCRIPT_INJECT=$(local_script_inject "$SCRIPT_DIR" run_eval.py:leaderboard/run_eval.py) || exit 1
 if [[ -e "$LOCAL_RESULTS/run_config.json" ]]; then
   printf 'RUN_ID already exists locally; choose a new RUN_ID to keep results separate.\n' >&2
   exit 2
@@ -136,6 +138,9 @@ python leaderboard/run_eval.py \
   --warmup-seconds 10 --max_eval_samples -1 2>&1 | tee "$OUT/job.log"
 JOB
 )
+if [[ -n "$LOCAL_SCRIPT_INJECT" ]]; then
+  JOB_COMMAND="$LOCAL_SCRIPT_INJECT $JOB_COMMAND"
+fi
 
 sync_results() {
   hf buckets sync "hf://buckets/${RESULTS_BUCKET}/${MODEL_FOLDER}/${RUN_ID}" "$LOCAL_RESULTS/results"
