@@ -31,6 +31,7 @@ MODEL_IDs=(
     "Qwen/Qwen3-ASR-1.7B-hf"
     "Musci-research/Musci-ASR-qwen-1019-hf"
     "oruk/orukqwen-asr-1.7b"
+    "oruk/oruk-fourier-2b"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
@@ -75,6 +76,11 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         if [[ -z "${EFFECTIVE_BATCH_SIZE}" ]]; then
             echo "ERROR: batch_size missing for '${DATASET} ${SPLIT}' in DATASET_CONFIGS" >&2
             exit 1
+        fi
+        # oruk/oruk-fourier-2b uses num_beams=3 in generation_config.json (3x audio
+        # encoder batch expansion); cap batch_size at 64 to fit comfortably on H200.
+        if [[ "${MODEL_ID}" == "oruk/oruk-fourier-2b" && "${EFFECTIVE_BATCH_SIZE}" -gt 64 ]]; then
+            EFFECTIVE_BATCH_SIZE=64
         fi
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"
