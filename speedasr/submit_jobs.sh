@@ -206,7 +206,7 @@ job = api.run_job(
     namespace=namespace,
     env=env,
     secrets={"HF_TOKEN": os.environ["HF_TOKEN"]},
-    labels={"model": model_id, "run_id": run_config["RUN_ID"], "dataset": label},
+    labels={"model": env["SPEEDASR_MODEL_FOLDER"], "run_id": run_config["RUN_ID"], "dataset": label},
     volumes=[Volume(type="bucket", source=run_config["RESULTS_BUCKET"], mount_path="/results")],
 )
 job_id = job.id
