@@ -108,7 +108,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             bash -c "
                 ${LOCAL_NORMALIZER_INJECT}
                 ${LOCAL_SCRIPT_INJECT}
-                PYTHONPATH=/app python run_eval_ml.py \
+                pip install -q opencc==1.4.2 wetext==0.1.8 && PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
                     --revision=${REVISION} \
                     --mode=${MODE} \
