@@ -188,7 +188,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, default="udgamlabs/Shruti", help="One of MODELS.")
-    parser.add_argument("--revision", type=str, default="main", help="Model repo revision (commit or tag).")
+    parser.add_argument("--revision", type=str, default="11f26f7ccdc0324d623937601fe497efceca6e6e", help="Model repo revision (commit or tag).")
     parser.add_argument("--dataset", type=str, required=True, help="E.g. 'VoiceArena/Monsoon_hi_test'.")
     parser.add_argument("--config_name", type=str, default=None, help="Omit for single-config dataset repos.")
     parser.add_argument("--language", type=str, default=None, help="Selects the normalizer/scorer only.")
