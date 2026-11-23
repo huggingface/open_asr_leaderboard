@@ -19,7 +19,7 @@ MODEL_CONFIGS=(
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-pro      4"
     # "assembly/universal-3-5-pro    4"
-    # "eesi-ai/nur-v1                1"
+    # "eesi-ai/nur-v1                2"
     # "elevenlabs/scribe_v2          8"
     # "speechmatics/enhanced         4"
     # "reson8/resonant-1             16"
