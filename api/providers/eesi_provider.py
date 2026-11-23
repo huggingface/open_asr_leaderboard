@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Optional
 
 import requests
@@ -9,6 +10,10 @@ from . import APIProvider, PermanentError, register
 # the API keeps neither the audio nor its transcript. run_api.sh passes EESI_API_URL even when unset (as ""), so an
 # empty value means the default.
 ENDPOINT = (os.getenv("EESI_API_URL") or "https://api.eesi.ai").rstrip("/") + "/v1/audio/transcriptions"
+# A request the API cannot serve right now (429, 5xx or a dropped connection, e.g. while a release restarts its
+# speech servers) is tried again with growing waits for up to this long, before transcribe_with_retry's own retries.
+RETRY_FOR_S = 600
+MAX_BACKOFF_S = 60
 
 
 @register("eesi-ai")
@@ -33,15 +38,28 @@ class EesiProvider(APIProvider):
         else:
             with open(audio_file_path, "rb") as f:
                 audio, name = f.read(), os.path.basename(audio_file_path)
-        resp = requests.post(
-            ENDPOINT,
-            headers={"Authorization": f"Bearer {api_key}"},
-            data={"model": model_variant, "language": language or "en", "store": "false"},
-            files={"file": (name, audio)},
-            timeout=600,
-        )
-        if resp.status_code in (400, 401, 402, 403, 404, 413):
-            # Bad key, no credits, unknown model, undecodable or oversized audio: retrying cannot help.
-            raise PermanentError(f"EESI API {resp.status_code}: {resp.text[:300]}")
-        resp.raise_for_status()  # 429 / 5xx: transcribe_with_retry() retries
-        return resp.json()["text"].strip()
+        deadline = time.monotonic() + RETRY_FOR_S
+        backoff = 2.0
+        while True:
+            try:
+                resp = requests.post(
+                    ENDPOINT,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    data={"model": model_variant, "language": language or "en", "store": "false"},
+                    files={"file": (name, audio)},
+                    timeout=600,
+                )
+            except requests.RequestException:
+                if time.monotonic() + backoff > deadline:
+                    raise
+            else:
+                if resp.status_code in (400, 401, 402, 403, 404, 413):
+                    # Bad key, no credits, unknown model, undecodable or oversized audio: retrying cannot help.
+                    raise PermanentError(f"EESI API {resp.status_code}: {resp.text[:300]}")
+                if resp.status_code != 429 and resp.status_code < 500:
+                    resp.raise_for_status()
+                    return resp.json()["text"].strip()
+                if time.monotonic() + backoff > deadline:
+                    resp.raise_for_status()
+            time.sleep(backoff)
+            backoff = min(backoff * 2, MAX_BACKOFF_S)
