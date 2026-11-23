@@ -22,7 +22,7 @@ torch.set_float32_matmul_precision("high")
 
 
 # Input window per clip: (window in seconds, longest clip that goes to it); longer clips use --chunk_length.
-WINDOW_RULE = ((15, 7.0), (20, 18.0))
+WINDOW_RULE = ()
 LOOP_UNITS_PER_S = 6.0
 
 
