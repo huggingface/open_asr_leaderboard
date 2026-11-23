@@ -17,7 +17,7 @@ MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 # TheStage AI token for downloading the compiled engines; passed to every job as a secret.
-export THESTAGE_AUTH_TOKEN="${THESTAGE_AUTH_TOKEN:-th_Har1cDb3EWLfNLtrfXaPwBc9cev6BtSNNUYiZd8r}"
+export THESTAGE_AUTH_TOKEN="${THESTAGE_AUTH_TOKEN:-th_ED0E1XHt7MSSbwRgYTH60F9ECvTCJ3jiKasmM0u9}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
