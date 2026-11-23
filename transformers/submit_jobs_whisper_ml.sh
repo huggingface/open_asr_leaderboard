@@ -32,12 +32,12 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 # ── Models: "model_id batch_size languages..." ──────────────────────────────
 # Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi zh"
-    "openai/whisper-large-v3            64 de fr it es pt nl hy hi zh"
+    "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi zh ur"
+    "openai/whisper-large-v3            64 de fr it es pt nl hy hi zh ur"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Chinese, Hindi, Urdu
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
@@ -48,6 +48,7 @@ DATASET_CONFIGS=(
     "fleurs pt"
     "fleurs nl"
     "fleurs hy"
+    "fleurs ur"
     "mcv hy"
     "fleurs zh"
     "aishell1 zh"
@@ -102,7 +103,12 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         else
             JOB_DATASET="${DATASET_PATH}"
             [[ "$LANGUAGE" == "hy" ]] && JOB_DATASET="${ARMENIAN_DATASET_PATH}"
-            CONFIG_NAME="${DATASET}_${LANGUAGE}"
+            if [[ "$LANGUAGE" == "ur" ]]; then
+                JOB_DATASET="google/fleurs"
+                CONFIG_NAME="ur_pk"
+            else
+                CONFIG_NAME="${DATASET}_${LANGUAGE}"
+            fi
             CONFIG_ARG="--config_name=${CONFIG_NAME} --language=${LANGUAGE}"
         fi
         echo "Submitting job: model=${MODEL_ID} dataset=${JOB_DATASET} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
