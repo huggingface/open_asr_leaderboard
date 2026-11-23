@@ -10,7 +10,7 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-thewhisper}"
+SPACE="${SPACE:-TheStageAI/open-asr-leaderboard-thewhisper}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_multilingual}"
 DATASET_PATH="${DATASET_PATH:-hf-audio/open-asr-leaderboard-multilingual-datasets}"
 MONSOON_DATASET_PATH="${MONSOON_DATASET_PATH:-VoiceArena/Monsoon_hi_test}"
@@ -108,7 +108,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             bash -c "
                 ${LOCAL_NORMALIZER_INJECT}
                 ${LOCAL_SCRIPT_INJECT}
-                pip install -q opencc==1.4.2 wetext==0.1.8 && PYTHONPATH=/app python run_eval_ml.py \
+                PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
                     --revision=${REVISION} \
                     --mode=${MODE} \
