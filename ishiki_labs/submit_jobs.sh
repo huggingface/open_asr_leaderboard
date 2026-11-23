@@ -12,7 +12,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
-FLAVOR="${FLAVOR:-h100}"
+FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 JOB_TIMEOUT="${JOB_TIMEOUT:-4h}"
 
