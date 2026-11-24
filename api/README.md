@@ -76,8 +76,8 @@ bash api/run_api_ml.sh
 ## Long-form
 
 `api/run_api_longform.sh` evaluates Earnings21, Earnings22, and all eight CORAAL
-subsets. Set the model ID with `MODEL` and the number of concurrent workers with
-`MAX_WORKERS`. Raw, unnormalized references and predictions are uploaded to
+subsets. As above, select a model together with its number of workers using
+`MODEL`. Raw, unnormalized references and predictions are uploaded to
 `hf-audio/asr_leaderboard_private` (override with `RESULTS_BUCKET`).
 
 
@@ -90,65 +90,14 @@ grep -c '"pred_text": ""' api/results/<model-folder>/*.jsonl
 
 Smoke test:
 ```bash
-ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2" MAX_WORKERS=2 \
+ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 2" \
 DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
 bash api/run_api_longform.sh
 ```
 
 Full run:
 ```bash
-ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2" MAX_WORKERS=2 \
+ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 2" \
 HF_TOKEN=<YOUR_TOKEN> \
 bash api/run_api_longform.sh
 ```
-
-### OtterAI
-
-Use `OtterAI/speech-v3.1` with the long-form launcher. It sends each recording
-with `long-form=true`, polls asynchronous jobs every 10 seconds, and
-acknowledges completed results so the server can remove its copy. Recordings
-under 40 seconds can return a transcript immediately. Export `OTTERAI_API_KEY`
-and `HF_TOKEN` before running either command.
-
-Run one Earnings21 recording and score it locally:
-
-```bash
-MODEL="OtterAI/speech-v3.1" MAX_WORKERS=1 \
-DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
-MAX_SAMPLES=1 RESULTS_BUCKET='' bash api/run_api_longform.sh
-```
-
-`MAX_SAMPLES` saves partial manifests and scores in a fresh temporary directory
-printed by the launcher. For a full local run, omit `DATASETS` and `MAX_SAMPLES`:
-
-```bash
-MODEL="OtterAI/speech-v3.1" MAX_WORKERS=6 RESULTS_BUCKET='' \
-RESULTS_DIR="$PWD/api/results/otter-longform-full" bash api/run_api_longform.sh
-```
-
-This writes the raw prediction manifests and scores them with the repository's
-long-form scorer. A failed OtterAI request stops the run after retries.
-
-#### OtterAI long-form WER
-
-Contributor-reported WER from the November 21, 2026 public API evaluation of
-440 recordings at six concurrent requests.
-
-| Dataset | WER |
-| --- | ---: |
-| Earnings21 | 5.99% |
-| Earnings22 | 8.65% |
-| CORAAL ATL | 10.79% |
-| CORAAL DCA | 11.32% |
-| CORAAL DCB | 7.61% |
-| CORAAL DTA | 11.70% |
-| CORAAL LES | 10.84% |
-| CORAAL PRV | 14.11% |
-| CORAAL ROC | 5.49% |
-| CORAAL VLD | 7.78% |
-| **CORAAL average (8 subsets)** | **9.95%** |
-| **Overall long-form average** | **8.20%** |
-
-The CORAAL average gives equal weight to all eight subsets. The overall
-average gives equal weight to Earnings21, Earnings22, and the CORAAL
-average. Averages are computed before rounding.

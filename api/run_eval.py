@@ -99,6 +99,7 @@ def transcribe_with_retry(
 
 
 def bounded_transcriptions(executor, process_sample, samples, max_workers):
+    """Keep at most max_workers decoded recordings submitted at a time."""
     samples = iter(samples)
     pending = {
         executor.submit(process_sample, sample)
@@ -124,7 +125,6 @@ def transcribe_dataset(
     max_workers=4,
     prompt=None,
     streaming=False,
-    fail_on_error=False,
 ):
     is_chunked = data_utils.is_chunked_dataset(dataset_path)
 
@@ -172,8 +172,6 @@ def transcribe_dataset(
                     model_name, None, sample, use_url=True, prompt=prompt
                 )
             except Exception as e:
-                if fail_on_error:
-                    raise
                 print(f"Failed to transcribe after retries: {e}")
                 transcription = ""
 
@@ -197,8 +195,6 @@ def transcribe_dataset(
                     model_name, tmp_path, sample, use_url=False, prompt=prompt
                 )
             except Exception as e:
-                if fail_on_error:
-                    raise
                 print(f"Failed to transcribe after retries: {e}")
                 transcription = ""
             finally:
@@ -290,11 +286,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument(
-        "--fail_on_error",
-        action="store_true",
-        help="Fail the run if a recording cannot be transcribed after retries.",
-    )
-    parser.add_argument(
         "--max_workers", type=int, default=300, help="Number of concurrent threads"
     )
     parser.add_argument(
@@ -327,5 +318,4 @@ if __name__ == "__main__":
         max_workers=args.max_workers,
         prompt=args.prompt,
         streaming=args.streaming,
-        fail_on_error=args.fail_on_error,
     )
