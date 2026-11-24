@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-RESULTS_BUCKET="${RESULTS_BUCKET-hf-audio/asr_leaderboard_private}"
+RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_private}"
 IMAGE_TAG="api-eval"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
 
@@ -37,7 +37,7 @@ DATASET_CONFIGS=(
 )
 
 # Override either matrix for a focused run, for example:
-#   MODEL="elevenlabs/scribe_v2" MAX_WORKERS=8 \
+#   MODEL="elevenlabs/scribe_v2 8" \
 #   DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
 #   bash api/run_api_longform.sh
 if [[ -n "${DATASETS:-}" ]]; then
@@ -55,12 +55,7 @@ echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
 docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MODEL_WORKERS <<< "${model_cfg}"
-    WORKERS="${MAX_WORKERS:-${MODEL_WORKERS:-4}}"
-    if [[ ! "${WORKERS}" =~ ^[1-9][0-9]*$ ]]; then
-        echo "ERROR: The worker count must be a positive integer." >&2
-        exit 1
-    fi
+    read -r MODEL_ID MAX_WORKERS <<< "${model_cfg}"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     for dataset_cfg in "${DATASET_CONFIGS[@]}"; do
@@ -95,7 +90,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${WORKERS} \
+                    --max_workers=${MAX_WORKERS} \
                     --streaming
             "
     done
