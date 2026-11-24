@@ -72,6 +72,9 @@ submit_hf_job() {
     local log_file="${SUBMISSION_LOG_DIR}/${safe_label}.log"
     local namespace_args=()
     [[ -n "${ORG_NAME}" ]] && namespace_args=(--namespace "${ORG_NAME}")
+    local extra_env_args=()
+    [[ -n "${MAX_NUM_SEQS:-}" ]] && extra_env_args+=(--env "MAX_NUM_SEQS=${MAX_NUM_SEQS}")
+    [[ -n "${GPU_MEMORY_UTILIZATION:-}" ]] && extra_env_args+=(--env "GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION}")
 
     hf jobs run \
         --name "transcribe-${job_name}" \
@@ -83,6 +86,7 @@ submit_hf_job() {
         --env MODEL_ID="${MODEL_ID}" \
         --env SPECULATIVE="${SPECULATIVE}" \
         --env SERVER_START_TIMEOUT_S="${SERVER_START_TIMEOUT_S:-1800}" \
+        "${extra_env_args[@]}" \
         "${namespace_args[@]}" \
         --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
         "hf.co/spaces/${SPACE}" \
