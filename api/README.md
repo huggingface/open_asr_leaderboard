@@ -76,8 +76,8 @@ bash api/run_api_ml.sh
 ## Long-form
 
 `api/run_api_longform.sh` evaluates Earnings21, Earnings22, and all eight CORAAL
-subsets. As above, select a model together with its number of workers using
-`MODEL`. Raw, unnormalized references and predictions are uploaded to
+subsets. Set the model ID with `MODEL` and the number of concurrent workers with
+`MAX_WORKERS`. Raw, unnormalized references and predictions are uploaded to
 `hf-audio/asr_leaderboard_private` (override with `RESULTS_BUCKET`).
 
 
@@ -90,14 +90,14 @@ grep -c '"pred_text": ""' api/results/<model-folder>/*.jsonl
 
 Smoke test:
 ```bash
-ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 2" \
+ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2" MAX_WORKERS=2 \
 DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
 bash api/run_api_longform.sh
 ```
 
 Full run:
 ```bash
-ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 2" \
+ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2" MAX_WORKERS=2 \
 HF_TOKEN=<YOUR_TOKEN> \
 bash api/run_api_longform.sh
 ```
@@ -113,7 +113,7 @@ and `HF_TOKEN` before running either command.
 Run one Earnings21 recording and score it locally:
 
 ```bash
-MODEL="OtterAI/speech-v3.1 1" \
+MODEL="OtterAI/speech-v3.1" MAX_WORKERS=1 \
 DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
 MAX_SAMPLES=1 RESULTS_BUCKET='' bash api/run_api_longform.sh
 ```
@@ -122,7 +122,7 @@ MAX_SAMPLES=1 RESULTS_BUCKET='' bash api/run_api_longform.sh
 printed by the launcher. For a full local run, omit `DATASETS` and `MAX_SAMPLES`:
 
 ```bash
-MODEL="OtterAI/speech-v3.1 4" RESULTS_BUCKET='' \
+MODEL="OtterAI/speech-v3.1" MAX_WORKERS=6 RESULTS_BUCKET='' \
 RESULTS_DIR="$PWD/api/results/otter-longform-full" bash api/run_api_longform.sh
 ```
 

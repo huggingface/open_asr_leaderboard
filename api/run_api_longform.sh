@@ -19,7 +19,7 @@ MODEL_CONFIGS=(
     # "assembly/universal-3-5-pro    4"
     # "elevenlabs/scribe_v2          2"
     # "reson8/resonant-1             4"
-    # "OtterAI/speech-v3.1          4"
+    # "OtterAI/speech-v3.1          6"
 )
 
 # ── Datasets: "dataset_path:config:split" ────────────────────────────────────
@@ -37,14 +37,22 @@ DATASET_CONFIGS=(
 )
 
 # Override either matrix for a focused run, for example:
-#   MODEL="elevenlabs/scribe_v2 8" \
+#   MODEL="elevenlabs/scribe_v2" MAX_WORKERS=8 \
 #   DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
 #   bash api/run_api_longform.sh
 if [[ -n "${DATASETS:-}" ]]; then
     read -ra DATASET_CONFIGS <<< "${DATASETS}"
 fi
 if [[ -n "${MODEL:-}" ]]; then
+    if [[ "${MODEL}" =~ [[:space:]] ]]; then
+        echo "ERROR: Set MODEL to the model ID and MAX_WORKERS separately." >&2
+        exit 1
+    fi
     MODEL_CONFIGS=("${MODEL}")
+fi
+if [[ -n "${MAX_WORKERS:-}" && ! "${MAX_WORKERS}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: MAX_WORKERS must be a positive integer." >&2
+    exit 1
 fi
 
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
@@ -66,7 +74,8 @@ echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
 docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
-    read -r MODEL_ID MAX_WORKERS <<< "${model_cfg}"
+    read -r MODEL_ID DEFAULT_WORKERS <<< "${model_cfg}"
+    WORKERS="${MAX_WORKERS:-${DEFAULT_WORKERS:-4}}"
     MODEL_FOLDER="${MODEL_ID//\//-}"
     EVAL_ARGS=("${SAMPLE_ARGS[@]}")
     if [[ "${MODEL_ID}" == OtterAI/* ]]; then
@@ -101,7 +110,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -v "${HF_CACHE_DIR}:/hf_cache" \
             "${IMAGE_TAG}" -c 'cd /app && PYTHONPATH=/app python run_eval.py "$@"' _ \
             --dataset_path "${DATASET_PATH}" --dataset "${DATASET}" --split "${SPLIT}" \
-            --model_name "${MODEL_ID}" --max_workers "${MAX_WORKERS}" --streaming \
+            --model_name "${MODEL_ID}" --max_workers "${WORKERS}" --streaming \
             "${EVAL_ARGS[@]}"
     done
 
