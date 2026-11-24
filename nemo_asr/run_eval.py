@@ -15,6 +15,31 @@ from nemo.collections.asr.models import ASRModel
 import time
 
 
+def chunk_audio_files(audio_files, chunk_length_s):
+    """Split recordings into fixed-size chunks and return paths plus group sizes."""
+    chunk_paths, chunks_per_file = [], []
+    for audio_path in audio_files:
+        audio, sample_rate = soundfile.read(audio_path, dtype="float32")
+        chunk_samples = int(chunk_length_s * sample_rate)
+        file_chunk_paths = []
+        for index, start in enumerate(range(0, len(audio), chunk_samples)):
+            chunk_path = f"{audio_path}.chunk-{index:05d}.wav"
+            if not os.path.exists(chunk_path):
+                soundfile.write(chunk_path, audio[start : start + chunk_samples], sample_rate)
+            file_chunk_paths.append(chunk_path)
+        chunk_paths.extend(file_chunk_paths)
+        chunks_per_file.append(len(file_chunk_paths))
+    return chunk_paths, chunks_per_file
+
+
+def merge_chunk_transcriptions(texts, chunks_per_file):
+    merged, offset = [], 0
+    for count in chunks_per_file:
+        merged.append(" ".join(texts[offset : offset + count]))
+        offset += count
+    return merged
+
+
 def main(args):
 
     data_cache_root = args.data_cache_root if args.data_cache_root is not None else os.getcwd()
@@ -144,6 +169,11 @@ def main(args):
             audio_files = all_data["audio_filepaths"][:args.batch_size * 4] # warmup with 4 batches
         else:
             audio_files = all_data["audio_filepaths"]
+        chunks_per_file = None
+        if args.chunk_length_s:
+            # Models with a short audio window (Canary: ~40 s) drop content from longer recordings, so transcribe
+            # fixed consecutive windows and join their texts; the chunking is part of the timed work.
+            audio_files, chunks_per_file = chunk_audio_files(audio_files, args.chunk_length_s)
         start_time = time.time()
         with torch.inference_mode(), torch.no_grad(): 
 
@@ -156,6 +186,11 @@ def main(args):
                 transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, pnc=pnc, num_workers=1)
             else:
                 transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, num_workers=1)
+        if chunks_per_file is not None:
+            if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
+                transcriptions = transcriptions[0]
+            transcriptions = [type("T", (), {"text": t})() for t in merge_chunk_transcriptions(
+                [pred.text for pred in transcriptions], chunks_per_file)]
         end_time = time.time()
         if _ == 1:
             total_time += end_time - start_time
@@ -257,6 +292,12 @@ if __name__ == "__main__":
         "--streaming",
         action="store_true",
         help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
+    )
+    parser.add_argument(
+        "--chunk_length_s",
+        type=float,
+        default=None,
+        help="Transcribe fixed windows of this many seconds and join their texts (for models with a short audio window).",
     )
     args = parser.parse_args()
 

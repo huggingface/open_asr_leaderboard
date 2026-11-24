@@ -11,6 +11,9 @@ set -euo pipefail
 #   HF_TOKEN="hf_..." \
 #   bash audio8_asr/submit_jobs.sh
 # Override RESULTS_BUCKET and ORG_NAME when running outside the hf-audio namespace.
+# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
+# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md). Its recordings (35-123 s) exceed the model's
+# 30 s limit, so they are split into consecutive 30 s windows whose transcripts are joined (--chunk_length_s).
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-audio8-asr}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
@@ -49,12 +52,14 @@ DATASET_CONFIGS=(
   "urgent2024_clean test ${URGENT2024_CLEAN_BATCH_SIZE:-1024}"
   "voxpopuli_cleaned_aa test ${VOXPOPULI_BATCH_SIZE:-628}"
   "monsoon_en_in test ${MONSOON_EN_IN_BATCH_SIZE:-1024} VoiceArena/Monsoon_en_IN_test"
+  "voice_code_bench test ${VOICE_CODE_BENCH_BATCH_SIZE:-128} besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
@@ -91,7 +96,16 @@ for config in "${DATASET_CONFIGS[@]}"; do
       dataset_path="$DEFAULT_DATASET_PATH"
       dataset_config="$dataset"
   fi
-  echo "Submitting dataset_path=${dataset_path} dataset=${dataset} split=${split} batch_size=${batch_size}"
+  # VoiceCodeBench recordings are 35-123 s: window them to the model's 30 s limit; batch_size then counts windows.
+  # Its manifest is named after the repo's "default" config (what vcb_dataset_config sets).
+  chunk_args=""
+  if [[ "$dataset_path" == "$VCB_DATASET_PATH" ]]; then
+    DATASET_PATH="$dataset_path"; DATASET_CONFIG="$dataset"
+    vcb_dataset_config
+    dataset="$DATASET_CONFIG"
+    chunk_args="--chunk_length_s=30"
+  fi
+  echo "Submitting dataset_path=${dataset_path} dataset=${dataset} split=${split} batch_size=${batch_size} ${chunk_args}"
   (
     hf jobs run \
       --flavor "$FLAVOR" \
@@ -124,6 +138,7 @@ for config in "${DATASET_CONFIGS[@]}"; do
           --warmup_steps=${WARMUP_STEPS} \\
           --feature_workers=${FEATURE_WORKERS} \\
           --torch_cpu_threads=1 \\
+          ${chunk_args} \\
           ${COMPILE_ARGS}
         mkdir -p /results_bucket/${MODEL_FOLDER}
         cp /app/results/*.jsonl /results_bucket/${MODEL_FOLDER}/
@@ -164,5 +179,9 @@ from normalizer.eval_utils import score_results
 
 score_results("$RUN_RESULTS", "$MODEL_ID", families=["public"])
 PY
+
+vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade
 
 echo "All Audio8-ASR public HF Jobs completed and scored."

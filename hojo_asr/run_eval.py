@@ -6,18 +6,25 @@ from datasets import load_dataset
 from hojo_asr import HOJO_ASR
 import evaluate
 from normalizer import data_utils
+from normalizer import voice_code_bench
 import time
 from tqdm import tqdm
 
 wer_metric = evaluate.load("wer")
 
 def main(args):
+    # VoiceCodeBench keeps its raw text and every recording; its WER and CTEM are computed from the manifest.
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     # Load hojo model
     model = HOJO_ASR.load_model(args.model_id, device=args.device)
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
+    if is_vcb:
+        # run_infer takes its generation limit from the model config (about 200 tokens by default), which cuts off
+        # VoiceCodeBench's 35-123 s recordings, so raise it for this dataset only.
+        model.config.generate["max_new_tokens"] = args.max_new_tokens
 
     dataset = data_utils.load_data(args)
-    dataset = data_utils.prepare_data(dataset)
+    dataset = data_utils.prepare_data(dataset, normalize_text=not is_vcb)
 
     def benchmark(batch):
         # Load audio inputs
@@ -32,7 +39,22 @@ def main(args):
         end_event = torch.cuda.Event(enable_timing=True)
         start_event.record()
 
-        results = model.run_infer(audios, batch_size=args.batch_size)
+        if is_vcb:
+            # The feature extractor truncates input at 40 s, so VoiceCodeBench's 35-123 s recordings are
+            # transcribed in 30 s chunks and the pieces are joined per recording.
+            size = 30 * 16000
+            pieces, owners = [], []
+            for i, a in enumerate(audios):
+                for s in range(0, max(len(a), 1), size):
+                    pieces.append(a[s:s + size])
+                    owners.append(i)
+            chunk_texts = [val["text"] for val in model.run_infer(pieces, batch_size=args.batch_size)]
+            joined = [[] for _ in audios]
+            for o, t in zip(owners, chunk_texts):
+                joined[o].append(t)
+            results = [{"text": " ".join(x for x in j if x)} for j in joined]
+        else:
+            results = model.run_infer(audios, batch_size=args.batch_size)
 
         # Extract text predictions
         pred_text = [val["text"] for val in results]
@@ -56,6 +78,10 @@ def main(args):
     )
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     all_results = {
         "audio_length_s": [],
@@ -64,8 +90,7 @@ def main(args):
         "references": [],
         "audio_filepath": [],
     }
-    if is_chunked:
-        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    all_results.update({key: [] for key in metadata_keys})
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
@@ -82,11 +107,14 @@ def main(args):
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
-        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: all_results[key] for key in metadata_keys},
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2))
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))

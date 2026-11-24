@@ -1,6 +1,9 @@
 #!/bin/bash
 # Local script to submit HF Jobs for FUTO asr4all evaluation.
 # Usage: ORG_NAME=<org> RESULTS_BUCKET=<bucket> bash submit_jobs.sh
+# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
+# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md). Its 35-123 s recordings are split into
+# 20 s windows (--chunk_length_s) so the 256-token punctuation/casing pass never truncates; windows are joined in order.
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.
@@ -33,8 +36,8 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
-    "futo-org/asr4all-s"
-    "futo-org/asr4all-m"
+    # "futo-org/asr4all-s"  # dropped: WER above 10%, only the L model is kept
+    # "futo-org/asr4all-m"  # dropped: WER above 10%, only the L model is kept
     "futo-org/asr4all-l"
 )
 if [[ -n "${ONLY_MODELS:-}" ]]; then
@@ -54,6 +57,7 @@ DATASET_CONFIGS=(
     "urgent2024 test 256"
     "urgent2024_clean test 256"
     "monsoon_en_in test 256 VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test 128 besimple-ai/voice-code-bench"
 )
 # Per-model batch overrides ("model dataset batch"): the dataset table above is the default for every
 # model; a larger model may need a smaller maximum batch to fit in H200 memory.
@@ -65,6 +69,7 @@ BATCH_OVERRIDES=(
 # field of each DATASET_CONFIGS entry e.g.:
 #   ONLY_DATASETS="urgent2024 urgent2024_clean" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
 for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
@@ -84,7 +89,15 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
             DATASET_CONFIG="$DATASET"
         fi
         [[ "$DATASET" == earnings22* ]] && DATASET_CONFIG="$DATASET"
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET_CONFIG} split=${SPLIT}"
+        vcb_dataset_config
+        JOB_BATCH_SIZE="$BATCH_SIZE"
+        EXTRA_ARGS=""
+        if [[ "$DATASET_PATH" == "$VCB_DATASET_PATH" ]]; then
+            # 35-123 s recordings are cut into 20 s windows (PCEC token cap), so each window is a normal-size input.
+            EXTRA_ARGS="--chunk_length_s=20"
+            JOB_BATCH_SIZE=128
+        fi
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET_CONFIG} split=${SPLIT} batch_size=${JOB_BATCH_SIZE} ${EXTRA_ARGS}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -108,7 +121,8 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${BATCH_SIZE} \
+                    --batch_size=${JOB_BATCH_SIZE} \
+                    ${EXTRA_ARGS} \
                     ${EVAL_FLAGS} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
@@ -134,4 +148,9 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
 from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
+
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade

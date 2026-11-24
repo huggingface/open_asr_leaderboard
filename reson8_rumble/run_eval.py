@@ -18,6 +18,7 @@ import aiohttp
 BASE_PORT = 8000
 
 DEFAULT_DATASET_PATH = "hf-audio/open-asr-leaderboard"
+VCB_MAX_NEW_TOKENS = 1024
 
 LANGUAGE_NAMES = {
     # Note: it supports more languages
@@ -209,11 +210,14 @@ def audio_duration(row, audio_path):
 
 def prepare_inputs(args, audio_dir):
     """Stage original encoded files; leave decoding and resampling to vLLM."""
-    from normalizer import data_utils
+    from normalizer import data_utils, voice_code_bench
 
     dataset = data_utils.load_data(args)
     dataset = dataset.cast_column("audio", replace(dataset.features["audio"], decode=False))
     chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so that its coverage stays
+    # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     multilingual = getattr(args, "multilingual", False)
     audio_dir = Path(audio_dir).resolve()
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -223,8 +227,8 @@ def prepare_inputs(args, audio_dir):
             reference = json.dumps(row["lattice"], ensure_ascii=False)
         else:
             reference = data_utils.get_text(row)
-        text = reference if multilingual else data_utils.normalizer(reference)
-        if not data_utils.is_target_text_in_range(text):
+        text = reference if multilingual or is_vcb else data_utils.normalizer(reference)
+        if not is_vcb and not data_utils.is_target_text_in_range(text):
             continue
         encoded = row["audio"]
         audio_path = audio_dir / str(len(samples))
@@ -244,14 +248,15 @@ def prepare_inputs(args, audio_dir):
         samples.append(Sample(
             len(samples), audio_path, reference, duration,
             data_utils.extract_audio_filepath_from_sample(row),
-            {key: row[key] for key in data_utils.CHUNK_METADATA_KEYS} if chunked else {},
+            {key: row[key] for key in voice_code_bench.MANIFEST_KEYS} if is_vcb
+            else {key: row[key] for key in data_utils.CHUNK_METADATA_KEYS} if chunked else {},
         ))
     return samples
 
 
 def results_from_rows(rows, elapsed, dataset_path):
     """Distribute dataset wall time across rows for the upstream scorer to sum."""
-    from normalizer import data_utils
+    from normalizer import data_utils, voice_code_bench
 
     results = {
         "audio_length_s": [row["duration"] for row in rows],
@@ -262,18 +267,23 @@ def results_from_rows(rows, elapsed, dataset_path):
     }
     for key in ("raw_completion", "finish_reason", "completion_tokens"):
         results[key] = [row[key] for row in rows]
-    if data_utils.is_chunked_dataset(dataset_path):
+    if voice_code_bench.is_voice_code_bench(dataset_path):
+        for key in voice_code_bench.MANIFEST_KEYS:
+            results[key] = [row["metadata"][key] for row in rows]
+    elif data_utils.is_chunked_dataset(dataset_path):
         for key in data_utils.CHUNK_METADATA_KEYS:
             results[key] = [row["metadata"][key] for row in rows]
     return results
 
 
 def write_results(args, all_results):
-    from normalizer import data_utils
+    from normalizer import data_utils, voice_code_bench
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
     extra_fields = (
-        {key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        {key: all_results[key] for key in voice_code_bench.MANIFEST_KEYS}
+        if voice_code_bench.is_voice_code_bench(args.dataset_path)
+        else {key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
         if is_chunked
         else {}
     )
@@ -330,7 +340,7 @@ def main(args):
     if args.num_engines < 1:
         raise ValueError("Engine count must be positive")
 
-    from normalizer import data_utils
+    from normalizer import data_utils, voice_code_bench
 
     for path, config, split, language in selections:
         selection = argparse.Namespace(**vars(args))
@@ -338,6 +348,10 @@ def main(args):
         selection.language = language
         selection.multilingual = language != "en"
         selection.streaming = False
+        # VoiceCodeBench recordings run up to 123 s, so a transcript can exceed the 512 tokens of the short clips.
+        selection.max_new_tokens = (
+            VCB_MAX_NEW_TOKENS if voice_code_bench.is_voice_code_bench(path) else args.max_new_tokens
+        )
         if args.download:
             dataset = data_utils.load_data(selection)
             print(f"Cached {path} / {config} / {split}: {len(dataset)} samples", flush=True)

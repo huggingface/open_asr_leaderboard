@@ -23,6 +23,7 @@ import torch
 from tqdm import tqdm
 
 from normalizer import data_utils
+from normalizer import voice_code_bench
 
 wer_metric = evaluate.load("wer")
 
@@ -90,8 +91,13 @@ def main(args):
         batch["references"] = batch["original_text"]
         return batch
 
+    # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so that its coverage stays
+    # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
+
     if args.warmup_steps is not None:
-        dataset = data_utils.prepare_data(data_utils.load_data(args), sampling_rate=sampling_rate)
+        dataset = data_utils.prepare_data(
+            data_utils.load_data(args), sampling_rate=sampling_rate, normalize_text=not is_vcb)
         n = args.warmup_steps * args.batch_size
         warm = dataset.take(n) if args.streaming else dataset.select(range(min(n, len(dataset))))
         for _ in tqdm(iter(warm.map(benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"])),
@@ -102,16 +108,19 @@ def main(args):
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         dataset = dataset.take(args.max_eval_samples) if args.streaming \
             else dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
+    dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate, normalize_text=not is_vcb)
     dataset = dataset.map(benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"])
 
     # Chunked sets (Earnings-22 chunked) carry one reference per parent session: keep parent_id / chunk_index so
     # score_results can reassemble the chunks (this repository's transformers/run_eval.py does the same).
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
     all_results = {"audio_length_s": [], "transcription_time_s": [], "predictions": [], "references": [],
                    "audio_filepath": []}
-    if is_chunked:
-        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    all_results.update({key: [] for key in metadata_keys})
     for result in tqdm(iter(dataset), desc="Samples..."):
         for key in all_results:
             all_results[key].append(result[key])
@@ -121,9 +130,13 @@ def main(args):
         args.dataset or "", args.split,
         audio_length=all_results["audio_length_s"], transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
-        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS} if is_chunked else None)
+        extra_fields={key: all_results[key] for key in metadata_keys})
     print("Results saved at path:", os.path.abspath(manifest_path))
     rtfx = round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2)
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", rtfx)
+        return
     if is_chunked:
         print("chunked dataset: per-chunk WER is not meaningful; WER comes from score_results after chunk merge.",
               "RTFx:", rtfx)

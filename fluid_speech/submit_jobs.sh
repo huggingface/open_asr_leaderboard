@@ -2,6 +2,8 @@
 # Local script to submit HF Jobs for Fluid Speech evaluation. Runs on the Fluid Speech Space (the NeMo Space with
 # NeMo 3.0) with this folder's run_eval.py and fluid_speech.py injected into /app.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
+# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md).
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.
@@ -44,6 +46,7 @@ DATASET_CONFIGS=(
     "urgent2024 test"
     "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test besimple-ai/voice-code-bench"
 )
 # Transcription mode (the checklist's one per-dataset exception): clean mode removes repeated words and filler words,
 # the convention of SPGISpeech's references. Every other dataset runs verbatim, with the same model and decoding.
@@ -53,6 +56,7 @@ CLEAN_MODE_DATASETS="spgispeech"
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="librispeech spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
@@ -74,11 +78,16 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
+        vcb_dataset_config
+        JOB_BATCH_SIZE="$BATCH_SIZE"
+        # Every VoiceCodeBench recording is 35-123 s long, much longer than the short-form clips: the FastConformer
+        # encoder takes the whole recording at once (no 30 s window), so only the batch is made smaller.
+        [[ "$DATASET_PATH" == "$VCB_DATASET_PATH" ]] && JOB_BATCH_SIZE=32
 
         MODE_ARG=""
         [[ " ${CLEAN_MODE_DATASETS} " == *" ${DATASET} "* ]] && MODE_ARG="--clean_mode"
 
-        echo "Submitting job: model=${MODEL_ID}@${MODEL_REVISION:0:7} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE} ${MODE_ARG}"
+        echo "Submitting job: model=${MODEL_ID}@${MODEL_REVISION:0:7} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${JOB_BATCH_SIZE} ${MODE_ARG}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
@@ -100,7 +109,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${BATCH_SIZE} \
+                    --batch_size=${JOB_BATCH_SIZE} \
                     --max_eval_samples=-1 ${MODE_ARG} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
@@ -127,4 +136,8 @@ from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade

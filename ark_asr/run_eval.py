@@ -17,7 +17,7 @@ import soundfile as sf
 import torch
 from datasets import Audio, load_dataset
 from kaldialign import edit_distance as kaldi_edit_distance
-from normalizer import data_utils
+from normalizer import data_utils, voice_code_bench
 from torch import Tensor
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoProcessor, AutoTokenizer
@@ -239,7 +239,9 @@ def prepare_dataset(args):
         dataset = data_utils.load_data(args)
 
     if args.audio_decode == "datasets":
-        return data_utils.prepare_data(dataset, sampling_rate=args.target_sr)
+        return data_utils.prepare_data(
+            dataset, sampling_rate=args.target_sr,
+            normalize_text=not voice_code_bench.is_voice_code_bench(args.dataset_path))
 
     dataset = dataset.cast_column("audio", Audio(decode=False))
     dataset = dataset.map(data_utils.normalize)
@@ -462,6 +464,11 @@ class ArkAsrInferencer:
 
 def main(args):
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    # VoiceCodeBench keeps raw text and every recording; its WER and CTEM come from the manifest (voice_code_bench.md).
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
+    chunk_s = args.chunk_length_s if is_vcb else None
+    if chunk_s is not None and chunk_s > args.max_audio_seconds:
+        raise ValueError("--chunk_length_s must not exceed --max_audio_seconds (chunks would be truncated).")
     if is_chunked:
         if args.local_parquet_dir:
             raise ValueError(
@@ -503,23 +510,48 @@ def main(args):
         end_event = torch.cuda.Event(enable_timing=True)
         start_event.record()
 
-        with TemporaryWavBatch(audios, sampling_rates, enabled=args.audio_input == "temp_wav") as audio_inputs:
-            pred_text = inferencer.transcribe(
-                audio_inputs,
-                target_sr=args.target_sr,
-                max_audio_seconds=args.max_audio_seconds,
-                max_new_tokens=args.max_new_tokens,
-                do_sample=args.do_sample,
-                temperature=args.temperature,
-                repetition_penalty=args.repetition_penalty,
-                audio_gain=args.audio_gain,
-            )
+        def run(wavs):
+            with TemporaryWavBatch(wavs, [sampling_rate] * len(wavs), enabled=args.audio_input == "temp_wav") as audio_inputs:
+                return inferencer.transcribe(
+                    audio_inputs,
+                    target_sr=args.target_sr,
+                    max_audio_seconds=args.max_audio_seconds,
+                    max_new_tokens=args.max_new_tokens,
+                    do_sample=args.do_sample,
+                    temperature=args.temperature,
+                    repetition_penalty=args.repetition_penalty,
+                    audio_gain=args.audio_gain,
+                )
 
-        end_event.record()
-        torch.cuda.synchronize(device=inferencer.device)
-        runtime = start_event.elapsed_time(end_event) / 1000.0
-
-        batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
+        if chunk_s is None:
+            pred_text = run(audios)
+            end_event.record()
+            torch.cuda.synchronize(device=inferencer.device)
+            runtime = start_event.elapsed_time(end_event) / 1000.0
+            batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
+        else:
+            # Long recordings: consecutive windows of at most chunk_s (<= max_audio_seconds, so never truncated),
+            # transcribed in sub-batches of batch_size windows; the window texts are joined in order and the
+            # window inference times add up to the recording's transcription time.
+            n = int(round(chunk_s * sampling_rate))
+            chunks = [(i, a[j:j + n]) for i, a in enumerate(audios) for j in range(0, len(a), n)]
+            texts = [[] for _ in audios]
+            times = [0.0] * minibatch_size
+            for k in range(0, len(chunks), args.batch_size):
+                sub = chunks[k:k + args.batch_size]
+                torch.cuda.synchronize(device=inferencer.device)
+                t0 = torch.cuda.Event(enable_timing=True)
+                t1 = torch.cuda.Event(enable_timing=True)
+                t0.record()
+                out = run([pad_audio_to_min_seconds(c, sampling_rate, args.min_audio_seconds) for _, c in sub])
+                t1.record()
+                torch.cuda.synchronize(device=inferencer.device)
+                dt = t0.elapsed_time(t1) / 1000.0
+                for (i, _), text in zip(sub, out):
+                    texts[i].append(text)
+                    times[i] += dt / len(sub)
+            pred_text = [" ".join(t for t in ts if t) for ts in texts]
+            batch["transcription_time_s"] = times
         batch["predictions"] = pred_text
         batch["references"] = batch["original_text"]
         return batch
@@ -545,6 +577,8 @@ def main(args):
     }
     if is_chunked:
         all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    if is_vcb:
+        all_results.update({key: [] for key in voice_code_bench.MANIFEST_KEYS})
 
     if args.local_parquet_dir:
         result_iter = (
@@ -606,11 +640,17 @@ def main(args):
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
-        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+        extra_fields={key: all_results[key] for key in voice_code_bench.MANIFEST_KEYS}
+        if is_vcb
+        else {key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
         if is_chunked
         else None,
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2))
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))
@@ -665,6 +705,10 @@ if __name__ == "__main__":
         help="Decode audio with soundfile or the default datasets.Audio decoder.",
     )
     parser.add_argument("--max_audio_seconds", type=int, default=40, help="Audio truncation length passed to the processor.")
+    parser.add_argument(
+        "--chunk_length_s", type=float, default=None,
+        help="VoiceCodeBench only: split each recording into consecutive windows of this length (<= --max_audio_seconds).",
+    )
     parser.add_argument(
         "--audio_input",
         choices=["temp_wav", "array"],

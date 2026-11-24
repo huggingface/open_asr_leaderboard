@@ -41,6 +41,7 @@ import evaluate
 from datasets import IterableDataset
 from huggingface_hub import snapshot_download
 from normalizer import data_utils
+from normalizer import voice_code_bench
 from transformers import AutoModel, AutoProcessor
 
 wer_metric = evaluate.load("wer")
@@ -165,6 +166,8 @@ def prefetch_inputs(processor, audios, batch_size, device, frame_bucket, pad_las
 
 
 def main(args):
+    # VoiceCodeBench keeps its raw text and every recording; its WER and CTEM are computed from the manifest.
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     device = torch.device(f"cuda:{args.device}" if (torch.cuda.is_available() and args.device >= 0) else "cpu")
     model = load_model(args.model_id, device, revision=args.revision,
                        compile_scope=args.compile_scope)
@@ -190,15 +193,19 @@ def main(args):
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset)
+    dataset = data_utils.prepare_data(dataset, normalize_text=not is_vcb)
 
     # Chunked datasets give every chunk of a session the *session* transcript as
     # its reference, so per-chunk scoring is meaningless: the chunk ids are kept
     # alongside each row and the predictions are merged per session before WER.
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     audios, durations, references = [], [], []
-    chunk_metadata = {key: [] for key in data_utils.CHUNK_METADATA_KEYS} if is_chunked else {}
+    chunk_metadata = {key: [] for key in metadata_keys}
     for sample in tqdm(iter(dataset), desc="Loading samples..."):
         arr = sample["audio"]["array"]
         audios.append(arr)
@@ -280,9 +287,14 @@ def main(args):
         args.dataset_path, args.dataset, args.split,
         audio_length=durations,
         transcription_time=[avg_time] * len(audios),
-        extra_fields=chunk_metadata if is_chunked else None,
+        extra_fields=chunk_metadata,
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", round(sum(durations) / total_time, 2))
+        return
 
     if is_chunked:
         # Concatenate each session's chunk predictions (in chunk order) and score
