@@ -101,3 +101,30 @@ ELEVENLABS_API_KEY=<YOUR_KEY> MODEL="elevenlabs/scribe_v2 2" \
 HF_TOKEN=<YOUR_TOKEN> \
 bash api/run_api_longform.sh
 ```
+
+### OtterAI
+
+Use `OtterAI/speech-v3.1` with the long-form launcher. It sends each recording
+with `long-form=true`, polls asynchronous jobs every 10 seconds, and
+acknowledges completed results so the server can remove its copy. Recordings
+under 40 seconds can return a transcript immediately. Export `OTTERAI_API_KEY`
+and `HF_TOKEN` before running either command.
+
+Run one Earnings21 recording and score it locally:
+
+```bash
+MODEL="OtterAI/speech-v3.1 1" \
+DATASETS="hf-audio/asr-leaderboard-longform:earnings21:test" \
+MAX_SAMPLES=1 RESULTS_BUCKET='' bash api/run_api_longform.sh
+```
+
+`MAX_SAMPLES` saves partial manifests and scores in a fresh temporary directory
+printed by the launcher. For a full local run, omit `DATASETS` and `MAX_SAMPLES`:
+
+```bash
+MODEL="OtterAI/speech-v3.1 4" RESULTS_BUCKET='' \
+RESULTS_DIR="$PWD/api/results/otter-longform-full" bash api/run_api_longform.sh
+```
+
+This writes the raw prediction manifests and scores them with the repository's
+long-form scorer. A failed OtterAI request stops the run after retries.

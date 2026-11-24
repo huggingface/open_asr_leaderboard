@@ -98,6 +98,22 @@ def transcribe_with_retry(
             time.sleep(delay)
 
 
+def bounded_transcriptions(executor, process_sample, samples, max_workers):
+    samples = iter(samples)
+    pending = {
+        executor.submit(process_sample, sample)
+        for sample in itertools.islice(samples, max_workers)
+    }
+    while pending:
+        completed, pending = concurrent.futures.wait(
+            pending, return_when=concurrent.futures.FIRST_COMPLETED
+        )
+        for future in completed:
+            yield future.result()
+            for sample in itertools.islice(samples, 1):
+                pending.add(executor.submit(process_sample, sample))
+
+
 def transcribe_dataset(
     dataset_path,
     dataset,
@@ -108,6 +124,7 @@ def transcribe_dataset(
     max_workers=4,
     prompt=None,
     streaming=False,
+    fail_on_error=False,
 ):
     is_chunked = data_utils.is_chunked_dataset(dataset_path)
 
@@ -155,6 +172,8 @@ def transcribe_dataset(
                     model_name, None, sample, use_url=True, prompt=prompt
                 )
             except Exception as e:
+                if fail_on_error:
+                    raise
                 print(f"Failed to transcribe after retries: {e}")
                 transcription = ""
 
@@ -178,6 +197,8 @@ def transcribe_dataset(
                     model_name, tmp_path, sample, use_url=False, prompt=prompt
                 )
             except Exception as e:
+                if fail_on_error:
+                    raise
                 print(f"Failed to transcribe after retries: {e}")
                 transcription = ""
             finally:
@@ -199,21 +220,16 @@ def transcribe_dataset(
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_sample = {
-            executor.submit(process_sample, sample): sample for sample in ds
-        }
-        for future in tqdm(
-            concurrent.futures.as_completed(future_to_sample),
-            total=len(future_to_sample),
-            desc="Transcribing",
-        ):
+        transcriptions = bounded_transcriptions(executor, process_sample, ds, max_workers)
+        total = len(ds) if hasattr(ds, "__len__") else max_samples
+        for transcript in tqdm(transcriptions, total=total, desc="Transcribing"):
             (
                 reference,
                 transcription,
                 audio_duration,
                 transcription_time,
                 chunk_metadata,
-            ) = future.result()
+            ) = transcript
             results["predictions"].append(transcription)
             results["references"].append(reference)
             results["audio_length_s"].append(audio_duration)
@@ -274,6 +290,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument(
+        "--fail_on_error",
+        action="store_true",
+        help="Fail the run if a recording cannot be transcribed after retries.",
+    )
+    parser.add_argument(
         "--max_workers", type=int, default=300, help="Number of concurrent threads"
     )
     parser.add_argument(
@@ -306,4 +327,5 @@ if __name__ == "__main__":
         max_workers=args.max_workers,
         prompt=args.prompt,
         streaming=args.streaming,
+        fail_on_error=args.fail_on_error,
     )

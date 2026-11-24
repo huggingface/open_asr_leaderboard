@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_private}"
+RESULTS_BUCKET="${RESULTS_BUCKET-hf-audio/asr_leaderboard_private}"
 IMAGE_TAG="api-eval"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
 
@@ -19,6 +19,7 @@ MODEL_CONFIGS=(
     # "assembly/universal-3-5-pro    4"
     # "elevenlabs/scribe_v2          2"
     # "reson8/resonant-1             4"
+    # "OtterAI/speech-v3.1          4"
 )
 
 # ── Datasets: "dataset_path:config:split" ────────────────────────────────────
@@ -46,9 +47,20 @@ if [[ -n "${MODEL:-}" ]]; then
     MODEL_CONFIGS=("${MODEL}")
 fi
 
-RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
-mkdir -p "${RUNDIR}/results"
+RESULTS_DIR="${RESULTS_DIR:-${REPO_ROOT}/results}"
+SAMPLE_ARGS=()
+if [[ -n "${MAX_SAMPLES:-}" ]]; then
+    if [[ ! "${MAX_SAMPLES}" =~ ^[1-9][0-9]*$ || -n "${RESULTS_BUCKET}" ]]; then
+        echo "ERROR: MAX_SAMPLES requires a positive integer and RESULTS_BUCKET=''." >&2
+        exit 1
+    fi
+    RESULTS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/openasr-longform-smoke.XXXXXX")"
+    SAMPLE_ARGS=(--max_samples "${MAX_SAMPLES}")
+fi
+mkdir -p "${RESULTS_DIR}"
+RESULTS_DIR="$(cd "${RESULTS_DIR}" && pwd)"
+echo "Writing results to ${RESULTS_DIR}"
 
 echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
 docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
@@ -56,6 +68,10 @@ docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID MAX_WORKERS <<< "${model_cfg}"
     MODEL_FOLDER="${MODEL_ID//\//-}"
+    EVAL_ARGS=("${SAMPLE_ARGS[@]}")
+    if [[ "${MODEL_ID}" == OtterAI/* ]]; then
+        EVAL_ARGS+=(--fail_on_error)
+    fi
 
     for dataset_cfg in "${DATASET_CONFIGS[@]}"; do
         IFS=':' read -r DATASET_PATH DATASET SPLIT <<< "${dataset_cfg}"
@@ -79,23 +95,19 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
-            -v "${RUNDIR}/results:/app/results" \
+            -e OTTERAI_API_KEY -e OTTERAI_API_URL -e OTTERAI_LONG_FORM=1 \
+            -v "${RESULTS_DIR}:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
-            "${IMAGE_TAG}" -c "
-                cd /app && PYTHONPATH=/app python run_eval.py \
-                    --dataset_path=${DATASET_PATH} \
-                    --dataset=${DATASET} \
-                    --split=${SPLIT} \
-                    --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS} \
-                    --streaming
-            "
+            "${IMAGE_TAG}" -c 'cd /app && PYTHONPATH=/app python run_eval.py "$@"' _ \
+            --dataset_path "${DATASET_PATH}" --dataset "${DATASET}" --split "${SPLIT}" \
+            --model_name "${MODEL_ID}" --max_workers "${MAX_WORKERS}" --streaming \
+            "${EVAL_ARGS[@]}"
     done
 
-    MODEL_RESULTS_DIR="${RUNDIR}/results/${MODEL_FOLDER}"
+    MODEL_RESULTS_DIR="${RESULTS_DIR}/${MODEL_FOLDER}"
     mkdir -p "${MODEL_RESULTS_DIR}"
-    model_files=("${RUNDIR}/results/MODEL_${MODEL_FOLDER}_DATASET_"*.jsonl)
+    model_files=("${RESULTS_DIR}/MODEL_${MODEL_FOLDER}_DATASET_"*.jsonl)
     if [[ -e "${model_files[0]}" ]]; then
         mv "${model_files[@]}" "${MODEL_RESULTS_DIR}/"
     else
@@ -105,7 +117,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     docker run --rm \
         --user "$(id -u):$(id -g)" \
         -e HF_HOME=/hf_cache \
-        -v "${RUNDIR}/results:/app/results" \
+        -v "${RESULTS_DIR}:/app/results" \
         -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
         -v "${REPO_ROOT}/../scripts:/app/scripts:ro" \
         -v "${HF_CACHE_DIR}:/hf_cache" \
