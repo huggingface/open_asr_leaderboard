@@ -128,3 +128,27 @@ RESULTS_DIR="$PWD/api/results/otter-longform-full" bash api/run_api_longform.sh
 
 This writes the raw prediction manifests and scores them with the repository's
 long-form scorer. A failed OtterAI request stops the run after retries.
+
+#### OtterAI long-form WER
+
+Contributor-reported WER from the November 21, 2026 public API evaluation of
+440 recordings at six concurrent requests.
+
+| Dataset | WER |
+| --- | ---: |
+| Earnings21 | 5.99% |
+| Earnings22 | 8.65% |
+| CORAAL ATL | 10.79% |
+| CORAAL DCA | 11.32% |
+| CORAAL DCB | 7.61% |
+| CORAAL DTA | 11.70% |
+| CORAAL LES | 10.84% |
+| CORAAL PRV | 14.11% |
+| CORAAL ROC | 5.49% |
+| CORAAL VLD | 7.78% |
+| **CORAAL average (8 subsets)** | **9.95%** |
+| **Overall long-form average** | **8.20%** |
+
+The CORAAL average gives equal weight to all eight subsets. The overall
+average gives equal weight to Earnings21, Earnings22, and the CORAAL
+average. Averages are computed before rounding.
