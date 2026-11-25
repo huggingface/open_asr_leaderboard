@@ -6,7 +6,13 @@ import os
 from pathlib import Path
 import time
 
+import requests
 from huggingface_hub import HfApi, Volume, get_token
+from huggingface_hub.errors import HfHubHTTPError
+
+# Consecutive failed status checks (server errors, rate limits, connection problems) before giving up. The job keeps
+# running on the Hub while the status endpoint is unavailable, so a transient error must not abort the wait.
+MAX_STATUS_ERRORS = 30
 
 
 def run_job(args, *, api=None, sleep=time.sleep):
@@ -34,8 +40,22 @@ def run_job(args, *, api=None, sleep=time.sleep):
     args.record.parent.mkdir(parents=True, exist_ok=True)
     args.record.write_text(json.dumps(record, indent=2) + "\n")
     previous = None
+    errors = 0
     while True:
-        info = api.inspect_job(job_id=job.id, namespace=job.owner.name)
+        try:
+            info = api.inspect_job(job_id=job.id, namespace=job.owner.name)
+            errors = 0
+        except (HfHubHTTPError, requests.exceptions.RequestException) as exc:
+            response = getattr(exc, "response", None)
+            code = getattr(response, "status_code", None)
+            if code is not None and code < 500 and code != 429:
+                raise  # a client error (e.g. unknown job, no access) will not go away by retrying
+            errors += 1
+            if errors > MAX_STATUS_ERRORS:
+                raise
+            print(f"{args.stage}: status check failed ({code or type(exc).__name__}), retrying ({errors}/{MAX_STATUS_ERRORS})", flush=True)
+            sleep(args.poll_interval)
+            continue
         status = info.status.stage if info.status else "UNKNOWN"
         if status != previous:
             print(f"{args.stage}: {status}", flush=True)

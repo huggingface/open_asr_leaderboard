@@ -14,6 +14,7 @@ Please include a summary of your pull request and how to run/use it.
 To be considered for the English short-form track on the Open ASR Leaderboard, a model must have an average WER below 10% on the default public splits and meet the criterion for its type:
 - [ ] (Open weights) The weights are public on the Hugging Face Hub. A model above the 10% threshold may still be included if it is widely used (e.g. 100K+ monthly downloads on the Hugging Face Hub), at the maintainers' discretion.
 - [ ] (Proprietary) The model is available through a self-serve API or product that serves the evaluated model. If it is only available in a product (no self-serve API), the submitter confirms that the product uses the evaluated model, and inclusion is at the maintainers' discretion (e.g. based on the product's user base).
+- [ ] (Open weights and API models) Is the model an **ensemble** of several models, or does it use **multiple drafts** (e.g. several candidate transcripts or decoding passes that are combined)? If so, please say so in the description; ensemble models are flagged on the leaderboard. In either case, please provide an X and/or LinkedIn account that we can tag for potential communication.
 
 ### HF Jobs evaluation (open-source models)
 
@@ -24,7 +25,6 @@ Using [HF Jobs](https://huggingface.co/docs/hub/en/jobs-overview) makes it strai
     - [ ] Adapt `run_eval.py` for your model — use the [Transformers one](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/blob/main/run_eval.py) as a starting point. There is no need to modify/update the normalizer files, as the `run_eval.py` script should save the raw (un-normalized) transcripts and model outptus, and the normalizer from the repo is locally score the model outputs.
     - [ ] For models that use `trust_remote_code=True`, please default to a `revision` tag and specify it in your bash script. 
 - [ ] (Open weights) Pin the model `revision` (commit SHA or tag) in your script instead of defaulting to `main`, so that the evaluated checkpoint stays reproducible.
-- [ ] (Open weights) Is the model an **ensemble** of several models, or does it use **multiple drafts** (e.g. several candidate transcripts or decoding passes that are combined)? If so, please say so in the description; ensemble models are flagged on the leaderboard. In either case, please provide an X and/or LinkedIn account that we can tag for potential communication.
 - [ ] In this repo, create a folder for your model library and a `submit_jobs.sh` script (use any existing one in this repo as a template) pointing to your Space and a results bucket.
     - [ ] The script includes [VoiceCodeBench](https://github.com/huggingface/open_asr_leaderboard/blob/main/voice_code_bench.md) (the `voice_code_bench test besimple-ai/voice-code-bench` entry and the `vcb_*` helpers of `scripts/submit_utils.sh`, as in the existing scripts). Its 35-123 s recordings are longer than the input limit of many models: if yours has one, split the audio into windows and join the texts, and use a smaller batch size if memory requires it. The job's final step grades the Entity Match (CTEM) automatically.
 
