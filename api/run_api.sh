@@ -33,6 +33,8 @@ MODEL_CONFIGS=(
     # "gladia/solaria-3             20"
     # "meta/muse-voice-transcribe    8"
     # "meta/muse-voice-transcribe-streaming    8"
+    # "mistral/voxtral-mini-transcribe-3       8"
+    # "mistral/voxtral-small-transcribe-3      8"
     # "soniox/stt-async-v5           20"
     # "gemini/gemini-3.5-transcribe  8"
     # "sophea/asr-k1                 16"
@@ -117,6 +119,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e META_FILE_MODE="${META_FILE_MODE:-}" \
             -e META_STREAM_MODE="${META_STREAM_MODE:-}" \
             -e META_STREAMING_PACE="${META_STREAMING_PACE:-}" \
+            -e MISTRAL_API_KEY="${MISTRAL_API_KEY:-}" -e MISTRAL_API_URL="${MISTRAL_API_URL:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
             -e OTTERAI_API_KEY -e OTTERAI_API_URL \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
