@@ -35,8 +35,6 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Models ────────────────────────────────────────────────────────────────────
 MODEL_CONFIGS=(
-    # "futo-org/asr4all-s"  # dropped: WER above 10%, only the L model is kept
-    # "futo-org/asr4all-m"  # dropped: WER above 10%, only the L model is kept
     "futo-org/asr4all-l"
 )
 if [[ -n "${ONLY_MODELS:-}" ]]; then

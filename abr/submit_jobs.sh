@@ -29,9 +29,6 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
 # ── Models: "model_id revision" ──────────────────────────────────────────────
 MODEL_CONFIGS=(
-    # dropped (WER too high): "abr-ai/niagara-9m-batch.en 1521edf95a146d06e3c7c1ad18a7209a899bc570"
-    # dropped (WER too high): "abr-ai/niagara-19m-batch.en d0276b85317389bc679d0206f60d88779cfbd15a"
-    # dropped (WER too high): "abr-ai/niagara-38m-batch.en 7bfe48fb7fb065484419b1860c6b3d4e4f817c0c"
     "abr-ai/niagara-84m-batch.en ed93390475b146ad5412c668f680609a3ffca1b0"
 )
 
