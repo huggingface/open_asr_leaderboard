@@ -88,6 +88,10 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         if [[ "${MODEL_ID}" == "oruk/oruk-fourier-2b" && "${EFFECTIVE_BATCH_SIZE}" -gt 64 ]]; then
             EFFECTIVE_BATCH_SIZE=64
         fi
+        # VoiceCodeBench clips run 35-123 s, so batch 64 runs out of GPU memory with beam search; use 16.
+        if [[ "${MODEL_ID}" == "oruk/oruk-fourier-2b" && "${DATASET_PATH}" == "${VCB_DATASET_PATH}" && "${EFFECTIVE_BATCH_SIZE}" -gt 16 ]]; then
+            EFFECTIVE_BATCH_SIZE=16
+        fi
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"
 

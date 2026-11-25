@@ -25,7 +25,7 @@ from transformers import (
     AutoProcessor,
 )
 
-from normalizer import data_utils
+from normalizer import data_utils, voice_code_bench
 from normalizer.eval_utils import align_manifests
 
 wer_metric = evaluate.load("wer")
@@ -106,9 +106,11 @@ def main(args):
         batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
+
     if args.warmup_steps is not None and args.warmup_steps > 0:
         warmup_dataset = data_utils.load_data(args)
-        warmup_dataset = data_utils.prepare_data(warmup_dataset, sampling_rate=sampling_rate)
+        warmup_dataset = data_utils.prepare_data(warmup_dataset, sampling_rate=sampling_rate, normalize_text=not is_vcb)
         num_warmup_samples = min(args.warmup_steps * min(args.batch_size, 32), 64)
         if args.streaming:
             warmup_dataset = warmup_dataset.take(num_warmup_samples)
@@ -132,7 +134,7 @@ def main(args):
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
+    dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate, normalize_text=not is_vcb)
 
     map_batch_size = max(args.batch_size, 4096)
     dataset = dataset.map(
@@ -143,6 +145,10 @@ def main(args):
     )
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
     all_results = {
         "audio_length_s": [],
         "transcription_time_s": [],
@@ -150,8 +156,7 @@ def main(args):
         "references": [],
         "audio_filepath": [],
     }
-    if is_chunked:
-        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    all_results.update({key: [] for key in metadata_keys})
     for result in tqdm(iter(dataset), desc="Samples..."):
         for key in all_results:
             all_results[key].append(result[key])
@@ -166,11 +171,13 @@ def main(args):
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
-        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: all_results[key] for key in metadata_keys} or None,
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if is_vcb:
+        print("RTFx:", round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2))
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))

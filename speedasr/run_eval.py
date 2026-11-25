@@ -170,7 +170,9 @@ def main(a):
     load_args.dataset = a.dataset or None
     if not is_chunked:
         load_args.dataset_revision = dataset_revision
-    dataset = data_utils.prepare_data(data_utils.load_data(load_args))
+    from normalizer import voice_code_bench
+    is_vcb = voice_code_bench.is_voice_code_bench(a.dataset_path)
+    dataset = data_utils.prepare_data(data_utils.load_data(load_args), normalize_text=not is_vcb)
     if a.max_eval_samples > 0:
         dataset = dataset.select(range(min(a.max_eval_samples, len(dataset))))
 
@@ -190,7 +192,7 @@ def main(a):
         model.max_gpu_allocated_bytes = 0
 
     refs, preds, durations, times, paths = [], [], [], [], []
-    extra = {key: [] for key in data_utils.CHUNK_METADATA_KEYS} if is_chunked else {}
+    extra = {key: [] for key in (voice_code_bench.MANIFEST_KEYS if is_vcb else data_utils.CHUNK_METADATA_KEYS if is_chunked else [])}
     batches = 0
     for batch in prepared_batches(dataset, a.batch_size, a.batch_audio_seconds, np):
         waveforms = [waveform for _, waveform in batch]
@@ -251,7 +253,7 @@ def main(a):
         "model_configuration": model.config,
         "partial_run": a.max_eval_samples > 0,
     }
-    if not a.skip_score:
+    if not a.skip_score and not is_vcb:
         rows = data_utils.read_manifest(manifest)
         if is_chunked:
             rows = data_utils.merge_chunked_manifest(rows)
