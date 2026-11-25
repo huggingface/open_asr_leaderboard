@@ -41,7 +41,7 @@ A similar checklist applies for multilingual evaluation (with `run_eval_ml.py` a
     - [ ] Warmup must **not use information from the test set**, as it would not be known in practice. For example, do not select warmup batches or compiled shapes from the evaluation audio's lengths. Instead, warm up on inputs independent of the dataset, e.g. dummy audio for every length bucket up to the maximum length your model supports, as a deployed system would at startup. Running a fixed number of batches (`--warmup_steps`) as most existing scripts do is fine.
     - [ ] Warmup is not timed. Any compilation not covered by the warmup happens in the timed loop and counts toward RTFx.
 - [ ] Even if you're not using HF Jobs, prepare an HF space like the [existing models](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations), such that the maintainers can reproduce your results on HF Jobs.
-- [ ] Please report your results on the relevant public sets, as well as the RTFx. For VoiceCodeBench, report the WER and the Entity Match (CTEM); it is shown on the leaderboard but is not part of the default average.
+- [ ] Please report your results on the relevant public sets, as well as the RTFx. For VoiceCodeBench, report the WER and the Entity Match (CTEM).
 - [ ] Be sure to count the **total number** of parameters. You can get the exact number by adding the following line in your `run_eval.py` script:
 ```python
 print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
