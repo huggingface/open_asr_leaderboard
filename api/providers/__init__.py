@@ -58,6 +58,7 @@ from . import (
     gladia_provider,
     meta_provider,
     microsoft_azure_provider,
+    mistral_provider,
     modulate_provider,
     openai_provider,
     opusclip_provider,
