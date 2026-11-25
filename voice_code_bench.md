@@ -3,8 +3,7 @@
 [VoiceCodeBench](https://huggingface.co/datasets/besimple-ai/voice-code-bench) has 300 English workplace
 recordings (35–123 s) with 1,482 annotated entities. Two metrics come from the same raw transcripts:
 
-- **WER**, scored like every other dataset (same normalizer and scorer). It is part of the default
-  short-form average (family `public` in `normalizer/eval_utils.py`).
+- **WER**, scored like every other dataset (same normalizer and scorer).
 - **CTEM** (Canonical Token/Entity Match): 100 × entities correctly recovered / all entities, pooled over
   recordings. Higher is better and it is never averaged with WERs.
 
