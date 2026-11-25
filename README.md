@@ -84,15 +84,13 @@ use the `submit_jobs_*_longform.sh` script of the model's family, e.g.:
 RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash transformers/submit_jobs_whisper_longform.sh
 ```
 
+VoiceCodeBench is part of the short-form submit scripts (`besimple-ai/voice-code-bench`). After transcription, one grading job per model estimates the Entity Match (CTEM) with the pinned Qwen3.8-27B judge, and stores the result next to the transcripts as `<manifest>.summary.json`. The code is in [`normalizer/voice_code_bench.py`](normalizer/voice_code_bench.py) (loading and scoring), [`normalizer/voice_code_bench_judge.py`](normalizer/voice_code_bench_judge.py) and its [prompt](normalizer/voice_code_bench_prompt.txt), launched by [`scripts/score_voice_code_bench_job.py`](scripts/score_voice_code_bench_job.py) through the `vcb_grade` helper of `scripts/submit_utils.sh`. See [`voice_code_bench.md`](voice_code_bench.md) for the protocol and its options.
+
 ## Local evaluation
 
 For contributors who want to test locally, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
 
 Each model family has a `run_eval.py` entry point, launched on HF Jobs by a `submit_jobs*.sh` script (e.g. `transformers/submit_jobs_whisper.sh`). `run_eval.py` outputs a JSONL file with predictions and prints WER and RTFx after completion.
-
-# Trade-off plots
-
-Pareto plots of WER against RTFx and model size are available directly on the [leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
 
 # Benchmark fitting
 
