@@ -34,6 +34,19 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 MODEL_CONFIGS=(
     "openai/whisper-large-v3-turbo      64 de fr it es pt nl hi zh"
     "openai/whisper-large-v3            64 de fr it es pt nl hy hi zh"
+    # BuzzASR: one Whisper-large-v3 fine-tune per language (https://huggingface.co/BuzzASR).
+    # Each model is evaluated only on its own language. Models with Whisper's tokenizer
+    # (is_multilingual=True) get language/task from this script; models with a
+    # language-specific tokenizer (fr, hy, hi, zh) carry language/task in their generation_config.
+    "BuzzASR/german                     64 de"
+    "BuzzASR/french                     64 fr"
+    "BuzzASR/italian                    64 it"
+    "BuzzASR/spanish                    64 es"
+    "BuzzASR/portuguese                 64 pt"
+    "BuzzASR/dutch                      64 nl"
+    "BuzzASR/armenian                   64 hy"
+    "BuzzASR/hindi                      64 hi"
+    "BuzzASR/mandarin                   64 zh"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
