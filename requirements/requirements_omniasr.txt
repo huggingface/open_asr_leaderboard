@@ -1,2 +1,0 @@
-omnilingual-asr
-soundfile

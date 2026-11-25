@@ -44,8 +44,6 @@ DATASET_CONFIGS=(
   "ami_cleaned test ${AMI_BATCH_SIZE:-1152}"
   "earnings22_cleaned_aa_chunked test ${EARNINGS22_BATCH_SIZE:-1024} ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
   "gigaspeech_cleaned test ${GIGASPEECH_BATCH_SIZE:-1408}"
-  "librispeech test.clean ${LIBRISPEECH_CLEAN_BATCH_SIZE:-1024}"
-  "librispeech test.other ${LIBRISPEECH_OTHER_BATCH_SIZE:-1024}"
   "spgispeech test ${SPGISPEECH_BATCH_SIZE:-2048}"
   "urgent2024 test ${URGENT2024_BATCH_SIZE:-1024}"
   "urgent2024_clean test ${URGENT2024_CLEAN_BATCH_SIZE:-1024}"
@@ -55,7 +53,7 @@ DATASET_CONFIGS=(
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
-#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+#   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
 
 

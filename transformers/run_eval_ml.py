@@ -145,6 +145,7 @@ def main(args):
     is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
     is_vibevoice = "vibevoice" in args.model_id.lower()
     is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
+    is_omniasr_alm = config.model_type == "omniasr"
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
     # Gemma 4 (incl. the E2B/E4B variants): multimodal chat model, audio goes
@@ -251,7 +252,8 @@ def main(args):
             # Multilingual RNNT models accept a language prompt;
             # English-only models (e.g. nemotron-speech-streaming-en) do not.
             if "-en" not in args.model_id.lower():
-                rnnt_processor_kwargs["language"] = norm_language
+                # The processor keys Mandarin by locale ("zh-CN"); it has no "zh" entry.
+                rnnt_processor_kwargs["language"] = "zh-CN" if norm_language == "zh" else norm_language
             inputs = processor(audios, **rnnt_processor_kwargs)
         elif is_cohere:
             # Cohere ASR requires an explicit language and does not use apply_transcription_request
@@ -300,7 +302,7 @@ def main(args):
                     sampling_rate=sampling_rate,
                     format=["wav"] * len(audios),
                 )
-            elif is_qwen3_asr:
+            elif is_qwen3_asr or is_omniasr_alm:
                 inputs = processor.apply_transcription_request(audios, language=args.language)
             else:
                 inputs = processor.apply_transcription_request(audios)
@@ -315,8 +317,8 @@ def main(args):
                 padding=True,
                 return_attention_mask=True,
             )
-        elif not model.can_generate():
-            # CTC pre-processing: normalize to mean 0, std 1
+        elif not model.can_generate() or config.model_type == "omniasr_ctc":
+            # CTC pre-processing: normalize to mean 0, std 1 (OmniASR CTC can generate() but needs no 30 s padding)
             inputs = processor(
                 audios,
                 sampling_rate=sampling_rate,
@@ -400,8 +402,11 @@ def main(args):
         elif has_transcription_processor:
             pred_text = processor.batch_decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_ctc:
-            # don't use skip_special_tokens as it collapses double letters
-            pred_text = processor.batch_decode(pred_ids)
+            if config.model_type == "omniasr_ctc":
+                pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+            else:
+                # don't use skip_special_tokens as it collapses double letters
+                pred_text = processor.batch_decode(pred_ids)
         else:
             pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
 
@@ -498,7 +503,10 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    from normalizer.eval_utils import OIWER_LANGUAGES, score_oiwer
+    from normalizer.eval_utils import CER_LANGUAGES, OIWER_LANGUAGES, print_ml_cer, score_oiwer
+    if norm_language in CER_LANGUAGES:
+        print_ml_cer(all_results, norm_language)
+        return
     if norm_language in OIWER_LANGUAGES:
         # Lattice-based, orthography-aware scoring (voi_oiwer applies its own
         # normalization internally).

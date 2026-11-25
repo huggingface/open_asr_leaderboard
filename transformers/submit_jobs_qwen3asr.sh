@@ -29,6 +29,9 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 MODEL_IDs=(
     "Qwen/Qwen3-ASR-0.6B-hf"
     "Qwen/Qwen3-ASR-1.7B-hf"
+    "Musci-research/Musci-ASR-qwen-1019-hf"
+    "oruk/orukqwen-asr-1.7b"
+    "oruk/oruk-fourier-2b"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
@@ -40,8 +43,6 @@ DATASET_CONFIGS=(
     "gigaspeech_cleaned test 256"
     "voxpopuli_cleaned_aa test 256"
     "earnings22_cleaned_aa_chunked test 256 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "librispeech test.clean 256"
-    "librispeech test.other 256"
     "spgispeech test 256"
     "urgent2024 test 256"
     "urgent2024_clean test 256"
@@ -50,7 +51,7 @@ DATASET_CONFIGS=(
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
-#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+#   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
 
 
@@ -75,6 +76,11 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
         if [[ -z "${EFFECTIVE_BATCH_SIZE}" ]]; then
             echo "ERROR: batch_size missing for '${DATASET} ${SPLIT}' in DATASET_CONFIGS" >&2
             exit 1
+        fi
+        # oruk/oruk-fourier-2b uses num_beams=3 in generation_config.json (3x audio
+        # encoder batch expansion); cap batch_size at 64 to fit comfortably on H200.
+        if [[ "${MODEL_ID}" == "oruk/oruk-fourier-2b" && "${EFFECTIVE_BATCH_SIZE}" -gt 64 ]]; then
+            EFFECTIVE_BATCH_SIZE=64
         fi
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"

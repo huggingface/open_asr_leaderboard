@@ -29,6 +29,7 @@ MODEL_CONFIGS=(
     "nvidia/parakeet-tdt-0.6b-v3 128"
     "nvidia/parakeet-tdt-0.6b-v2 128"
     "nvidia/parakeet-ctc-1.1b 128"
+    "qvac/TranscribePsy-250M-EU-sub 128"
     # "nvidia/parakeet-rnnt-1.1b 128"
     # "nvidia/parakeet-rnnt-0.6b 128"
     # "nvidia/parakeet-ctc-0.6b 128"
@@ -50,8 +51,6 @@ DATASET_CONFIGS=(
     "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
     "gigaspeech_cleaned test"
     "voxpopuli_cleaned_aa test"
-    "librispeech test.clean"
-    "librispeech test.other"
     "spgispeech test"
     "urgent2024 test"
     "urgent2024_clean test"
@@ -60,7 +59,7 @@ DATASET_CONFIGS=(
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
-#   ONLY_DATASETS="librispeech spgispeech" bash <this script>
+#   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
 
 

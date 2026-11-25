@@ -11,7 +11,9 @@ Please include a summary of your pull request and how to run/use it.
 
 ## New Model Checklist
 
-- [ ] If your model is hosted on the Hugging Face Hub, please report your results (WER on each split, average WER, and RTFx) on the HF Hub by adding a `.eval_results/open_asr_leaderboard.yaml` file like [this](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026/blob/main/.eval_results/open_asr_leaderboard.yaml) in the model repo.
+To be considered for the English short-form track on the Open ASR Leaderboard, a model must have an average WER below 10% on the default public splits and meet the criterion for its type:
+- [ ] (Open weights) The weights are public on the Hugging Face Hub. A model above the 10% threshold may still be included if it is widely used (e.g. 100K+ monthly downloads on the Hugging Face Hub), at the maintainers' discretion.
+- [ ] (Proprietary) The model is available through a self-serve API or product that serves the evaluated model. If it is only available in a product (no self-serve API), the submitter confirms that the product uses the evaluated model, and inclusion is at the maintainers' discretion (e.g. based on the product's user base).
 
 ### HF Jobs evaluation (open-source models)
 
@@ -28,7 +30,7 @@ A similar checklist applies for multilingual evaluation (with `run_eval_ml.py` a
 ####  Key guidelines
 - [ ] Use the **same decoding hyper-parameters** across all datasets for a given model.
     - [ ] Use the **maximum possible batch size** (can differ per dataset) on an H200 GPU.
-    - [ ] **(Exception) transcription mode:** datasets follow different transcript conventions: verbatim vs. non-verbatim, for denoting quantities (e.g. "$2500" vs. "two thousand five hundred dollars"), for multilingual scripts (e.g. mixed Devanagari/Latin vs. romanized), etc. Models that support it may set the mode via a prompt. Apart from the mode instruction, the prompt must be **identical across datasets**, with no dataset names, domain hints, vocabulary lists, or other dataset-specific context. See the leaderboard [About section](https://hf-audio-open-asr-leaderboard.hf.space/?tab=about) for the transcription styles of each evaluation dataset.
+    - [ ] **(Exception) transcription mode:** datasets follow different transcript conventions: verbatim vs. non-verbatim, for denoting quantities (e.g. "$2500" vs. "two thousand five hundred dollars"), for multilingual scripts (e.g. mixed Devanagari/Latin vs. romanized), etc. Models that support it may set the mode via a prompt or mode-switch. Apart from the mode instruction, the prompt must be **identical across datasets**, with no dataset names, domain hints, vocabulary lists, or other dataset-specific context. See the leaderboard [About section](https://hf-audio-open-asr-leaderboard.hf.space/?tab=about) for the transcription styles of each evaluation dataset.
     - [ ] Prompt(s) should be explicitly set in the script.
 - [ ] If writing a new `run_eval.py`, it must support **batch processing** and use `normalizer/data_utils.py` for data loading and manifest writing. Make sure that the un-normalized model outputs are saved.
 - [ ] Use `torch.compile` and/or relevant optimizations including warmup to maximize RTFx.

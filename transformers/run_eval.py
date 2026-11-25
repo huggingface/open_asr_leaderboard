@@ -102,7 +102,8 @@ def main(args):
     is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
-    is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
+    # Match on model_type too, so fine-tunes whose id lacks "qwen3-asr" take the Qwen3-ASR decode path
+    is_qwen3_asr = "qwen3-asr" in args.model_id.lower() or config.model_type == "qwen3_asr"
     is_gemma4 = "gemma-4" in args.model_id.lower()
 
     # Optional prompt for audio language models, newer models should use `apply_transcription_request`
@@ -444,8 +445,11 @@ def main(args):
             # Strip input prompt tokens
             pred_text = processor.decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_ctc:
-            # don't use skip_special_tokens as it collapses double letters
-            pred_text = processor.batch_decode(pred_ids)
+            if config.model_type == "omniasr_ctc":
+                pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+            else:
+                # don't use skip_special_tokens as it collapses double letters
+                pred_text = processor.batch_decode(pred_ids)
         else:
             pred_text = processor.decode(pred_ids, skip_special_tokens=True)
 
