@@ -23,6 +23,8 @@ Using [HF Jobs](https://huggingface.co/docs/hub/en/jobs-overview) makes it strai
     - [ ] Modify the `Dockerfile` to install your model's dependencies, e.g. installing from a specific version/fork of Transformers.
     - [ ] Adapt `run_eval.py` for your model — use the [Transformers one](https://huggingface.co/spaces/hf-audio/open-asr-leaderboard-transformers/blob/main/run_eval.py) as a starting point. There is no need to modify/update the normalizer files, as the `run_eval.py` script should save the raw (un-normalized) transcripts and model outptus, and the normalizer from the repo is locally score the model outputs.
     - [ ] For models that use `trust_remote_code=True`, please default to a `revision` tag and specify it in your bash script. 
+- [ ] (Open weights) Pin the model `revision` (commit SHA or tag) in your script instead of defaulting to `main`, so that the evaluated checkpoint stays reproducible.
+- [ ] (Open weights) Is the model an **ensemble** of several models, or does it use **multiple drafts** (e.g. several candidate transcripts or decoding passes that are combined)? If so, please say so in the description; ensemble models are flagged on the leaderboard. In either case, please provide an X and/or LinkedIn account that we can tag for potential communication.
 - [ ] In this repo, create a folder for your model library and a `submit_jobs.sh` script (use any existing one in this repo as a template) pointing to your Space and a results bucket.
     - [ ] The script includes [VoiceCodeBench](https://github.com/huggingface/open_asr_leaderboard/blob/main/voice_code_bench.md) (the `voice_code_bench test besimple-ai/voice-code-bench` entry and the `vcb_*` helpers of `scripts/submit_utils.sh`, as in the existing scripts). Its 35-123 s recordings are longer than the input limit of many models: if yours has one, split the audio into windows and join the texts, and use a smaller batch size if memory requires it. The job's final step grades the Entity Match (CTEM) automatically.
 
@@ -60,6 +62,7 @@ License | Size (B) | # Languages | Encoder | Decoder | (Recommended) Link to tra
     - a line in `MODEL_CONFIGS`
     - a line when calling `docker run` to pass the API key 
 - [ ] Provide a link to your model's documentation that we can link on the leaderboard.
+- [ ] The API is fast enough for a realistic evaluation: **RTFx > 1** (total audio duration over total request time) on a smoke test with `voxpopuli_cleaned_aa` (628 short clips, about 2 hours of audio). Please report the RTFx and the concurrency used.
 - [ ] The API handles the 35-123 s recordings of VoiceCodeBench (e.g. no shorter duration limit or timeout); if it has a limit, say which, so that the maintainers can split the audio in your provider.
 - [ ] Can you guarantee to not train on, log, store, retain, or inspect the audio used for the Open ASR Leaderboard evaluations? This is important to ensure the held-out nature of the private sets.
 - [ ] (If applicable) when was the last submission? If the last submission was too recent or if no new private audio has been added since then, we may decide to hold-off the submission for a later date.
