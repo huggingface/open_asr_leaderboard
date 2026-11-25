@@ -168,8 +168,8 @@ def build_targets(language=None):
             },
             ignore=["AMI RTFx", "Earnings22 RTFx", "Gigaspeech RTFx", "Voxpopuli RTFx"],
         ),
-        # The `longform` family scores earnings21, earnings22 and the eight CORAAL
-        # splits; the sheet publishes only their macro-average (coraal_avg). The
+        # The `longform` family scores earnings21, earnings22, apptek_callcenter and the
+        # eight CORAAL splits; the sheet publishes only their macro-average (coraal_avg). The
         # sheet's tedlium column is no longer reported (license limitations), so it
         # is left out of both averages and never written.
         "longform": Target(
@@ -179,8 +179,8 @@ def build_targets(language=None):
             LONGFORM_BUCKET,
             passes=[(["longform"], "en")],
             averages={
-                "Average": ["earnings21", "earnings22", "coraal_avg"],
-                "Avg (without CORAAL)": ["earnings21", "earnings22"],
+                "Average": ["earnings21", "earnings22", "apptek_callcenter", "coraal_avg"],
+                "Avg (without CORAAL)": ["earnings21", "earnings22", "apptek_callcenter"],
             },
             ignore=["avg"] + [f"coraal_{split}" for split in CORAAL_SPLITS],
             api_rtfx="-1",

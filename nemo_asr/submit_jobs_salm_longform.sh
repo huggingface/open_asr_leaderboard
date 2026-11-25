@@ -1,6 +1,6 @@
 #!/bin/bash
 # Local script to submit HF Jobs for English long-form evaluation of the NeMo SALM models (Canary-Qwen).
-# Evaluates on earnings21 and earnings22 (hf-audio/asr-leaderboard-longform) and the CORAAL subsets (bezzam/coraal).
+# Evaluates on earnings21 and earnings22 (hf-audio/asr-leaderboard-longform), the CORAAL subsets (bezzam/coraal) and AppTek Call-Center Dialogues (apptek-com/apptek_callcenter_dialogues).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_salm_longform.sh
 
@@ -44,6 +44,7 @@ DATASET_CONFIGS=(
     "bezzam/coraal PRV"
     "bezzam/coraal ROC"
     "bezzam/coraal VLD"
+    "apptek-com/apptek_callcenter_dialogues leaderboard_longform"
 )
 # Optional: restrict this run to specific datasets, matched against the second
 # field of each DATASET_CONFIGS entry, e.g.:

@@ -21,6 +21,7 @@ DATASET_CONFIGS=(
     "PRV bezzam/coraal PRV test default ${LONGFORM_CONCURRENCY}"
     "ROC bezzam/coraal ROC test default ${LONGFORM_CONCURRENCY}"
     "VLD bezzam/coraal VLD test default ${LONGFORM_CONCURRENCY}"
+    "apptek_callcenter apptek-com/apptek_callcenter_dialogues leaderboard_longform test default ${LONGFORM_CONCURRENCY}"
 )
 
 filter_only_datasets || exit 1
