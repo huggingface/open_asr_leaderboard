@@ -1,7 +1,9 @@
 import argparse
 import os
+import re
 
 import evaluate
+import numpy as np
 import torch
 from huggingface_hub import get_safetensors_metadata
 from normalizer import data_utils
@@ -15,6 +17,107 @@ from elastic_models.transformers.pipelines.asr_vad_chunked import TheStageASRPip
 
 wer_metric = evaluate.load("wer")
 torch.set_float32_matmul_precision("high")
+
+
+# Input window per clip: (window in seconds, longest clip that goes to it); longer clips use --chunk_length.
+WINDOW_RULE = ()
+LOOP_UNITS_PER_S = 6.0
+
+
+def window_for(duration_s, longest_window):
+    for window, limit in WINDOW_RULE:
+        if window < longest_window and duration_s <= limit:
+            return window
+    return longest_window
+
+
+def set_window(model, window_s):
+    positions = int(round(window_s * 50))  # 50 encoder positions per second of audio
+    model.config.max_source_positions = positions
+    encoder = getattr(getattr(model, "model", None), "encoder", None)
+    if encoder is not None and getattr(encoder, "config", None) is not None:
+        encoder.config.max_source_positions = positions
+
+
+def looks_looped(text, duration_s):
+    # Hyphens and punctuation separate words, so "Do-Do-Do-..." counts as a repetition.
+    units = [u for u in re.split(r"[\s\-_.,;:!?()\[\]\"\u2010-\u2015\u0964\u3001\u3002]+", text.lower()) if u]
+    if duration_s > 0 and len(units) / duration_s > LOOP_UNITS_PER_S:
+        return "rate"
+    if len(units) >= 12 and len(set(units)) <= 0.3 * len(units):
+        return "repeat"
+    for n, repeats in ((1, 6), (2, 4), (3, 4)):
+        for s in range(len(units) - n * repeats + 1):
+            piece = units[s:s + n]
+            if all(units[s + k * n:s + (k + 1) * n] == piece for k in range(1, repeats)):
+                return "repeat"
+    return None
+
+
+def run_window(asr_pipeline, model, clips, window, longest_window, lang_ids, **kwargs):
+    set_window(model, window)
+    try:
+        res = asr_pipeline(clips, chunk_length_s=window, lang_ids=lang_ids, **kwargs)
+    finally:
+        set_window(model, longest_window)
+    return [res] if isinstance(res, dict) else res
+
+
+def transcribe(asr_pipeline, model, audios, sampling_rate, longest_window, lang_ids, **kwargs):
+    durations = [len(audio) / sampling_rate for audio in audios]
+    windows = [window_for(d, longest_window) for d in durations]
+    outputs = [None] * len(audios)
+
+    def rerun(idx, **run_kwargs):
+        res = run_window(
+            asr_pipeline, model, [audios[i] for i in idx], longest_window, longest_window,
+            [lang_ids[i] for i in idx], **run_kwargs,
+        )
+        for i, r in zip(idx, res):
+            outputs[i] = r
+
+    for window in sorted(set(windows), reverse=True):
+        idx = [i for i, w in enumerate(windows) if w == window]
+        res = run_window(
+            asr_pipeline, model, [audios[i] for i in idx], window, longest_window,
+            [lang_ids[i] for i in idx], **kwargs,
+        )
+        for i, r in zip(idx, res):
+            outputs[i] = r
+
+    # Looping outputs are decoded again in the longest window, then with repeated 3-grams forbidden.
+    redo = [
+        i for i in range(len(audios))
+        if windows[i] < longest_window and looks_looped(outputs[i]["text"], durations[i])
+    ]
+    if redo:
+        rerun(redo, **kwargs)
+    redo = [i for i in range(len(audios)) if looks_looped(outputs[i]["text"], durations[i]) == "rate"]
+    if redo:
+        gen_kwargs = dict(kwargs.get("generate_kwargs") or {}, no_repeat_ngram_size=3)
+        rerun(redo, **dict(kwargs, generate_kwargs=gen_kwargs))
+    return outputs
+
+
+def warmup_windows(asr_pipeline, model, sampling_rate, longest_window, batch_size, language, gen_kwargs):
+    # Dummy audio for every window, independent of the dataset.
+    rng = np.random.default_rng(0)
+    for window in sorted({w for w, _ in WINDOW_RULE if w < longest_window} | {longest_window}):
+        dummy = [
+            (0.01 * rng.standard_normal(int(0.9 * window * sampling_rate))).astype(np.float32)
+            for _ in range(batch_size)
+        ]
+        transcribe(
+            asr_pipeline, model, dummy, sampling_rate, window, [language] * batch_size,
+            batch_size=batch_size, generate_kwargs=gen_kwargs,
+        )
+
+
+def sort_by_duration(dataset):
+    for column in ("audio_length_s", "duration"):
+        if column in dataset.column_names:
+            return dataset.sort(column, reverse=True)
+    return dataset
 
 
 def main(args):
@@ -68,12 +171,10 @@ def main(args):
         end_event = torch.cuda.Event(enable_timing=True)
         start_event.record()
 
-        outputs = asr_pipeline(
-            list(audios),
+        outputs = transcribe(
+            asr_pipeline, model, list(audios), sampling_rate, args.chunk_length, ["en"] * minibatch_size,
             batch_size=args.batch_size,
-            chunk_length_s=args.chunk_length,
             generate_kwargs=gen_kwargs,
-            lang_ids=["en"] * minibatch_size,
         )
         pred_text = [output["text"] for output in outputs]
 
@@ -92,6 +193,8 @@ def main(args):
     # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so that its coverage stays
     # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
+
+    warmup_windows(asr_pipeline, model, sampling_rate, args.chunk_length, args.batch_size, "en", gen_kwargs)
 
     if args.warmup_steps is not None:
         dataset = data_utils.load_data(args)
@@ -115,6 +218,8 @@ def main(args):
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
     dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate, normalize_text=not is_vcb)
+    if not args.streaming:
+        dataset = sort_by_duration(dataset)
 
     dataset = dataset.map(
         benchmark,

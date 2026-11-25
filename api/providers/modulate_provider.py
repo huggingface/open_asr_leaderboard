@@ -8,6 +8,7 @@ from . import APIProvider, PermanentError, register
 MODEL_VARIANT_TO_ENDPOINT = {
     "vfast": "https://platform.modulate.ai/api/velma-2-stt-batch-english-vfast",
     "multilingual": "https://platform.modulate.ai/api/velma-2-stt-batch-multilingual-vfast",
+    "velma-2-stt-batch": "https://platform.modulate.ai/api/velma-2-stt-batch",
 }
 
 
@@ -60,6 +61,13 @@ class ModulateProvider(APIProvider):
         data = None
         if model_variant == "multilingual" and language:
             data = {"language": language.strip().lower()}
+        # velma-2-stt-batch: the declared language and no speaker diarization,
+        # so the response is one utterance holding the whole transcript.
+        if model_variant == "velma-2-stt-batch":
+            data = {
+                "language": (language or "en").strip().lower(),
+                "speaker_diarization": "false",
+            }
 
         with open(audio_file_path, "rb") as fh:
             files = {"upload_file": (os.path.basename(audio_file_path), fh)}
