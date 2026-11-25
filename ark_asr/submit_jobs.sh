@@ -1,8 +1,7 @@
 #!/bin/bash
 # Local script to submit HF Jobs for ARK-ASR evaluation.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
-# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md). Its recordings (35-123 s) exceed the model's
+# VoiceCodeBench: its recordings (35-123 s) exceed the model's
 # 40 s audio limit, so run_eval.py transcribes them in consecutive 30 s windows and joins the texts.
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,

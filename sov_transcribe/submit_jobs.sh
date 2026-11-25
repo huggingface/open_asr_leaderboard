@@ -1,8 +1,7 @@
 #!/bin/bash
 # Local script to submit HF Jobs for SOV-Transcribe-1 (vLLM + the model repo's vLLM plugin) ASR evaluation.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job grades its CTEM
-# (~$2; see scripts/submit_utils.sh and voice_code_bench.md). It runs with the verbatim prompt, like the other
+# VoiceCodeBench: it runs with the verbatim prompt, like the other
 # verbatim datasets.
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,

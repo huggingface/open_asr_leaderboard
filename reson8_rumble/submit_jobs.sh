@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # One H200 job for Rumble; all selected datasets share the vLLM engines.
 # Usage: HF_TOKEN=hf_... RESULTS_BUCKET=your/bucket bash reson8_rumble/submit_jobs.sh
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job grades its CTEM
-# (~$2; see scripts/submit_utils.sh and voice_code_bench.md). Its recordings are 35-123 s long and are sent whole
+# VoiceCodeBench: its recordings are 35-123 s long and are sent whole
 # to vLLM (request limit of 4096 tokens, up to 1024 generated for VoiceCodeBench; see run_eval.py).
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"

@@ -2,8 +2,6 @@
 # Local script to submit HF Jobs for Fluid Speech evaluation. Runs on the Fluid Speech Space (the NeMo Space with
 # NeMo 3.0) with this folder's run_eval.py and fluid_speech.py injected into /app.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
-# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md).
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.

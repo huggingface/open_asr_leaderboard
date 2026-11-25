@@ -16,8 +16,7 @@ DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 ORG_NAME="${ORG_NAME:-}"
 FLAVOR="${FLAVOR:-h200}"
 
-# VoiceCodeBench (WER in the public average; CTEM graded at the end by a GPU job per model, ~25 min, ~$2 each):
-# helpers and options (VCB_SCORING, VCB_JUDGE, PUBLISH_RESULTS) are in scripts/submit_utils.sh.
+# VoiceCodeBench: helpers and options (VCB_SCORING, VCB_JUDGE, PUBLISH_RESULTS) are in scripts/submit_utils.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

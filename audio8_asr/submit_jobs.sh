@@ -11,8 +11,7 @@ set -euo pipefail
 #   HF_TOKEN="hf_..." \
 #   bash audio8_asr/submit_jobs.sh
 # Override RESULTS_BUCKET and ORG_NAME when running outside the hf-audio namespace.
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
-# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md). Its recordings (35-123 s) exceed the model's
+# VoiceCodeBench: its recordings (35-123 s) exceed the model's
 # 30 s limit, so they are split into consecutive 30 s windows whose transcripts are joined (--chunk_length_s).
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-audio8-asr}"

@@ -2,8 +2,6 @@
 # Local script to submit HF Jobs for the Phonon-2.5 family (FermionResearch/Phonon-2.5, FermionResearch/Phonon-2.5-English)
 # English short-form evaluation; the model runs through the published phonon-cuda image, which the Space builds on.
 # Usage: HF_TOKEN=hf_... bash submit_jobs.sh
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
-# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md).
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.

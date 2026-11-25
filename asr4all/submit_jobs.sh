@@ -1,8 +1,7 @@
 #!/bin/bash
 # Local script to submit HF Jobs for FUTO asr4all evaluation.
 # Usage: ORG_NAME=<org> RESULTS_BUCKET=<bucket> bash submit_jobs.sh
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
-# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md). Its 35-123 s recordings are split into
+# VoiceCodeBench: its 35-123 s recordings are split into
 # 20 s windows (--chunk_length_s) so the 256-token punctuation/casing pass never truncates; windows are joined in order.
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,

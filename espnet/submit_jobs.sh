@@ -16,8 +16,7 @@ DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
 
-# VoiceCodeBench (WER in the public average; CTEM graded at the end by a GPU job per model, ~25 min, ~$2 each):
-# helpers and options (VCB_SCORING, VCB_JUDGE, PUBLISH_RESULTS) are in scripts/submit_utils.sh.
+# VoiceCodeBench: helpers and options (VCB_SCORING, VCB_JUDGE, PUBLISH_RESULTS) are in scripts/submit_utils.sh.
 # Its recordings are 35-123 s long: model.batch_decode() already splits long audio into 30 s chunks with 4 s of
 # context, so they are run as-is, with a smaller batch.
 

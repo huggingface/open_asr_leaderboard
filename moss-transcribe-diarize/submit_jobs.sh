@@ -4,8 +4,6 @@
 # ONLY_DATASETS filtering, and fetching this run's results.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
-# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md).
 
 set -euo pipefail
 

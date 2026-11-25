@@ -21,8 +21,8 @@ HF_TOKEN=hf_... ONLY_DATASETS="voice_code_bench" bash nemo_asr/submit_jobs_parak
 ```
 
 Transcripts go to the model's folder in the results bucket (`hf-audio/asr_leaderboard_h200`) like the other
-datasets. When all models are done, one grading job per model runs at once (about 13 minutes and $1 each on an
-H200), then each model's CTEM and WER are printed and a `<manifest>.summary.json` is stored beside the
+datasets. When all models are done, one grading job per model runs at once on an
+H200, then each model's CTEM and WER are printed and a `<manifest>.summary.json` is stored beside the
 transcripts. Grading also writes `<manifest>.ctem.json` and `<manifest>.qwen27b-verifier-cache.json` there.
 
 Options:
@@ -70,7 +70,7 @@ Historical GPT scores must not be relabeled as scores from this protocol.
 **Validation.** On a frozen benchmark of 693 manually assessed entity decisions the judge scored 629/693 (the earlier
 GPT judge: 597/693) and passed 70/70 synthetic controls. These figures were measured before rule 11 (spoken zero:
 a standalone "O"/"oh" between digit tokens counts as 0 when the target is numeric) was added to the prompt and the
-default concurrency raised to 64. Identical runs differ by about 5 of 1,482 verdicts (±0.1–0.2 CTEM).
+default concurrency raised to 64. Identical runs differ by about 5 of 1,482 verdicts (±0.1–0.4 CTEM).
 
 ## FP8 judge
 

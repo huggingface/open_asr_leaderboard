@@ -120,9 +120,9 @@ filter_only_datasets_languages() {
 
 # ── VoiceCodeBench ───────────────────────────────────────────────────────────
 # VoiceCodeBench is evaluated like any other dataset: its DATASET_CONFIGS entry names the repo as its dataset path,
-# its transcripts go to the model's folder of $RESULTS_BUCKET, and its WER is scored with the other datasets' (it is in
-# the public average). Its entity metric, CTEM (higher is better, never averaged with WERs), is graded afterwards by
-# one H200 GPU job per model (~25 min, ~$2 each, all models at once) that writes the CTEM report, the judge's
+# its transcripts go to the model's folder of $RESULTS_BUCKET, and its WER is scored with the other datasets' (reported,
+# but not part of the default average). Its entity metric, CTEM (higher is better, never averaged with WERs), is graded afterwards by
+# one H200 GPU job per model (all models at once) that writes the CTEM report, the judge's
 # responses and a summary beside the transcripts. See voice_code_bench.md.
 #
 # A submit script uses these helpers, besides an entry in DATASET_CONFIGS such as

@@ -26,7 +26,7 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
   After submitting a model to the leaderboard, the maintainers will evaluate on private sets, as described [here](https://huggingface.co/blog/open-asr-leaderboard-private-data).
 
 
-# Evaluate a model (as of 24 July 2026)
+# Evaluate a model (as of 27 November 2026)
 
 English short-form, English long-form, and multilingual evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes a Docker image on the same hardware, to minimize environment and driver differences.
 
@@ -37,10 +37,9 @@ Jobs are launched on the following hardware ([flavor](https://huggingface.co/doc
 name             pretty name             cpu       ram      storage   accelerator               cost/min  cost/hour
 h200             Nvidia H200             23 vCPU   256 GB   3000 GB   1x H200 (141 GB)          $0.0833   $5.00
 ```
-Example costs for a full run over the main public datasets for English short-form:
-- $2.92 for `nvidia/parakeet-tdt-0.6b-v3`
-- $4.75 for `openai/whisper-large-v3-turbo`
-- $5.58 for `Qwen/Qwen3-ASR-1.7B`
+Example costs for a full run over the main public datasets and VoiceCodeBench for English short-form (including the grading job of VoiceCodeBench's Entity Match):
+- $2.86 for `nvidia/parakeet-tdt-0.6b-v3`
+- $4.59 for `Qwen/Qwen3-ASR-1.7B-hf`
 
 Each model family has its own Docker image with the necessary software requirements. The evaluation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
 

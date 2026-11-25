@@ -4,8 +4,6 @@
 # prompts it for a transcription through the chat template and forces greedy
 # decoding (its generation_config ships do_sample=True).
 # Usage: HF_TOKEN=hf_... bash submit_jobs_gemma4.sh
-# VoiceCodeBench is included: its WER is in the public average, and at the end a GPU job per model grades its CTEM
-# (~$2 per model; see scripts/submit_utils.sh and voice_code_bench.md).
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.
