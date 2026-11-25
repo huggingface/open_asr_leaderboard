@@ -8,7 +8,7 @@ from . import APIProvider, PermanentError, register
 
 @register("p99lab")
 class P99LabProvider(APIProvider):
-    """p99lab Audrey. Model variants: "audrey-0.7". Env: P99LAB_API_KEY, P99LAB_API_URL."""
+    """p99lab Audrey. Model variants: "audrey-1". Env: P99LAB_API_KEY, P99LAB_API_URL."""
 
     def transcribe(
         self,
@@ -21,7 +21,7 @@ class P99LabProvider(APIProvider):
     ) -> str:
         base = os.environ["P99LAB_API_URL"].rstrip("/")
         headers = {"Authorization": f"Bearer {os.environ['P99LAB_API_KEY']}"}
-        data = {"model": model_variant, "language": language or "en"}
+        data = {"model": model_variant, "language": language or "en", "store": "false"}
         if use_url:
             audio_bytes = requests.get(sample["row"]["audio"][0]["src"], timeout=60).content
             files = {"file": ("audio", audio_bytes)}
