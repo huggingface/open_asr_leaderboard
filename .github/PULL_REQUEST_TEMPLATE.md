@@ -64,7 +64,7 @@ License | Size (B) | # Languages | Encoder | Decoder | (Recommended) Link to tra
     - a line in `MODEL_CONFIGS`
     - a line when calling `docker run` to pass the API key 
 - [ ] Provide a link to your model's documentation that we can link on the leaderboard.
-- [ ] The API is fast enough for a realistic evaluation: **RTFx > 2** (total audio duration over total request time) on a smoke test with `voxpopuli_cleaned_aa` (628 short clips, about 2 hours of audio). Please report the RTFx and the concurrency used.
+- [ ] The API is fast enough for a realistic evaluation: **RTFx > 1** (total audio duration over total request time) on a smoke test with `voxpopuli_cleaned_aa` (628 short clips, about 2 hours of audio). Please report the RTFx and the concurrency used.
     - [ ] On the final evaluation, the RTFx is above 1 on every split.
 - [ ] The API handles audio recordings of up to 125 s.
 - [ ] Can you guarantee to not train on, log, store, retain, or inspect the audio used for the Open ASR Leaderboard evaluations? This is important to ensure the held-out nature of the private sets.
