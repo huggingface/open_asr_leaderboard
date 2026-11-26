@@ -43,6 +43,7 @@ MODEL_CONFIGS=(
     # "p99lab/audrey-1                 64"
     # "opusclip/steno-v1-preview     32"
     # "yoob/yoob-asr-pro-v1          16"
+    # "lokutor/conv-2.0              8"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -154,6 +155,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SMALLESTAI_API_KEY="${SMALLESTAI_API_KEY:-}" \
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
+            -e LOKUTOR_API_KEY="${LOKUTOR_API_KEY:-}" \
             -e GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
             -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
