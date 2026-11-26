@@ -33,6 +33,7 @@ DATASET_CONFIGS=(
     "bezzam/coraal:PRV:test"
     "bezzam/coraal:ROC:test"
     "bezzam/coraal:VLD:test"
+    "apptek-com/apptek_callcenter_dialogues:leaderboard_longform:test"
 )
 
 # Override either matrix for a focused run, for example:

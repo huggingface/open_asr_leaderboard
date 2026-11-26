@@ -771,11 +771,12 @@ def score_results(
         (
             "longform",
             None,
-            "model,avg,RTFx,earnings21,earnings22,coraal_avg,"
+            "model,avg,RTFx,earnings21,earnings22,apptek_callcenter,coraal_avg,"
             + ",".join(f"coraal_{split}" for split in CORAAL_SPLITS),
             {
                 "asr-leaderboard-longform_earnings21_test": ("earnings21", None),
                 "asr-leaderboard-longform_earnings22_test": ("earnings22", None),
+                "apptek_callcenter_dialogues_leaderboard_longform_test": ("apptek_callcenter", None),
                 **{
                     f"coraal_{split}_test": (f"coraal_{split}", None)
                     for split in CORAAL_SPLITS
@@ -937,7 +938,12 @@ def score_results(
         coraal_avg = round(sum(coraal) / len(coraal), 2) if coraal else None
         parts = [
             v
-            for v in (wer_vals.get("earnings21"), wer_vals.get("earnings22"), coraal_avg)
+            for v in (
+                wer_vals.get("earnings21"),
+                wer_vals.get("earnings22"),
+                wer_vals.get("apptek_callcenter"),
+                coraal_avg,
+            )
             if v is not None
         ]
         avg = round(sum(parts) / len(parts), 2) if parts else None
@@ -1072,7 +1078,14 @@ def score_results(
                     )
                 if family_key == "longform":
                     coraal_avg, avg = longform_averages(wer_vals)
-                    cols = [avg, rtfx_val, wer_vals["earnings21"], wer_vals["earnings22"], coraal_avg]
+                    cols = [
+                        avg,
+                        rtfx_val,
+                        wer_vals["earnings21"],
+                        wer_vals["earnings22"],
+                        wer_vals["apptek_callcenter"],
+                        coraal_avg,
+                    ]
                     cols += [wer_vals[f"coraal_{split}"] for split in CORAAL_SPLITS]
                     print(
                         ",".join(
@@ -1113,7 +1126,11 @@ def score_results(
         "dataocean": "DataOcean",
     }
     # Row labels of the Markdown summaries, where the CSV column reads badly.
-    MARKDOWN_LABELS = {"earnings21": "Earnings21", "earnings22": "Earnings22"}
+    MARKDOWN_LABELS = {
+        "earnings21": "Earnings21",
+        "earnings22": "Earnings22",
+        "apptek_callcenter": "AppTek Call-Center",
+    }
 
     def matching_results(model_key, ds_substrs):
         """Result keys of ``model_key`` for any of ``ds_substrs``, each once."""
@@ -1137,7 +1154,8 @@ def score_results(
         Rows are the family's datasets the model has results for, in column order.
         The average rows follow the published sheets: the plain mean of the WERs,
         one per group for the private sets that have several (scripted /
-        conversational), and earnings21 / earnings22 / CORAAL-average for long-form.
+        conversational), and earnings21 / earnings22 / AppTek Call-Center / CORAAL-average
+        for long-form.
         RTFx is pooled (total audio over total time) over the same runs.
         """
         substrs_of = defaultdict(list)

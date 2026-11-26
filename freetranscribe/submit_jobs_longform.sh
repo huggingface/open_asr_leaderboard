@@ -1,6 +1,6 @@
 #!/bin/bash
 # Local script to submit HF Jobs for English long-form evaluation of freetranscribe/parakeet-ft-v1.
-# Evaluates on earnings21 and earnings22 (hf-audio/asr-leaderboard-longform) and the CORAAL subsets (bezzam/coraal).
+# Evaluates on earnings21 and earnings22 (hf-audio/asr-leaderboard-longform), the CORAAL subsets (bezzam/coraal) and AppTek Call-Center Dialogues (apptek-com/apptek_callcenter_dialogues).
 # This script is NOT pushed to the HF Space — it runs on your local machine.
 # Usage: HF_TOKEN=hf_... bash submit_jobs_longform.sh
 
@@ -45,6 +45,7 @@ DATASET_CONFIGS=(
     "bezzam/coraal PRV"
     "bezzam/coraal ROC"
     "bezzam/coraal VLD"
+    "apptek-com/apptek_callcenter_dialogues leaderboard_longform"
 )
 # Optional: restrict this run to specific datasets, matched against the dataset
 # name (second field), e.g.:  ONLY_DATASETS="earnings21 ATL" bash <this script>
