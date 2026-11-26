@@ -5,6 +5,7 @@ import evaluate
 import numpy as np
 import torch
 from normalizer import data_utils
+from normalizer import voice_code_bench
 from tqdm import tqdm
 from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
 from huggingface_hub import snapshot_download
@@ -60,6 +61,17 @@ def main(args):
 
         # Divide data into sub-batches that maximize the total audio length
         # that can fit within the specified limit
+        orig_audios = audios
+        owners = list(range(len(audios)))
+        if is_vcb:
+            # The compiled model accepts at most 12000 frames (120 s) and VoiceCodeBench has recordings up to
+            # 123 s, so split into 60 s chunks and join the pieces per recording.
+            size = 60 * sampling_rate
+            audios, owners = [], []
+            for i, a in enumerate(orig_audios):
+                for st in range(0, max(len(a), 1), size):
+                    audios.append(a[st:st + size])
+                    owners.append(i)
         sort_idxs = np.argsort([len(x) for x in audios])
         all_out = [None for _ in audios]
         sorted_audios = [audios[i] for i in sort_idxs]
@@ -96,6 +108,12 @@ def main(args):
                 all_out[target_idx] = pred_text[j]
 
         assert all(x is not None for x in all_out)
+        if is_vcb:
+            joined = [[] for _ in orig_audios]
+            for o, t in zip(owners, all_out):
+                if t:
+                    joined[o].append(t)
+            all_out = [" ".join(j) for j in joined]
         pred_text = all_out
 
         # END TIMING
@@ -110,9 +128,11 @@ def main(args):
         batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
+
     if args.warmup_steps is not None:
         dataset = data_utils.load_data(args)
-        dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate)
+        dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate, normalize_text=not is_vcb)
 
         num_warmup_samples = args.warmup_steps * args.batch_size
         if args.streaming:
@@ -135,7 +155,7 @@ def main(args):
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate)
+    dataset = data_utils.prepare_data(dataset, sampling_rate=feature_extractor.sampling_rate, normalize_text=not is_vcb)
 
     dataset = dataset.map(
         benchmark,
@@ -149,6 +169,10 @@ def main(args):
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.3f}B parameters")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     all_results = {
         "audio_length_s": [],
@@ -157,8 +181,7 @@ def main(args):
         "references": [],
         "audio_filepath": [],
     }
-    if is_chunked:
-        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    all_results.update({key: [] for key in metadata_keys})
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
@@ -175,11 +198,14 @@ def main(args):
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
-        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: all_results[key] for key in metadata_keys},
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2))
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))

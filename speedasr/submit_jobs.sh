@@ -62,6 +62,7 @@ DATASETS=(
   "spgispeech|hf-audio/open-asr-leaderboard|spgispeech"
   "urgent2024|hf-audio/open-asr-leaderboard|urgent2024"
   "monsoon_en_in|VoiceArena/Monsoon_en_IN_test|"
+  "voice_code_bench|besimple-ai/voice-code-bench|default"
 )
 if [[ "$INCLUDE_URGENT_CLEAN" == 1 ]]; then
   DATASETS+=("urgent2024_clean|hf-audio/open-asr-leaderboard|urgent2024_clean")
@@ -79,6 +80,7 @@ for wanted in "${requested[@]}"; do
 done
 source "$SCRIPT_DIR/../scripts/submit_utils.sh"
 LOCAL_SCRIPT_INJECT=$(local_script_inject "$SCRIPT_DIR" run_eval.py:leaderboard/run_eval.py) || exit 1
+LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 if [[ -e "$LOCAL_RESULTS/run_config.json" ]]; then
   printf 'RUN_ID already exists locally; choose a new RUN_ID to keep results separate.\n' >&2
   exit 2
@@ -142,6 +144,11 @@ JOB
 )
 if [[ -n "$LOCAL_SCRIPT_INJECT" ]]; then
   JOB_COMMAND="$LOCAL_SCRIPT_INJECT $JOB_COMMAND"
+fi
+if [[ -n "$LOCAL_NORMALIZER_INJECT" ]]; then
+  # The Space image imports its own normalizer from /opt/open_asr_leaderboard; give that copy the local one
+  # (VoiceCodeBench needs the current normalizer.voice_code_bench / data_utils).
+  JOB_COMMAND="$LOCAL_NORMALIZER_INJECT cp -r /app/normalizer/. /opt/open_asr_leaderboard/normalizer/ && $JOB_COMMAND"
 fi
 
 sync_results() {

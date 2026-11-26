@@ -10,6 +10,7 @@ from tqdm import tqdm
 from kaldialign import batch_error_rate
 from dotenv import load_dotenv
 from normalizer import data_utils
+from normalizer import voice_code_bench
 import concurrent.futures
 from providers import get_provider, PermanentError
 
@@ -110,9 +111,14 @@ def transcribe_dataset(
     streaming=False,
 ):
     is_chunked = data_utils.is_chunked_dataset(dataset_path)
+    is_vcb = voice_code_bench.is_voice_code_bench(dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     if use_url:
-        if is_chunked:
+        if is_chunked or is_vcb:
             raise ValueError(
                 f"{dataset_path} is a chunked dataset whose audio is not referenced by "
                 "the rows API, run without --use_url."
@@ -130,7 +136,7 @@ def transcribe_dataset(
                 streaming=streaming,
             )
         )
-        ds = data_utils.prepare_data(ds)
+        ds = data_utils.prepare_data(ds, normalize_text=not is_vcb)
         if max_samples:
             ds = ds.take(max_samples)
 
@@ -140,8 +146,7 @@ def transcribe_dataset(
         "audio_length_s": [],
         "transcription_time_s": [],
     }
-    if is_chunked:
-        results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    results.update({key: [] for key in metadata_keys})
 
     print(f"Transcribing with model: {model_name}")
 
@@ -185,11 +190,7 @@ def transcribe_dataset(
                     os.unlink(tmp_path)
 
         transcription_time = time.time() - start
-        chunk_metadata = (
-            {key: sample[key] for key in data_utils.CHUNK_METADATA_KEYS}
-            if is_chunked
-            else {}
-        )
+        chunk_metadata = {key: sample[key] for key in metadata_keys}
         return (
             reference,
             transcription,
@@ -230,12 +231,15 @@ def transcribe_dataset(
         split,
         audio_length=results["audio_length_s"],
         transcription_time=results["transcription_time_s"],
-        extra_fields={key: results[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: results[key] for key in metadata_keys},
     )
 
     print("Results saved at path:", manifest_path)
+
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", round(sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2))
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(

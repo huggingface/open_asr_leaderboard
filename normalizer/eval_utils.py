@@ -538,6 +538,11 @@ def markdown_table(header: list, rows: list, left_columns: int = 1) -> str:
     return "\n".join([line(cells[0]), align] + [line(r) for r in cells[1:]])
 
 
+# Columns that are reported but not averaged into the short-form "avg" or its pooled RTFx (VoiceCodeBench is not part
+# of the default average). The markdown summary labels the columns without the " WER" suffix, so both spellings are listed.
+AVG_EXCLUDED_COLUMNS = {"VoiceCodeBench WER", "VoiceCodeBench"}
+
+
 def score_results(
     directory: str,
     model_id: str = None,
@@ -719,7 +724,8 @@ def score_results(
             "public",
             None,  # always printed when public datasets are present
             "model,avg,RTFx,License,Size (B),# Languages,Encoder,Decoder,Training data disclosure,"
-            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER",
+            "AMI-Cleaned WER,Earnings22-Cleaned-AA-chunked WER,Gigaspeech-Cleaned WER,SPGISpeech WER,URGENT2024 WER,Voice Arena Monsoon WER,Voxpopuli-AA-Cleaned WER,"
+            "VoiceCodeBench WER",
             # Keys of hf-audio/open-asr-leaderboard configs carry the repo slug, so
             # that a same-named set from another repo (e.g. the long-form
             # asr-leaderboard-longform_earnings22_test) is not picked up as well.
@@ -741,6 +747,9 @@ def score_results(
                 "open-asr-leaderboard_urgent2024_test": ("URGENT2024 WER", None),
                 "Monsoon_en_IN_test__test": ("Voice Arena Monsoon WER", None),
                 "open-asr-leaderboard_voxpopuli_cleaned_aa_test": ("Voxpopuli-AA-Cleaned WER", None),
+                # VoiceCodeBench: its WER is reported but not averaged (AVG_EXCLUDED_COLUMNS). Its entity metric, CTEM, is scored
+                # separately (voice_code_bench.md) and is never averaged with WERs.
+                "besimple-ai-voice-code-bench_default_test": ("VoiceCodeBench WER", None),
             },
         ),
         (
@@ -964,7 +973,7 @@ def score_results(
                 if family_key == "longform":
                     avg = longform_averages(wer_vals)[1]
                 else:
-                    present = [v for v in wer_vals.values() if v is not None]
+                    present = [v for c, v in wer_vals.items() if v is not None and c not in AVG_EXCLUDED_COLUMNS]
                     avg = round(sum(present) / len(present), 2) if present else None
                 if avg is not None:
                     label = (
@@ -1042,7 +1051,8 @@ def score_results(
                 if family_key in ("public", "longform") or (family_key or "").startswith("ml_"):
                     family_audio = sum(
                         results[rk]["audio_length"]
-                        for ds_substr in col_map
+                        for ds_substr, (ds_label, _) in col_map.items()
+                        if ds_label not in AVG_EXCLUDED_COLUMNS
                         for rk in results
                         if model_key.rstrip() in rk
                         and ds_substr in rk
@@ -1050,7 +1060,8 @@ def score_results(
                     )
                     family_time = sum(
                         results[rk]["inference_time"]
-                        for ds_substr in col_map
+                        for ds_substr, (ds_label, _) in col_map.items()
+                        if ds_label not in AVG_EXCLUDED_COLUMNS
                         for rk in results
                         if model_key.rstrip() in rk
                         and ds_substr in rk
@@ -1075,7 +1086,7 @@ def score_results(
                     # families do not share a prefix layout (ml_* is just
                     # "model,RTFx,...", public also carries avg and the metadata
                     # columns), and the metadata ones are filled in by hand later.
-                    all_wers = [v for v in wer_vals.values() if v is not None]
+                    all_wers = [v for c, v in wer_vals.items() if v is not None and c not in AVG_EXCLUDED_COLUMNS]
                     known = {
                         "RTFx": rtfx_val,
                         # Unrounded, to match english_short_latest.csv, whose avg
@@ -1175,10 +1186,11 @@ def score_results(
                         pooled_rtfx(keys),
                     )
                 )
-        if len(rows) > 1:
-            all_keys = [rk for rks in used.values() for rk in rks]
+        avg_rows = [r for r in rows if r[0] not in AVG_EXCLUDED_COLUMNS]
+        if len(avg_rows) > 1:
+            all_keys = [rk for lbl, rks in used.items() if lbl not in AVG_EXCLUDED_COLUMNS for rk in rks]
             averages.append(
-                ("Average", sum(w for _, w, _ in rows) / len(rows), pooled_rtfx(all_keys))
+                ("Average", sum(w for _, w, _ in avg_rows) / len(avg_rows), pooled_rtfx(all_keys))
             )
         return rows, averages
 

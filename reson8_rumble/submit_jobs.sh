@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # One H200 job for Rumble; all selected datasets share the vLLM engines.
 # Usage: HF_TOKEN=hf_... RESULTS_BUCKET=your/bucket bash reson8_rumble/submit_jobs.sh
+# VoiceCodeBench: its recordings are 35-123 s long and are sent whole
+# to vLLM (request limit of 4096 tokens, up to 1024 generated for VoiceCodeBench; see run_eval.py).
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
@@ -26,6 +28,7 @@ DATASET_CONFIGS=(
     "urgent2024 test"
     "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test besimple-ai/voice-code-bench default"
 
     # Multilingual leaderboard datasets.
     "fleurs_de test hf-audio/open-asr-leaderboard-multilingual-datasets fleurs_de de"
@@ -53,6 +56,7 @@ DATASET_CONFIGS=(
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets 1 || exit 1
+vcb_init
 
 
 # The upstream image has no evaluator, so always send the local runtime files.
@@ -89,3 +93,7 @@ python "$FETCH_RUN_RESULTS" \
     --bucket "$RESULTS_BUCKET" --model-folder "$MODEL_FOLDER" \
     --local-dir "./results/${MODEL_FOLDER}" --since "$RUN_START" \
     --expected "${#DATASET_CONFIGS[@]}"
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job, then CTEM and WER are printed.
+vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
+vcb_grade

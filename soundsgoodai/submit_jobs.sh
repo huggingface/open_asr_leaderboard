@@ -48,10 +48,9 @@ fi
 # Local runners are injected by default; USE_LOCAL_SCRIPT=0 uses the image's.
 LOCAL_SCRIPT_INJECT=
 if [[ ${USE_LOCAL_SCRIPT:-1} == 1 ]]; then
-    for SCRIPT in run_eval.py run_eval_ml.py; do
-        RUN_EVAL_B64=$(base64 -w0 "${SCRIPT_DIR}/${SCRIPT}")
-        LOCAL_SCRIPT_INJECT+="echo '${RUN_EVAL_B64}' | base64 -d > /app/${SCRIPT}"$'\n'
-    done
+    # Only the runner this run uses, gzipped: one argument of bash -c is limited to 128 KiB.
+    RUN_EVAL_B64=$(gzip -c "${SCRIPT_DIR}/${EVAL_SCRIPT}" | base64 -w0)
+    LOCAL_SCRIPT_INJECT="echo '${RUN_EVAL_B64}' | base64 -d | gunzip > /app/${EVAL_SCRIPT}"$'\n'
 fi
 
 # Optional: restrict this run to specific datasets, matched against the first
@@ -102,6 +101,9 @@ if [[ -n ${ONLY_LANGUAGES:-} ]]; then
     DATASET_CONFIGS=("${SELECTED[@]}")
 fi
 
+# Is VoiceCodeBench among the datasets of this run?
+vcb_init
+
 LANGUAGES=(en)
 if [[ ${MULTILINGUAL} == 1 ]]; then
     LANGUAGES=()
@@ -137,6 +139,9 @@ for CONFIG in "${DATASET_CONFIGS[@]}"; do
     if [[ -n ${DATASET_PATH} ]]; then
         DATASET_CONFIG=
     fi
+    if [[ ${DATASET_PATH} == besimple-ai/voice-code-bench ]]; then
+        DATASET_CONFIG=default  # the one config its manifests and grading use
+    fi
     LANGUAGE_ARGS=()
     if [[ ${MULTILINGUAL} == 1 ]]; then
         LANGUAGE_ARGS=(--language="${DATASET##*_}")
@@ -153,6 +158,14 @@ for CONFIG in "${DATASET_CONFIGS[@]}"; do
         --dataset="${DATASET_CONFIG}" --split="${SPLIT}" \
         2>&1 | tee "${DESTINATION}/${DATASET}-${SPLIT}.log"
     cp results/*.jsonl results/*.metadata.json "${DESTINATION}/"
+    if [[ ${DATASET_PATH} == besimple-ai/voice-code-bench ]]; then
+        # VoiceCodeBench grading and its summary use the folder name (no spaces or parentheses) in the file name.
+        FOLDER=${DESTINATION##*/}
+        for EXT in jsonl metadata.json; do
+            mv "${DESTINATION}/MODEL_${REPORT_NAME//\//-}_DATASET_besimple-ai-voice-code-bench_default_test.${EXT}" \
+                "${DESTINATION}/MODEL_${FOLDER}_DATASET_besimple-ai-voice-code-bench_default_test.${EXT}"
+        done
+    fi
 done
 JOB
 }
@@ -248,4 +261,8 @@ for language in set(sys.argv[3:]):
         sys.argv[1], sys.argv[2], multilingual, language=language, families=lang_family
     )
 PY
+    vcb_track_model "${REPORT_NAME}" "${MODEL_FOLDER}"
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade
