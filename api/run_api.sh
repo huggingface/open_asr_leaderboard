@@ -99,10 +99,6 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         fi
 
         PROMPT_ARG=""
-        if [[ "$MODEL_ID" == gabsy/* && "$DATASET" == "spgispeech" ]]; then
-            # SPGISpeech references are edited (no fillers, repeats or restarts): Gabsy's clean transcription mode.
-            PROMPT_ARG="--prompt=clean"
-        fi
         if [[ "$MODEL_ID" == "microsoft/azure-speech-09-2026" && "$DATASET" == "spgispeech" ]]; then
             # SPGISpeech references remove some repetitions, so disable Azure's verbatim prompt.
             PROMPT_ARG="--prompt="
