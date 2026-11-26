@@ -4,7 +4,7 @@ import os
 import re
 import torch
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoModelForRNNT, AutoProcessor, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, MODEL_FOR_RNNT_MAPPING, CompileConfig
+from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, AutoModelForMultimodalLM, AutoModelForCTC, AutoModelForRNNT, AutoModelForTDT, AutoProcessor, GenerationConfig, MODEL_FOR_TDT_MAPPING, MODEL_FOR_MULTIMODAL_LM_MAPPING, MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING, MODEL_FOR_CTC_MAPPING, MODEL_FOR_RNNT_MAPPING, CompileConfig
 import evaluate
 from normalizer import data_utils
 from normalizer.eval_utils import normalize_compound_pairs
@@ -91,6 +91,8 @@ def main(args):
         cls_model = AutoModelForCTC
     elif type(config) in MODEL_FOR_RNNT_MAPPING:
         cls_model = AutoModelForRNNT
+    elif type(config) in MODEL_FOR_TDT_MAPPING:
+        cls_model = AutoModelForTDT
     else:
         raise ValueError(f"Model config of type {type(config)} not recognized in Transformers mappings.")
     is_ctc = cls_model == AutoModelForCTC
@@ -134,6 +136,10 @@ def main(args):
         processor = AutoProcessor.from_pretrained(
             args.model_id, revision=args.revision, target_lang=model_language
         )
+    elif args.processor_id:
+        # Checkpoint published without processor / generation files: take them from the companion repo
+        processor = AutoProcessor.from_pretrained(args.processor_id)
+        model.generation_config = GenerationConfig.from_pretrained(args.processor_id)
     else:
         processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
     # MMS adapter loading replaces language-specific parameters, so move the
@@ -143,6 +149,8 @@ def main(args):
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
     is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
     is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
+    # Token-and-duration transducers (Parakeet TDT) use the transducer generate/decode path; they detect the language themselves
+    is_tdt = cls_model == AutoModelForTDT
     is_vibevoice = "vibevoice" in args.model_id.lower()
     is_qwen3_asr = "qwen3-asr" in args.model_id.lower()
     is_omniasr_alm = config.model_type == "omniasr"
@@ -238,7 +246,9 @@ def main(args):
             padding_audios = [audios[-1] for _ in range(padding_size)]
             audios.extend(padding_audios)
 
-        if is_nemotron:
+        if is_tdt:
+            inputs = processor(audios, sampling_rate=sampling_rate, padding=True, return_tensors="pt")
+        elif is_nemotron:
             # Cap very long clips at 30s: with padding="longest", a single long
             # clip can push the padded conv input past torch's 32-bit indexing
             # limit (canUse32BitIndexMath -> RuntimeError)
@@ -346,8 +356,8 @@ def main(args):
         else:
             sdpa_backends = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
         with sdpa_kernel(sdpa_backends):
-            if is_nemotron:
-                # RNNT generation (cache-aware FastConformer-RNNT)
+            if is_nemotron or is_tdt:
+                # RNNT/TDT generation (cache-aware FastConformer-RNNT)
                 rnnt_output = model.generate(**inputs, **gen_kwargs, return_dict_in_generate=True)
                 pred_ids = rnnt_output.sequences
             elif model.can_generate():
@@ -364,7 +374,7 @@ def main(args):
             pred_ids = pred_ids[:-padding_size, ...]
 
         # Convert token ids to text transcription
-        if is_nemotron:
+        if is_nemotron or is_tdt:
             pred_text = processor.decode(pred_ids, skip_special_tokens=True)
         elif is_vibevoice:
             # VibeVoice: strip the input prompt tokens then use the model's own decode API
@@ -540,6 +550,13 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Model revision to use (e.g. 'refs/pr/11' for a PR branch). Defaults to the main branch.",
+    )
+    parser.add_argument(
+        "--processor_id",
+        type=str,
+        default=None,
+        help="Load the processor (feature extractor and tokenizer) and the generation config from this repo instead of "
+        "--model_id, for checkpoints published without those files. Defaults to --model_id.",
     )
     parser.add_argument(
         "--dataset",
