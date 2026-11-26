@@ -69,6 +69,7 @@ from . import (
     sophea_provider,
     smallest_provider,
     soniox_provider,
+    speech_expert_provider,
     speechmatics_provider,
     sprag_provider,
     yoob_provider,
