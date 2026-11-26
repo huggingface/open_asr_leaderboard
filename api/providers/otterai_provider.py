@@ -1,5 +1,6 @@
 import io
 import os
+import time
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -29,6 +30,24 @@ class OtterAIProvider(APIProvider):
             raise PermanentError(
                 "OTTERAI_API_URL must be an HTTPS URL without credentials, query, or fragment"
             )
+
+    def _poll_long_form(self, job_id, headers):
+        deadline = time.monotonic() + 3600
+        while time.monotonic() < deadline:
+            response = requests.get(
+                self.api_url, params={"job_id": job_id}, headers=headers,
+                timeout=30, allow_redirects=False,
+            )
+            if response.status_code != 200:
+                raise PermanentError(f"OtterAI job polling returned HTTP {response.status_code}")
+            payload = response.json()
+            status = payload.get("status") if isinstance(payload, dict) else None
+            if status == "completed":
+                return payload
+            if status not in ("queued", "running"):
+                raise PermanentError(f"OtterAI long-form job ended with status {status!r}")
+            time.sleep(10)
+        raise PermanentError("OtterAI long-form job did not finish within one hour")
 
     def transcribe(
         self,
@@ -61,11 +80,16 @@ class OtterAIProvider(APIProvider):
         wav = io.BytesIO()
         sf.write(wav, audio, 16000, format="WAV", subtype="PCM_16")
 
+        long_form = os.getenv("OTTERAI_LONG_FORM") == "1"
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        data = {"language": "en", "response_format": "json"}
+        if long_form:
+            data["long-form"] = "true"
         response = requests.post(
             self.api_url,
-            headers={"Authorization": f"Bearer {self.api_key}"},
+            headers=headers,
             files={"file": ("audio.wav", wav.getvalue(), "audio/wav")},
-            data={"language": "en", "response_format": "json"},
+            data=data,
             timeout=300,
             allow_redirects=False,
         )
@@ -80,6 +104,20 @@ class OtterAIProvider(APIProvider):
             payload = response.json()
         except ValueError as exc:
             raise PermanentError("OtterAI returned an invalid JSON response") from exc
+        job_id = None
+        if long_form and response.status_code == 202:
+            job_id = payload.get("id") if isinstance(payload, dict) else None
+            if not isinstance(job_id, str) or not job_id:
+                raise PermanentError("OtterAI did not return a long-form job ID")
+            payload = self._poll_long_form(job_id, headers)
         if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
             raise PermanentError("OtterAI response must contain a string 'text' field")
+        if job_id:
+            try:
+                requests.delete(
+                    self.api_url, params={"job_id": job_id}, headers=headers,
+                    timeout=15, allow_redirects=False,
+                )
+            except requests.RequestException:
+                pass  # The server expires unacknowledged results.
         return payload["text"]

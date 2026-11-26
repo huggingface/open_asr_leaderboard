@@ -19,6 +19,7 @@ MODEL_CONFIGS=(
     # "assembly/universal-3-5-pro    4"
     # "elevenlabs/scribe_v2          2"
     # "reson8/resonant-1             4"
+    # "OtterAI/speech-v3.1          6"
 )
 
 # ── Datasets: "dataset_path:config:split" ────────────────────────────────────
@@ -79,6 +80,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e RESON8_API_KEY="${RESON8_API_KEY:-}" \
             -e AZURE_API_KEY="${AZURE_API_KEY:-}" \
             -e SONIOX_API_KEY="${SONIOX_API_KEY:-}" \
+            -e OTTERAI_API_KEY -e OTTERAI_API_URL -e OTTERAI_LONG_FORM=1 \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
