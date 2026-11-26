@@ -25,6 +25,7 @@ from kaldialign import batch_error_rate
 from transformers import AutoModelForCausalLM, AutoProcessor, CompileConfig
 
 from normalizer import data_utils
+from normalizer import voice_code_bench
 
 
 DEFAULT_MODEL_ID = "Edge0/Audio8-ASR-0.1B"
@@ -68,6 +69,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--streaming", action="store_true")
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--max_audio_seconds", type=float, default=30.0)
+    parser.add_argument("--chunk_length_s", type=float, default=None,
+                        help="Split each recording into consecutive windows of at most this many seconds (the model "
+                        "limit), transcribe them and join the texts; used for VoiceCodeBench only.")
     parser.add_argument("--sampling_rate", type=int, default=16000)
     parser.add_argument("--model_max_length", type=int, default=1000)
     parser.add_argument("--warmup_steps", type=int, default=1)
@@ -267,7 +271,9 @@ def iter_official_batches(dataset: Any, batch_size: int) -> Iterator[dict[str, l
 
 def load_official_dataset(args: argparse.Namespace) -> Any:
     dataset = data_utils.load_data(args)
-    dataset = data_utils.prepare_data(dataset, sampling_rate=args.sampling_rate)
+    dataset = data_utils.prepare_data(
+        dataset, sampling_rate=args.sampling_rate,
+        normalize_text=not voice_code_bench.is_voice_code_bench(args.dataset_path))
     if args.skip_samples > 0:
         if isinstance(dataset, IterableDataset):
             dataset = dataset.skip(int(args.skip_samples))
@@ -469,13 +475,40 @@ def process_batch(
         waveform, sampling_rate = waveform_from_audio_item(audio, args.sampling_rate)
         waveforms.append(waveform)
         durations.append(float(len(waveform)) / float(sampling_rate))
-    output = evaluator.transcribe_batch(waveforms)
-    per_sample_time = output.runtime_seconds / len(waveforms)
+    if args.chunk_length_s and voice_code_bench.is_voice_code_bench(args.dataset_path):
+        # Long recordings: consecutive windows of at most chunk_length_s (never clipped by --max_audio_seconds, see
+        # main), run in groups of batch_size windows; the window texts are joined in order, the window times added.
+        step = int(round(args.chunk_length_s * args.sampling_rate))
+        flat = [w[i : i + step] for w in waveforms for i in range(0, max(len(w), 1), step)]
+        n_chunks = [max(-(-len(w) // step), 1) for w in waveforms]
+        outs = [evaluator.transcribe_batch(flat[i : i + args.batch_size]) for i in range(0, len(flat), args.batch_size)]
+        preds = [p for o in outs for p in o.predictions]
+        ids = [g for o in outs for g in o.generated_ids]
+        stops = [x for o in outs for x in o.stop_hits]
+        maxes = [x for o in outs for x in o.max_new_hits]
+        stop_ids = [x for o in outs for x in o.stop_token_ids]
+        times = [o.runtime_seconds / len(o.predictions) for o in outs for _ in o.predictions]
+        groups, k = [], 0
+        for n in n_chunks:
+            groups.append(range(k, k + n))
+            k += n
+        output = BatchOutput(
+            [normalize_whitespace(" ".join(preds[j] for j in g)) for g in groups],
+            [[t for j in g for t in ids[j]] for g in groups],
+            0.0,
+            [all(stops[j] for j in g) for g in groups],
+            [any(maxes[j] for j in g) for g in groups],
+            [stop_ids[g[-1]] for g in groups],
+        )
+        per_sample_times = [sum(times[j] for j in g) for g in groups]
+    else:
+        output = evaluator.transcribe_batch(waveforms)
+        per_sample_times = [output.runtime_seconds / len(waveforms)] * len(waveforms)
     references = list(batch.get("original_text") or [data_utils.get_text(row) for row in batch])
     audio_filepaths = data_utils.extract_audio_filepaths_from_batch(batch, len(waveforms))
     result = {
         "audio_length_s": durations,
-        "transcription_time_s": [per_sample_time] * len(waveforms),
+        "transcription_time_s": per_sample_times,
         "predictions": output.predictions,
         "references": references,
         "audio_filepath": audio_filepaths,
@@ -484,7 +517,9 @@ def process_batch(
         "generation_hit_max_new_tokens": output.max_new_hits,
         "generation_stop_token_id": output.stop_token_ids,
     }
-    if data_utils.is_chunked_dataset(args.dataset_path):
+    if voice_code_bench.is_voice_code_bench(args.dataset_path):
+        result.update({key: list(batch[key]) for key in voice_code_bench.MANIFEST_KEYS})
+    elif data_utils.is_chunked_dataset(args.dataset_path):
         result.update({key: list(batch[key]) for key in data_utils.CHUNK_METADATA_KEYS})
     return result
 
@@ -506,6 +541,7 @@ def write_outputs(
     args: argparse.Namespace,
 ) -> tuple[Path, dict[str, Any]]:
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     output_root = args.output_root.resolve()
     manifest_model_id = args.manifest_model_id or args.model_id
     with working_directory(output_root):
@@ -519,11 +555,26 @@ def write_outputs(
             audio_length=all_results["audio_length_s"],
             transcription_time=all_results["transcription_time_s"],
             audio_filepaths=all_results["audio_filepath"],
-            extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
+            extra_fields={key: all_results[key] for key in voice_code_bench.MANIFEST_KEYS}
+            if is_vcb
+            else {key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
             if is_chunked
             else None,
         )
     manifest_path = output_root / manifest_relative
+    if is_vcb:
+        # WER comes from score_results and CTEM from the grading job; only RTFx is reported here.
+        total_audio = sum(float(v) for v in all_results["audio_length_s"])
+        total_time = sum(float(v) for v in all_results["transcription_time_s"])
+        rtfx = round(total_audio / total_time, 2)
+        print("RTFx:", rtfx)
+        summary = {"model_id": args.model_id, "dataset_path": args.dataset_path, "dataset": args.dataset,
+                   "samples": len(all_results["predictions"]), "audio_seconds": total_audio,
+                   "inference_seconds": total_time, "rtfx": rtfx,
+                   "settings": {"batch_size": args.batch_size, "chunk_length_s": args.chunk_length_s}}
+        summary_path = manifest_path.with_suffix(manifest_path.suffix + ".summary.json")
+        summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        return manifest_path, summary
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))
         raw_references = [session["text"] for session in sessions]
@@ -610,6 +661,8 @@ def main() -> None:
             "local Parquet input cannot be used with a chunked dataset: the local rows "
             "carry no chunk metadata to reassemble sessions with."
         )
+    if args.chunk_length_s and args.max_audio_seconds > 0 and args.chunk_length_s > args.max_audio_seconds:
+        raise ValueError("--chunk_length_s must not exceed --max_audio_seconds (the hard clip)")
     if args.feature_workers < 1 or args.torch_cpu_threads < 1:
         raise ValueError("--feature_workers and --torch_cpu_threads must be positive")
     random.seed(42)
@@ -640,6 +693,8 @@ def main() -> None:
                 waveform_from_audio_item(audio, args.sampling_rate)[0]
                 for audio in warmup_batch["audio"]
             ]
+            if args.chunk_length_s:  # warm up on one window per recording, as in the timed path
+                warmup_waveforms = [w[: int(round(args.chunk_length_s * args.sampling_rate))] for w in warmup_waveforms]
             for step in range(int(args.warmup_steps)):
                 evaluator.transcribe_batch(warmup_waveforms)
                 print(f"warmup_step={step + 1}/{args.warmup_steps}", flush=True)
@@ -655,7 +710,9 @@ def main() -> None:
         "generation_hit_max_new_tokens": [],
         "generation_stop_token_id": [],
     }
-    if data_utils.is_chunked_dataset(args.dataset_path):
+    if voice_code_bench.is_voice_code_bench(args.dataset_path):
+        all_results.update({key: [] for key in voice_code_bench.MANIFEST_KEYS})
+    elif data_utils.is_chunked_dataset(args.dataset_path):
         all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
     processed = 0
     for batch in source_batches(args):

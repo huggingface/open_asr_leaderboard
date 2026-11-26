@@ -29,12 +29,14 @@ from transcribe_eval_helpers import (
 )
 from transcribe_model_card_contract import (
     MODEL_ID,
-    MODEL_REVISION,
+    MODEL_REVISIONS,
     PROMPTS,
     build_chat_completion_request,
     cleanup_generation_loops,
+    get_model_revision,
 )
 from normalizer import data_utils
+from normalizer import voice_code_bench
 
 
 SAMPLE_RATE = 16_000
@@ -51,6 +53,8 @@ class SampleResult:
     audio_filepath: str
     parent_id: str | None = None
     chunk_index: int | None = None
+    audio_id: str | None = None
+    voice_code_bench_revision: str | None = None
 
 
 @dataclass
@@ -64,6 +68,8 @@ class PreparedSample:
     audio_filepath: str
     parent_id: str | None = None
     chunk_index: int | None = None
+    audio_id: str | None = None
+    voice_code_bench_revision: str | None = None
 
 
 def _dataset_config(args: argparse.Namespace) -> str | None:
@@ -85,7 +91,11 @@ def load_eval_dataset(args: argparse.Namespace):
         load_args = copy.copy(args)
         load_args.dataset = _dataset_config(args)
         dataset = data_utils.load_data(load_args)
-        dataset = data_utils.prepare_data(dataset, sampling_rate=SAMPLE_RATE)
+        dataset = data_utils.prepare_data(
+            dataset,
+            sampling_rate=SAMPLE_RATE,
+            normalize_text=not voice_code_bench.is_voice_code_bench(args.dataset_path),
+        )
 
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         if isinstance(dataset, IterableDataset) or args.streaming:
@@ -191,6 +201,8 @@ def prepare_sample(
         audio_filepath=audio_filepath,
         parent_id=row.get("parent_id"),
         chunk_index=row.get("chunk_index"),
+        audio_id=row.get("audio_id"),
+        voice_code_bench_revision=row.get("voice_code_bench_revision"),
     )
 
 
@@ -217,6 +229,8 @@ def finalize_sample(prepared: PreparedSample, raw_parts: list[str]) -> SampleRes
         audio_filepath=prepared.audio_filepath,
         parent_id=prepared.parent_id,
         chunk_index=prepared.chunk_index,
+        audio_id=prepared.audio_id,
+        voice_code_bench_revision=prepared.voice_code_bench_revision,
     )
 
 
@@ -392,6 +406,14 @@ def evaluate(
             chunk_index=[result.chunk_index for result in all_results],
         )
 
+    if voice_code_bench.is_voice_code_bench(args.dataset_path):
+        extra_fields.update(
+            audio_id=[result.audio_id for result in all_results],
+            voice_code_bench_revision=[
+                result.voice_code_bench_revision for result in all_results
+            ],
+        )
+
     manifest_path = data_utils.write_manifest(
         [result.reference for result in all_results],
         [result.prediction for result in all_results],
@@ -416,9 +438,9 @@ def evaluate(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_id", default=MODEL_ID)
-    parser.add_argument("--model_revision", default=MODEL_REVISION)
-    parser.add_argument("--served_model_name", default=MODEL_ID)
+    parser.add_argument("--model_id", default=MODEL_ID, choices=sorted(MODEL_REVISIONS))
+    parser.add_argument("--model_revision", default=None)
+    parser.add_argument("--served_model_name", default=None)
     parser.add_argument("--server_url", default="http://127.0.0.1:8000/v1")
     parser.add_argument("--dataset_path", required=True)
     parser.add_argument("--dataset", default="")
@@ -443,10 +465,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_retries", type=int, default=2)
     args = parser.parse_args()
 
-    if args.model_id != MODEL_ID:
-        parser.error(f"--model_id must remain pinned to {MODEL_ID}")
-    if args.model_revision != MODEL_REVISION:
-        parser.error(f"--model_revision must remain pinned to {MODEL_REVISION}")
+    expected_revision = get_model_revision(args.model_id)
+    if args.model_revision is None:
+        args.model_revision = expected_revision
+    elif args.model_revision != expected_revision:
+        parser.error(f"--model_revision must remain pinned to {expected_revision}")
+    if args.served_model_name is None:
+        args.served_model_name = args.model_id
     if args.batch_size <= 0:
         parser.error("--batch_size must be positive")
     if args.longform_record_batch_size <= 0:

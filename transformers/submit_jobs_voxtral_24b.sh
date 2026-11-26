@@ -43,12 +43,15 @@ DATASET_CONFIGS=(
     "urgent2024 test 32"
     "urgent2024_clean test 32"
     "monsoon_en_in test 32 VoiceArena/Monsoon_en_IN_test"
+    # Recordings of 35-123 s (the others are shorter than 30 s), so a smaller batch.
+    "voice_code_bench test 8 besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
@@ -69,6 +72,10 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
+        vcb_dataset_config
+        STREAM_ARG="--streaming"
+        # VoiceCodeBench has to be downloaded (it does not support --streaming).
+        [[ "$DATASET_PATH" == "$VCB_DATASET_PATH" ]] && STREAM_ARG=""
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
@@ -97,7 +104,7 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
                     --max_eval_samples=-1 \
                     --max_new_tokens=${MAX_NEW_TOKENS} \
                     --dtype=float16 \
-                    --streaming &&
+                    ${STREAM_ARG} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &
@@ -123,4 +130,8 @@ from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade

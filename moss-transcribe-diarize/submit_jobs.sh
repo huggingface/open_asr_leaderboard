@@ -4,6 +4,7 @@
 # ONLY_DATASETS filtering, and fetching this run's results.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
+
 set -euo pipefail
 
 SPACE="${SPACE:-hf-audio/open-asr-leaderboard-moss-transcribe-diarize}"
@@ -31,12 +32,14 @@ DATASET_CONFIGS=(
     "urgent2024_clean test"
     "voxpopuli_cleaned_aa test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
@@ -72,7 +75,21 @@ for config in "${DATASET_CONFIGS[@]}"; do
         dataset_path="$DEFAULT_DATASET_PATH"
         dataset_config="$dataset"
     fi
-    echo "Submitting model=${MODEL_ID} dataset_path=${dataset_path} dataset=${dataset} split=${split} batch_size=${BATCH_SIZE}"
+    job_batch_size="${BATCH_SIZE}"
+    job_batch_max_new_tokens="${BATCH_MAX_NEW_TOKENS}"
+    DATASET_PATH="${dataset_path}"
+    DATASET_CONFIG="${dataset_config}"
+    vcb_dataset_config
+    if [[ "${DATASET_PATH}" == "${VCB_DATASET_PATH}" ]]; then
+        dataset="${DATASET_CONFIG}"  # VoiceCodeBench's one config, the name its manifest uses
+        # Every VoiceCodeBench recording is longer than 30 s (35-123 s). The model's processor splits long audio
+        # into encoder chunks itself, so no chunking is added here. Use a smaller batch than the short-form one
+        # (long inputs are much larger) and lift the batched generation cap (512) so that the per-sample budget
+        # (12 tokens per audio second + 64, i.e. <= ~1540 for 123 s) applies, rather than forcing an early EOS.
+        job_batch_size=32
+        job_batch_max_new_tokens=2048
+    fi
+    echo "Submitting model=${MODEL_ID} dataset_path=${dataset_path} dataset=${dataset} split=${split} batch_size=${job_batch_size}"
 
     (
         hf jobs run \
@@ -94,8 +111,8 @@ for config in "${DATASET_CONFIGS[@]}"; do
                     --dataset='${dataset}' \
                     --split='${split}' \
                     --device=0 \
-                    --batch_size='${BATCH_SIZE}' \
-                    --batch_max_new_tokens='${BATCH_MAX_NEW_TOKENS}' \
+                    --batch_size='${job_batch_size}' \
+                    --batch_max_new_tokens='${job_batch_max_new_tokens}' \
                     --max_new_tokens='${MAX_NEW_TOKENS}' \
                     --max_eval_samples='${MAX_EVAL_SAMPLES}' \
                     --warmup_steps='${WARMUP_STEPS}'
@@ -140,3 +157,8 @@ score_results("${RUN_RESULTS}", "${MODEL_ID}")
 PY
 
 echo "All MOSS-Transcribe-Diarize public HF Jobs completed and scored."
+
+vcb_track_model "${MODEL_ID}" "${MODEL_FOLDER}"
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade

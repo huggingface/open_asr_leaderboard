@@ -10,6 +10,7 @@ from normalizer import (
     EnglishTextNormalizer,
 )
 
+from .chinese_normalizer import ChineseTextNormalizer
 from .eval_utils import (
     merge_chunked_manifest,
     normalize_compound_pairs,
@@ -41,7 +42,10 @@ class MultilingualNormalizer(BasicMultilingualTextNormalizer):
 
     def __init__(self, remove_diacritics: bool = True):
         super().__init__(remove_diacritics)
-        self._language_normalizers = {"hy": ArmenianTextNormalizer()}
+        self._language_normalizers = {
+            "hy": ArmenianTextNormalizer(),
+            "zh": ChineseTextNormalizer(),
+        }
         # Pre-compile filler patterns. Each filler word is passed through the
         # base normalization itself, so the pattern matches the normalized
         # text exactly (base normalization may strip punctuation such as "…"
@@ -177,6 +181,10 @@ def load_chunked_data(args):
 
 
 def load_data(args):
+    from . import voice_code_bench
+
+    if voice_code_bench.is_voice_code_bench(args.dataset_path):
+        return voice_code_bench.load_data(args)
     if is_chunked_dataset(args.dataset_path):
         return load_chunked_data(args)
     
@@ -192,7 +200,7 @@ def load_data(args):
     return dataset
 
 
-def prepare_data(dataset, sampling_rate=16000):
+def prepare_data(dataset, sampling_rate=16000, normalize_text=True):
     # Re-sample and normalize transcriptions
     dataset = dataset.cast_column("audio", Audio(sampling_rate=sampling_rate))
     # NOTE (ebezzam) don't load from cache to account for potential changes in normalization logic
@@ -200,6 +208,8 @@ def prepare_data(dataset, sampling_rate=16000):
     map_kwargs = (
         {} if isinstance(dataset, IterableDataset) else {"load_from_cache_file": False}
     )
+    if not normalize_text:
+        return dataset.map(lambda sample: {"original_text": get_text(sample)}, **map_kwargs)
     dataset = dataset.map(normalize, **map_kwargs)
     dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
 

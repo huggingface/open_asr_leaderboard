@@ -19,6 +19,7 @@ LANGUAGE_CODES = {
     "nl": "nl-NL",
     "hi": "hi-IN",
     "hy": "hy-AM",
+    "zh": "cmn-Hans-CN",
 }
 
 

@@ -20,7 +20,7 @@ Usage:
     python benchmark_fitting/score_ref_rendering.py --preds_dir results
 
     # One dataset only.
-    python benchmark_fitting/score_ref_rendering.py --preds_dir results --datasets voxpopuli_test
+    python benchmark_fitting/score_ref_rendering.py --preds_dir results --datasets voxpopuli_cleaned_aa_test
 
     # One model, printing its CSV line per dataset instead of writing files.
     python benchmark_fitting/score_ref_rendering.py --preds_dir results --model openai/whisper-large-v3
@@ -47,18 +47,25 @@ if REPO_ROOT not in sys.path:
 
 from normalizer import to_hub_ids  # noqa: E402  (needs REPO_ROOT on sys.path)
 
-# The English short-form sets, whose references the English normalizer applies
-# to. Longest match wins when a manifest name is matched against these.
+# The leaderboard's default public English short-form sets, whose references the
+# English normalizer applies to.
 SHORT_FORM_DATASETS = (
-    "ami_cleaned_test",
-    "earnings22_test",
-    "gigaspeech_cleaned_test",
-    "librispeech_test.clean",
-    "librispeech_test.other",
-    "spgispeech_test",
-    "voxpopuli_test",
-    "voxpopuli_cleaned_aa_test",
+    "ami_cleaned_test",  # AMI-Cleaned
+    "Earnings22-Cleaned-AA-chunked__test",  # Earnings22-Cleaned-AA-chunked
+    "gigaspeech_cleaned_test",  # Gigaspeech-Cleaned
+    "spgispeech_test",  # SPGISpeech
+    "urgent2024_test",  # URGENT24
+    "Monsoon_en_IN_test__test",  # Voice Arena Monsoon
+    "voxpopuli_cleaned_aa_test",  # Voxpopuli-AA-Cleaned
 )
+
+# Other spellings a dataset's manifests are written under, mapped to its tag above.
+# Earnings22-Cleaned-AA-chunked runs name the split either `<repo>__test` (config
+# left empty) or `<repo>_earnings22_cleaned_aa_chunked_test`, depending on how the
+# eval script was launched.
+DATASET_ALIASES = {
+    "earnings22_cleaned_aa_chunked_test": "Earnings22-Cleaned-AA-chunked__test",
+}
 
 # Manifest names in the results bucket, e.g.
 # MODEL_<model>_DATASET_hf-audio-open-asr-leaderboard_voxpopuli_test.jsonl
@@ -75,9 +82,11 @@ def _dataset_tag(name: str, datasets) -> str | None:
     """The dataset tag ``name`` ends with, longest first."""
     if "longform" in name.casefold():
         return None
-    for tag in sorted(datasets, key=len, reverse=True):
-        if name == tag or name.endswith("_" + tag) or name.endswith(tag):
-            return tag
+    candidates = {tag: tag for tag in datasets}
+    candidates.update({alias: tag for alias, tag in DATASET_ALIASES.items() if tag in datasets})
+    for spelling in sorted(candidates, key=len, reverse=True):
+        if name.endswith(spelling):
+            return candidates[spelling]
     return None
 
 
@@ -98,8 +107,8 @@ def find_manifests(root: str, dataset: str) -> dict[str, str]:
     """Manifests for one short-form dataset, under ``root``.
 
     :func:`utils.find_manifests` with this scorer's dataset resolution: a name is
-    matched against the known tags longest-first, so ``voxpopuli_cleaned_aa_test``
-    is not read as a ``voxpopuli_test`` manifest, and longform runs are excluded.
+    matched against the known tags longest-first, so a manifest is never claimed by
+    a shorter tag it happens to end with, and longform runs are excluded.
     """
     return _find_manifests(
         root, dataset, dataset_of=lambda group: _dataset_tag(group, SHORT_FORM_DATASETS)

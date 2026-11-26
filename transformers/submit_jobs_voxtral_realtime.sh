@@ -42,12 +42,15 @@ DATASET_CONFIGS=(
     "urgent2024 test 128"
     "urgent2024_clean test 128"
     "monsoon_en_in test 128 VoiceArena/Monsoon_en_IN_test"
+    # Recordings of 35-123 s (the others are shorter than 30 s), so a smaller batch.
+    "voice_code_bench test 32 besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
@@ -68,6 +71,7 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
+        vcb_dataset_config
         if [[ -z "${EFFECTIVE_BATCH_SIZE}" ]]; then
             echo "ERROR: batch_size missing for '${DATASET} ${SPLIT}' in DATASET_CONFIGS" >&2
             exit 1
@@ -121,4 +125,8 @@ from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade

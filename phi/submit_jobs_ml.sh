@@ -30,7 +30,7 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese
+# German, French, Italian, Spanish, Portuguese, Chinese
 # (Dutch is omitted: not supported for audio inputs by Phi-4 multimodal.)
 DATASET_CONFIGS=(
     "fleurs de"
@@ -38,6 +38,8 @@ DATASET_CONFIGS=(
     "fleurs it"
     "fleurs es"
     "fleurs pt"
+    "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"
@@ -67,6 +69,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
     for cfg in "${DATASET_CONFIGS[@]}"; do
         read -r DATASET LANGUAGE <<< "$cfg"
         CONFIG_NAME="${DATASET}_${LANGUAGE}"
+        JOB_DATASET="${DATASET_PATH}"
         echo "Submitting job: model=${MODEL_ID} config=${CONFIG_NAME} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
@@ -84,7 +87,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval_ml.py \
                     --model_id=${MODEL_ID} \
-                    --dataset=${DATASET_PATH} \
+                    --dataset=${JOB_DATASET} \
                     --config_name=${CONFIG_NAME} \
                     --language=${LANGUAGE} \
                     --split=test \

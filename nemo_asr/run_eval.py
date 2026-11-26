@@ -8,13 +8,36 @@ import soundfile
 
 from tqdm import tqdm
 from normalizer import data_utils
+from normalizer import voice_code_bench
 import numpy as np
 
 from nemo.collections.asr.models import ASRModel
 import time
 
 
-wer_metric = evaluate.load("wer")
+def chunk_audio_files(audio_files, chunk_length_s):
+    """Split recordings into fixed-size chunks and return paths plus group sizes."""
+    chunk_paths, chunks_per_file = [], []
+    for audio_path in audio_files:
+        audio, sample_rate = soundfile.read(audio_path, dtype="float32")
+        chunk_samples = int(chunk_length_s * sample_rate)
+        file_chunk_paths = []
+        for index, start in enumerate(range(0, len(audio), chunk_samples)):
+            chunk_path = f"{audio_path}.chunk-{index:05d}.wav"
+            if not os.path.exists(chunk_path):
+                soundfile.write(chunk_path, audio[start : start + chunk_samples], sample_rate)
+            file_chunk_paths.append(chunk_path)
+        chunk_paths.extend(file_chunk_paths)
+        chunks_per_file.append(len(file_chunk_paths))
+    return chunk_paths, chunks_per_file
+
+
+def merge_chunk_transcriptions(texts, chunks_per_file):
+    merged, offset = [], 0
+    for count in chunks_per_file:
+        merged.append(" ".join(texts[offset : offset + count]))
+        offset += count
+    return merged
 
 
 def main(args):
@@ -45,6 +68,11 @@ def main(args):
     print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     dataset = data_utils.load_data(args)
 
@@ -53,7 +81,7 @@ def main(args):
         dataset = dataset.take(args.max_eval_samples)
 
     # Prepare data FIRST - this casts audio to proper format with "array" and "sampling_rate" keys
-    dataset = data_utils.prepare_data(dataset)
+    dataset = data_utils.prepare_data(dataset, normalize_text=not is_vcb)
 
     def download_audio_files(batch):
 
@@ -122,8 +150,7 @@ def main(args):
         "durations": [],
         "references": [],
     }
-    if is_chunked:
-        all_data.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    all_data.update({key: [] for key in metadata_keys})
 
     data_itr = iter(dataset)
     for data in tqdm(data_itr, desc="Downloading Samples"):
@@ -142,6 +169,11 @@ def main(args):
             audio_files = all_data["audio_filepaths"][:args.batch_size * 4] # warmup with 4 batches
         else:
             audio_files = all_data["audio_filepaths"]
+        chunks_per_file = None
+        if args.chunk_length_s:
+            # Models with a short audio window (Canary: ~40 s) drop content from longer recordings, so transcribe
+            # fixed consecutive windows and join their texts; the chunking is part of the timed work.
+            audio_files, chunks_per_file = chunk_audio_files(audio_files, args.chunk_length_s)
         start_time = time.time()
         with torch.inference_mode(), torch.no_grad(): 
 
@@ -154,6 +186,11 @@ def main(args):
                 transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, pnc=pnc, num_workers=1)
             else:
                 transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, num_workers=1)
+        if chunks_per_file is not None:
+            if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
+                transcriptions = transcriptions[0]
+            transcriptions = [type("T", (), {"text": t})() for t in merge_chunk_transcriptions(
+                [pred.text for pred in transcriptions], chunks_per_file)]
         end_time = time.time()
         if _ == 1:
             total_time += end_time - start_time
@@ -176,12 +213,16 @@ def main(args):
         audio_length=all_data["durations"],
         transcription_time=[avg_time] * len(all_data["audio_filepaths"]),
         audio_filepaths=all_data["original_audio_filepaths"],
-        extra_fields={key: all_data[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: all_data[key] for key in metadata_keys},
     )
 
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if is_vcb:
+        print("RTFX:", round(sum(all_data["durations"]) / total_time, 2))
+        print("Score CTEM with python -m normalizer.voice_code_bench --manifest", manifest_path,
+              "--verifier-cache results/voice_code_bench.qwen27b-verifier-cache.json --verifier-mode live-fill")
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(
@@ -194,6 +235,7 @@ def main(args):
 
     norm_references = [data_utils.normalizer(r) for r in references]
     norm_predictions = [data_utils.normalizer(p) for p in predictions]
+    wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(references=norm_references, predictions=norm_predictions)
     wer = round(100 * wer, 2)
 
@@ -250,6 +292,12 @@ if __name__ == "__main__":
         "--streaming",
         action="store_true",
         help="Stream the dataset lazily over the network instead of downloading it in full before the evaluation. Off by default for reproducible benchmark timings.",
+    )
+    parser.add_argument(
+        "--chunk_length_s",
+        type=float,
+        default=None,
+        help="Transcribe fixed windows of this many seconds and join their texts (for models with a short audio window).",
     )
     args = parser.parse_args()
 

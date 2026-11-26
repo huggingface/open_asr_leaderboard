@@ -1,8 +1,10 @@
 #!/bin/bash
 
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_private}"
-IMAGE_TAG="api-eval"
+IMAGE_TAG="${IMAGE_TAG:-api-eval}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
+# Shared helpers (filter_only_datasets, vcb_*); also records RUN_START for vcb_track_model.
+source "${REPO_ROOT}/../scripts/submit_utils.sh"
 
 if [[ -n "${RESULTS_BUCKET}" && -z "${HF_TOKEN}" ]]; then
     echo "ERROR: RESULTS_BUCKET is set but HF_TOKEN is not. Cannot write to bucket." >&2
@@ -27,8 +29,10 @@ MODEL_CONFIGS=(
     # "smallestai/pulse              16"
     # "reson8/resonant-1             16"
     # "reson8/resonant-1-flash       16"
+    # "reson8/rumble-2               16"
     # "microsoft/azure-speech-07-2026  4"
-    # "modulate/multilingual          25"
+    # "microsoft/azure-speech-09-2026  4"
+    # "modulate/velma-2-stt-batch     25"
     # "gladia/solaria-3             20"
     # "meta/muse-voice-transcribe    8"
     # "meta/muse-voice-transcribe-streaming    8"
@@ -37,7 +41,9 @@ MODEL_CONFIGS=(
     # "sophea/asr-k1                 16"
     # "sprag/symphony                8"
     # "OtterAI/speech-v3.1           128"
-    # "p99lab/audrey-0.7               64"
+    # "p99lab/audrey-1                 64"
+    # "opusclip/steno-v1-preview     32"
+    # "yoob/yoob-asr-pro-v1          16"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -53,16 +59,34 @@ EVAL_DATASETS=(
     "urgent2024:test"
     "voxpopuli_cleaned_aa:test"
     "monsoon_en_in:test:VoiceArena/Monsoon_en_IN_test"
+    # Scored in two stages: WER with the other datasets, then CTEM by an HF job (see vcb_grade below).
+    "voice_code_bench:test:besimple-ai/voice-code-bench"
 )
 
 # Override EVAL_DATASETS or MODEL_CONFIGS from the environment for quick runs, e.g.:
-#   DATASETS="urgent2024:test urgent2024_clean:test" MODEL="modulate/multilingual 25" bash run_api.sh
+#   DATASETS="urgent2024:test urgent2024_clean:test" MODEL="modulate/velma-2-stt-batch 25" bash run_api.sh
 if [[ -n "${DATASETS:-}" ]]; then
     read -ra EVAL_DATASETS <<< "$DATASETS"
 fi
 if [[ -n "${MODEL:-}" ]]; then
     MODEL_CONFIGS=("$MODEL")
 fi
+
+# ONLY_DATASETS="voice_code_bench" restricts the run to the named datasets (as in the submit_jobs scripts); the shared
+# helpers work on DATASET_CONFIGS ("name split dataset_path"), so build it from EVAL_DATASETS and map back.
+# VCB_SCORING=0 only transcribes (grade later with vcb_submit_grading), PUBLISH_RESULTS=0 skips the summary upload.
+DATASET_CONFIGS=()
+for entry in "${EVAL_DATASETS[@]}"; do
+    IFS=":" read -r _DS _SP _DP <<< "$entry"
+    DATASET_CONFIGS+=("${_DS} ${_SP} ${_DP:-$DEFAULT_DATASET_PATH}")
+done
+filter_only_datasets || exit 1
+EVAL_DATASETS=()
+for cfg in "${DATASET_CONFIGS[@]}"; do
+    read -r _DS _SP _DP <<< "$cfg"
+    if [[ "$_DP" == "$DEFAULT_DATASET_PATH" ]]; then EVAL_DATASETS+=("${_DS}:${_SP}"); else EVAL_DATASETS+=("${_DS}:${_SP}:${_DP}"); fi
+done
+vcb_init
 
 RUNDIR="${REPO_ROOT}"
 HF_CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
@@ -76,8 +100,11 @@ DATASETS_CACHE_DIR="/hf_cache/datasets_api"
 # as root, and the containers run as the current user (see --user below).
 mkdir -p "${RUNDIR}/results" "${HF_CACHE_DIR}"
 
-echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
-docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
+# SKIP_BUILD=1 reuses the existing ${IMAGE_TAG} image: parallel runs build it once, then all share it.
+if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
+    echo "Building Docker image ${IMAGE_TAG} (context: ${REPO_ROOT})..."
+    docker build -f "${REPO_ROOT}/Dockerfile" -t "${IMAGE_TAG}" "${REPO_ROOT}"
+fi
 
 for model_cfg in "${MODEL_CONFIGS[@]}"; do
     read -r MODEL_ID MAX_WORKERS <<< "$model_cfg"
@@ -92,6 +119,13 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
         else
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
+        fi
+        vcb_dataset_config  # VoiceCodeBench's one config is "default"
+
+        PROMPT_ARG=""
+        if [[ "$MODEL_ID" == "microsoft/azure-speech-09-2026" && "$DATASET" == "spgispeech" ]]; then
+            # SPGISpeech references remove some repetitions, so disable Azure's verbatim prompt.
+            PROMPT_ARG="--prompt="
         fi
 
         docker run --rm \
@@ -127,6 +161,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e SPRAG_API_KEY="${SPRAG_API_KEY:-}" \
             -e SPRAG_BASE_URL="${SPRAG_BASE_URL:-}" \
             -e P99LAB_API_KEY="${P99LAB_API_KEY:-}" -e P99LAB_API_URL="${P99LAB_API_URL:-}" \
+            -e OPUSCLIP_API_KEY="${OPUSCLIP_API_KEY:-}" -e OPUSCLIP_API_URL="${OPUSCLIP_API_URL:-}" \
+            -e YOOB_API_KEY="${YOOB_API_KEY:-}" -e YOOB_API_URL="${YOOB_API_URL:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \
@@ -136,7 +172,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --model_name=${MODEL_ID} \
-                    --max_workers=${MAX_WORKERS}
+                    --max_workers=${MAX_WORKERS} \
+                    ${PROMPT_ARG}
             "
     done
 
@@ -170,6 +207,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 _DP="$DEFAULT_DATASET_PATH"
                 _CFG="$_DS"
             fi
+            [[ "$_DP" == "$VCB_DATASET_PATH" ]] && _CFG="default"
             # Manifest names are "MODEL_<model>_DATASET_<repo-slug>_<config>_<split>.jsonl";
             # <config> is empty for single-config repos, leaving a double underscore.
             FNAME="MODEL_${MODEL_FOLDER}_DATASET_${_DP//\//-}_${_CFG}_${_SP}.jsonl"
@@ -184,4 +222,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                 "${INCLUDE_ARGS[@]}" > /dev/null 2>&1
         fi
     fi
+
+    # Remember the model for grading if its VoiceCodeBench transcripts reached the bucket.
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+# VoiceCodeBench CTEM: one H200 HF job per model (Qwen judge via vLLM), then print and publish each summary.
+vcb_grade

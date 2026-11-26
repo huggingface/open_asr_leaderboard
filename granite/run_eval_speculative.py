@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 import evaluate
 from normalizer import data_utils
+from normalizer import voice_code_bench
 import time
 from tqdm import tqdm
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, models
@@ -20,6 +21,7 @@ torch.set_float32_matmul_precision('high')
 
 
 def main(args):
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     device = f"cuda:{args.device}" if args.device >= 0 else "cpu"
 
     processor = AutoProcessor.from_pretrained(args.model_id)
@@ -252,15 +254,18 @@ def main(args):
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         print(f"Subsampling to {args.max_eval_samples} samples")
         dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset)
+    dataset = data_utils.prepare_data(dataset, normalize_text=not is_vcb)
 
     dataset = dataset.map(benchmark, batch_size=args.batch_size, batched=True, remove_columns=["audio"], desc="Processing")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     all_results = {"audio_length_s": [], "transcription_time_s": [], "predictions": [], "references": [], "audio_filepath": []}
-    if is_chunked:
-        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    all_results.update({key: [] for key in metadata_keys})
     for result in tqdm(dataset, desc="Samples"):
         for key in all_results:
             all_results[key].append(result[key])
@@ -271,11 +276,14 @@ def main(args):
         args.dataset_path, args.dataset, args.split,
         audio_length=all_results["audio_length_s"], transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
-        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: all_results[key] for key in metadata_keys},
     )
     print("Results saved at:", os.path.abspath(manifest_path))
+
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2))
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))

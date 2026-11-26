@@ -15,15 +15,18 @@ The Open ASR Leaderboard evaluates models on a diverse set of publicly available
 * **English, long-form:**
   The [**ASR Longform benchmark**](https://huggingface.co/datasets/hf-audio/asr-leaderboard-longform) dataset includes earnings21 and earnings22. We also evaluate on [CORAAL](https://huggingface.co/datasets/bezzam/coraal), but it is stored as a separate dataset since it has multiple splits.
 
+* **Structured entity recovery (CTEM):**
+  [**VoiceCodeBench**](https://huggingface.co/datasets/besimple-ai/voice-code-bench) evaluates exact entity recovery on 300 English workplace recordings. Its CTEM (Canonical Token/Entity Match) score is higher-is-better and is reported separately from WER.
+
 * **Multilingual Benchmark:**
-  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes FLEURS, MCV and MLS. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used. The Armenian FLEURS and MCV test sets are hosted under [Metric-AI/open-asr-leaderboard-multilingual-datasets](https://huggingface.co/datasets/Metric-AI/open-asr-leaderboard-multilingual-datasets).
+  The [**ASR Multilingual benchmark**](https://huggingface.co/datasets/hf-audio/open-asr-leaderboard-multilingual-datasets) dataset includes FLEURS, MCV and MLS. For Hindi, data from [Voice Arena](https://huggingface.co/blog/open-asr-leaderboard-global-south) is used. The Armenian FLEURS and MCV test sets are hosted under [Metric-AI/open-asr-leaderboard-multilingual-datasets](https://huggingface.co/datasets/Metric-AI/open-asr-leaderboard-multilingual-datasets). Chinese (Mandarin) is evaluated on FLEURS and [AISHELL-1](https://www.openslr.org/33/) and scored with CER instead of WER.
 
 
 * **Private datasets:** 
   After submitting a model to the leaderboard, the maintainers will evaluate on private sets, as described [here](https://huggingface.co/blog/open-asr-leaderboard-private-data).
 
 
-# Evaluate a model (as of 24 July 2026)
+# Evaluate a model (as of 26 November 2026)
 
 English short-form, English long-form, and multilingual evaluations use [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) to guarantee reproducibility: every run executes a Docker image on the same hardware, to minimize environment and driver differences.
 
@@ -34,10 +37,9 @@ Jobs are launched on the following hardware ([flavor](https://huggingface.co/doc
 name             pretty name             cpu       ram      storage   accelerator               cost/min  cost/hour
 h200             Nvidia H200             23 vCPU   256 GB   3000 GB   1x H200 (141 GB)          $0.0833   $5.00
 ```
-Example costs for a full run over the main public datasets for English short-form:
-- $2.92 for `nvidia/parakeet-tdt-0.6b-v3`
-- $4.75 for `openai/whisper-large-v3-turbo`
-- $5.58 for `Qwen/Qwen3-ASR-1.7B`
+Example costs for a full run over the main public datasets and VoiceCodeBench for English short-form (including the grading job of VoiceCodeBench's Entity Match):
+- $2.86 for `nvidia/parakeet-tdt-0.6b-v3`
+- $4.59 for `Qwen/Qwen3-ASR-1.7B-hf`
 
 Each model family has its own Docker image with the necessary software requirements. The evaluation configurations are hosted as [HF Spaces](https://huggingface.co/collections/hf-audio/open-asr-leaderboard-eval-configurations).
 
@@ -81,15 +83,13 @@ use the `submit_jobs_*_longform.sh` script of the model's family, e.g.:
 RESULTS_BUCKET="<your-bucket>" HF_TOKEN=hf_... bash transformers/submit_jobs_whisper_longform.sh
 ```
 
+VoiceCodeBench is part of the short-form submit scripts (`besimple-ai/voice-code-bench`). After transcription, one grading job per model estimates the Entity Match (CTEM) with the pinned Qwen3.8-27B judge, and stores the result next to the transcripts as `<manifest>.summary.json`. The code is in [`normalizer/voice_code_bench.py`](normalizer/voice_code_bench.py) (loading and scoring), [`normalizer/voice_code_bench_judge.py`](normalizer/voice_code_bench_judge.py) and its [prompt](normalizer/voice_code_bench_prompt.txt), launched by [`scripts/score_voice_code_bench_job.py`](scripts/score_voice_code_bench_job.py) through the `vcb_grade` helper of `scripts/submit_utils.sh`. See [`voice_code_bench.md`](voice_code_bench.md) for the protocol and its options.
+
 ## Local evaluation
 
 For contributors who want to test locally, the `requirements/` folder contains per-family dependency files. The Dockerfiles in the HF Spaces can also be used to build a local container.
 
-Each model family has a `run_eval.py` entry point driven by a corresponding bash script (e.g. `run_whisper.sh`). The script outputs a JSONL file with predictions and prints WER and RTFx after completion. See the sub-folders of this repo for examples; the latest scripts are in the HF Spaces linked above.
-
-# Trade-off plots
-
-Pareto plots of WER against RTFx and model size are available directly on the [leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard).
+Each model family has a `run_eval.py` entry point, launched on HF Jobs by a `submit_jobs*.sh` script (e.g. `transformers/submit_jobs_whisper.sh`). `run_eval.py` outputs a JSONL file with predictions and prints WER and RTFx after completion.
 
 # Benchmark fitting
 

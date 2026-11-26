@@ -34,7 +34,7 @@ MODEL_CONFIGS=(
 )
 
 # ── Datasets/languages: "dataset language" ──────────────────────────────────
-# German, French, Italian, Spanish, Portuguese, Dutch, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Chinese, Hindi
 # Note: --language is not passed so the model auto-detects the language.
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all others are configs of ${DATASET_PATH}.
@@ -45,6 +45,8 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs zh"
+    "aishell1 zh"
     "mcv de"
     "mcv es"
     "mcv fr"

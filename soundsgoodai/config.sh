@@ -30,6 +30,7 @@ DATASET_CONFIGS=(
     "urgent2024 test"
     "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test besimple-ai/voice-code-bench"
 )
 
 COMMON_ARGS=(
