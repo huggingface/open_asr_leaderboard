@@ -13,7 +13,6 @@ from tqdm import tqdm
 wer_metric = evaluate.load("wer")
 
 def main(args):
-    # VoiceCodeBench keeps its raw text and every recording; its WER and CTEM are computed from the manifest.
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     # Load hojo model
     model = HOJO_ASR.load_model(args.model_id, device=args.device)

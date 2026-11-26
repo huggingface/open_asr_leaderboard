@@ -166,7 +166,6 @@ def prefetch_inputs(processor, audios, batch_size, device, frame_bucket, pad_las
 
 
 def main(args):
-    # VoiceCodeBench keeps its raw text and every recording; its WER and CTEM are computed from the manifest.
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     device = torch.device(f"cuda:{args.device}" if (torch.cuda.is_available() and args.device >= 0) else "cpu")
     model = load_model(args.model_id, device, revision=args.revision,

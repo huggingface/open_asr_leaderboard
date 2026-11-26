@@ -59,8 +59,6 @@ def load_transcribe_fn(model_id):
 
 
 def main(args):
-    # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so that its coverage stays
-    # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     device = f"cuda:{args.device}" if args.device >= 0 else "cpu"
 

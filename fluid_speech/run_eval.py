@@ -55,8 +55,6 @@ def main(args):
     print(f"Model size: {sum(p.numel() for p in asr_model.parameters()) / 1e9:.2f}B parameters")
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
-    # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so that its coverage stays
-    # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     metadata_keys = (
         voice_code_bench.MANIFEST_KEYS if is_vcb

@@ -128,8 +128,6 @@ def main(args):
         batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
-    # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so that its coverage stays
-    # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
 
     if args.warmup_steps is not None:

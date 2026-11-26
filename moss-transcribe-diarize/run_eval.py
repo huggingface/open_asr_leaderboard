@@ -370,8 +370,6 @@ def transcribe_batch(
 
 
 def main(args: argparse.Namespace) -> int:
-    # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so that its coverage stays
-    # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     model, processor, device, dtype, pad_token_id = load_model(args)
 

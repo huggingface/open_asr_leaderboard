@@ -111,8 +111,6 @@ def transcribe_dataset(
     streaming=False,
 ):
     is_chunked = data_utils.is_chunked_dataset(dataset_path)
-    # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so its coverage stays
-    # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
     is_vcb = voice_code_bench.is_voice_code_bench(dataset_path)
     metadata_keys = (
         voice_code_bench.MANIFEST_KEYS if is_vcb

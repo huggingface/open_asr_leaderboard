@@ -215,8 +215,6 @@ def prepare_inputs(args, audio_dir):
     dataset = data_utils.load_data(args)
     dataset = dataset.cast_column("audio", replace(dataset.features["audio"], decode=False))
     chunked = data_utils.is_chunked_dataset(args.dataset_path)
-    # VoiceCodeBench keeps its raw text (the entity judge needs it) and every recording, so that its coverage stays
-    # complete; its WER and CTEM are computed from the manifest (see voice_code_bench.md).
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     multilingual = getattr(args, "multilingual", False)
     audio_dir = Path(audio_dir).resolve()

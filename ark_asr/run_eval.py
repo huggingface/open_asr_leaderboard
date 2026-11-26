@@ -464,7 +464,6 @@ class ArkAsrInferencer:
 
 def main(args):
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
-    # VoiceCodeBench keeps raw text and every recording; its WER and CTEM come from the manifest (voice_code_bench.md).
     is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     chunk_s = args.chunk_length_s if is_vcb else None
     if chunk_s is not None and chunk_s > args.max_audio_seconds:
