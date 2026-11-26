@@ -32,11 +32,11 @@ LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 # ── Models: "model_id batch_size languages..." ──────────────────────────────
 # Each model entry lists the languages selected for benchmark jobs.
 MODEL_CONFIGS=(
-    "facebook/seamless-m4t-v2-large 16 de fr it es pt nl hy hi"
+    "facebook/seamless-m4t-v2-large 16 de fr it es pt nl hy hi vi"
 )
 
 # ── Datasets/languages: "dataset language" (comment / uncomment to select) ──
-# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi
+# German, French, Italian, Spanish, Portuguese, Dutch, Armenian, Hindi, Vietnamese
 # "monsoon hi" uses the standalone VoiceArena/Monsoon_hi_test repo (no config);
 # all other entries are configs of ${DATASET_PATH}.
 DATASET_CONFIGS=(
@@ -46,6 +46,7 @@ DATASET_CONFIGS=(
     "fleurs es"
     "fleurs pt"
     "fleurs nl"
+    "fleurs vi"
     "fleurs hy"
     "mcv hy"
     "mcv de"
@@ -53,6 +54,7 @@ DATASET_CONFIGS=(
     "mcv fr"
     "mcv it"
     "mcv nl"
+    "mcv vi"
     "mls es"
     "mls fr"
     "mls it"
