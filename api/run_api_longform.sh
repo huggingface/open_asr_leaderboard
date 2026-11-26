@@ -17,6 +17,7 @@ fi
 MODEL_CONFIGS=(
     # "openai/gpt-transcribe 16"
     # "assembly/universal-3-5-pro    4"
+    # "eesi-ai/nur-v1                1"
     # "elevenlabs/scribe_v2          2"
     # "reson8/resonant-1             4"
 )
@@ -70,6 +71,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e GLADIA_API_KEY="${GLADIA_API_KEY:-}" \
             -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
             -e ASSEMBLYAI_API_KEY="${ASSEMBLYAI_API_KEY:-}" \
+            -e EESI_API_KEY="${EESI_API_KEY:-}" -e EESI_API_URL="${EESI_API_URL:-}" \
             -e ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}" \
             -e REVAI_API_KEY="${REVAI_API_KEY:-}" \
             -e SPEECHMATICS_API_KEY="${SPEECHMATICS_API_KEY:-}" \
