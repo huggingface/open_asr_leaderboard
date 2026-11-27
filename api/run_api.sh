@@ -128,6 +128,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             # SPGISpeech references remove some repetitions, so disable Azure's verbatim prompt.
             PROMPT_ARG="--prompt="
         fi
+        if [[ "$MODEL_ID" == "gabsy/gabsy-ear" && "$DATASET" == "spgispeech" ]]; then
+            # SPGISpeech references leave out repetitions and filler words: Gabsy's clean transcript mode.
+            PROMPT_ARG="--prompt=clean"
+        fi
 
         docker run --rm \
             --user "$(id -u):$(id -g)" \

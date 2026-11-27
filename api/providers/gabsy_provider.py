@@ -12,7 +12,9 @@ from . import APIProvider, PermanentError, register
 # The audio goes as the raw request body (16 kHz mono FLAC); the model name and response format are query
 # parameters; the reply is plain text. The model reads up to 20 minutes per request; longer recordings are sent in
 # pieces cut at the quietest point within SEARCH_S seconds before each nominal boundary.
-# Every dataset is transcribed the same way, verbatim, exactly as in the Gabsy apps. The model takes no prompt.
+# Transcription mode (the checklist's one per-dataset exception): verbatim by default; prompt "clean" selects the
+# clean transcript mode (no repetitions or filler words, the convention of SPGISpeech's references), the same switch the
+# Gabsy app offers as "Clean transcript". run_api.sh sets it for spgispeech only. Otherwise the model takes no prompt.
 # run_api.sh passes GABSY_API_URL even when unset (as ""), so an empty value means the default.
 ENDPOINT = os.getenv("GABSY_API_URL") or "https://gabsy.dev/v1/audio/transcriptions"
 SR = 16000
@@ -84,9 +86,9 @@ class GabsyProvider(APIProvider):
             import librosa
 
             audio = librosa.resample(audio, orig_sr=sr, target_sr=SR)
-        if prompt:
-            raise PermanentError("Gabsy Ear takes no prompt")
-        mode = "verbatim"
+        if prompt not in (None, "", "clean"):
+            raise PermanentError("Gabsy Ear takes no prompt other than the transcription mode 'clean'")
+        mode = "clean" if prompt == "clean" else "verbatim"
         model = VARIANT_MODELS[model_variant]
         bounds = _chunk_bounds(audio)
         texts = [self._post(model, audio[s:e], api_key, mode) for s, e in zip(bounds[:-1], bounds[1:])]
