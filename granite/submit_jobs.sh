@@ -50,12 +50,14 @@ DATASET_CONFIGS=(
     "urgent2024 test"
     "urgent2024_clean test"
     "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
@@ -79,8 +81,8 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
+        vcb_dataset_config
 
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE}"
 
         # Build command based on model type
         if [[ "$MODEL_TYPE" == "speculative" ]]; then
@@ -99,6 +101,17 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             echo "ERROR: Unknown model type: ${MODEL_TYPE}" >&2
             exit 1
         fi
+
+        JOB_BATCH_SIZE="$BATCH_SIZE"
+        if [[ "$DATASET_PATH" == "$VCB_DATASET_PATH" ]]; then
+            # Every VoiceCodeBench recording is longer than 30 s (35-123 s) and is passed whole to the model (the
+            # encoder has no 30 s limit, and no long-form path exists for Granite here): use a smaller batch than
+            # the short-form one, and for the LLM-based types room for ~120 s of speech in the fallback decoding
+            # (--max_new_tokens=200 would cut it off).
+            JOB_BATCH_SIZE=32
+            [[ "$MODEL_TYPE" == speculative* ]] && EXTRA_ARGS="${EXTRA_ARGS} --max_new_tokens=1024"
+        fi
+        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} type=${MODEL_TYPE} batch_size=${JOB_BATCH_SIZE}"
 
         LOCAL_SCRIPT_INJECT=""
         if [[ "$USE_LOCAL_SCRIPT" == "1" ]]; then
@@ -132,7 +145,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${BATCH_SIZE} \
+                    --batch_size=${JOB_BATCH_SIZE} \
                     --max_eval_samples=-1 \
                     ${EXTRA_ARGS} &&
                 mkdir -p /results/${MODEL_FOLDER} &&
@@ -160,4 +173,8 @@ from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade

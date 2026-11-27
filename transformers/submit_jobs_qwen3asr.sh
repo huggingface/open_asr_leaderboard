@@ -31,6 +31,7 @@ MODEL_IDs=(
     "Qwen/Qwen3-ASR-1.7B-hf"
     "Musci-research/Musci-ASR-qwen-1019-hf"
     "oruk/orukqwen-asr-1.7b"
+    "oruk/oruk-fourier-2b"
 )
 
 # ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
@@ -46,12 +47,15 @@ DATASET_CONFIGS=(
     "urgent2024 test 256"
     "urgent2024_clean test 256"
     "monsoon_en_in test 256 VoiceArena/Monsoon_en_IN_test"
+    # Recordings of 35-123 s (the others are shorter than 30 s), so a smaller batch.
+    "voice_code_bench test 64 besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
@@ -72,9 +76,19 @@ for MODEL_ID in "${MODEL_IDs[@]}"; do
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
+        vcb_dataset_config
         if [[ -z "${EFFECTIVE_BATCH_SIZE}" ]]; then
             echo "ERROR: batch_size missing for '${DATASET} ${SPLIT}' in DATASET_CONFIGS" >&2
             exit 1
+        fi
+        # oruk/oruk-fourier-2b uses num_beams=3 in generation_config.json (3x audio
+        # encoder batch expansion); cap batch_size at 64 to fit comfortably on H200.
+        if [[ "${MODEL_ID}" == "oruk/oruk-fourier-2b" && "${EFFECTIVE_BATCH_SIZE}" -gt 64 ]]; then
+            EFFECTIVE_BATCH_SIZE=64
+        fi
+        # VoiceCodeBench clips run 35-123 s, so batch 64 runs out of GPU memory with beam search; use 16.
+        if [[ "${MODEL_ID}" == "oruk/oruk-fourier-2b" && "${DATASET_PATH}" == "${VCB_DATASET_PATH}" && "${EFFECTIVE_BATCH_SIZE}" -gt 16 ]]; then
+            EFFECTIVE_BATCH_SIZE=16
         fi
 
         echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${EFFECTIVE_BATCH_SIZE}"
@@ -126,4 +140,8 @@ from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+# VoiceCodeBench CTEM, if it was evaluated: one grading job per model, then CTEM and WER are printed.
+vcb_grade

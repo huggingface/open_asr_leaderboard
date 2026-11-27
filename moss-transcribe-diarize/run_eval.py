@@ -21,6 +21,7 @@ from transformers import AutoModelForCausalLM, AutoProcessor
 from transformers.generation.logits_process import LogitsProcessor
 
 from normalizer import data_utils
+from normalizer import voice_code_bench
 
 
 SAMPLE_RATE = 16_000
@@ -369,6 +370,7 @@ def transcribe_batch(
 
 
 def main(args: argparse.Namespace) -> int:
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     model, processor, device, dtype, pad_token_id = load_model(args)
 
     def benchmark(batch):
@@ -419,7 +421,7 @@ def main(args: argparse.Namespace) -> int:
 
     def load_prepared_dataset():
         dataset = data_utils.load_data(args)
-        return data_utils.prepare_data(dataset)
+        return data_utils.prepare_data(dataset, normalize_text=not is_vcb)
 
     if args.warmup_steps:
         warmup = load_prepared_dataset()
@@ -451,6 +453,10 @@ def main(args: argparse.Namespace) -> int:
     )
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     results = {
         "audio_length_s": [],
@@ -459,8 +465,7 @@ def main(args: argparse.Namespace) -> int:
         "predictions": [],
         "references": [],
     }
-    if is_chunked:
-        results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    results.update({key: [] for key in metadata_keys})
     for result in tqdm(iter(dataset), desc="Samples"):
         for key in results:
             results[key].append(result[key])
@@ -480,11 +485,14 @@ def main(args: argparse.Namespace) -> int:
         audio_length=results["audio_length_s"],
         transcription_time=results["transcription_time_s"],
         audio_filepaths=results["audio_filepath"],
-        extra_fields={key: results[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: results[key] for key in metadata_keys} or None,
     )
     print("Manifest:", manifest, flush=True)
+
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", round(sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2))
+        return 0
 
     total_duration = sum(results["audio_length_s"])
     total_time = sum(results["transcription_time_s"])

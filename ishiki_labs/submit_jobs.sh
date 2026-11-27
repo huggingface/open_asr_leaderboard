@@ -1,59 +1,64 @@
 #!/bin/bash
-# Local script to submit HF Jobs for OmniASR evaluation.
-# Usage: HF_TOKEN=hf_... bash submit_jobs.sh
+# Local script to submit HF Jobs for Ishiki-ASR-1.0 (`ishiki-labs/ishiki-asr-1.0`) English short-form evaluation.
+# Usage:
+#   HF_TOKEN=hf_... bash ishiki_labs/submit_jobs.sh
+#   ONLY_DATASETS="ami_cleaned spgispeech" HF_TOKEN=hf_... bash ishiki_labs/submit_jobs.sh
 
 # Shared helpers (scripts/submit_utils.sh): local script/normalizer injection,
 # ONLY_DATASETS filtering, and fetching this run's results.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/submit_utils.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-SPACE="${SPACE:-hf-audio/open-asr-leaderboard-omniasr}"
+SPACE="${SPACE:-hf-audio/open-asr-leaderboard-transformers}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-hf-audio/asr_leaderboard_h200}"
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 FLAVOR="${FLAVOR:-h200}"
 ORG_NAME="${ORG_NAME:-}"
-LANGUAGE="eng_Latn"
+JOB_TIMEOUT="${JOB_TIMEOUT:-4h}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Set USE_LOCAL_SCRIPT=1 to run your local run_eval.py instead of the version
-# committed to the Space (useful for iterating without pushing to the Space).
+# Runs your local run_eval.py (the default; set USE_LOCAL_SCRIPT=0 to run the
+# version committed to the Space instead).
 LOCAL_SCRIPT_INJECT=$(local_script_inject "${SCRIPT_DIR}" run_eval.py) || exit 1
 
-# Set USE_LOCAL_NORMALIZER=1 to inject your local normalizer/ package into the
-# job (so normalizer changes take effect without updating the HF Space).
+# Injects your local normalizer/ package into the job (the default; set
+# USE_LOCAL_NORMALIZER=0 to use the Space's copy).
 LOCAL_NORMALIZER_INJECT=$(local_normalizer_inject)
 
-# ── Models ────────────────────────────────────────────────────────────────────
+# ── Models: "model_id revision batch_size" ───────────────────────────────────
+# Pins the immutable Hub commit SHA of the single-file 13.31B BF16 checkpoint (`model.safetensors`).
 MODEL_CONFIGS=(
-    "omniASR_CTC_7B_v2"
-    "omniASR_LLM_7B_v2"
+    "ishiki-labs/ishiki-asr-1.0 902d5c85ad46066c214895c0b8f2200c1800661a ${BATCH_SIZE:-256}"
 )
 
-# ── Datasets: "name split batch_size [dataset_path]" ──────────────────────────
+# ── Datasets: "name split [dataset_path]" ─────────────────────────────────────
 # dataset_path defaults to $DEFAULT_DATASET_PATH when omitted.
 # An entry that names its own repo (e.g. VoiceArena/Monsoon_en_IN_test) passes no
 # config name: the first field is only a label for selection and result files.
 DATASET_CONFIGS=(
-    "ami_cleaned test 64"
-    "gigaspeech_cleaned test 64"
-    "voxpopuli_cleaned_aa test 64"
-    "earnings22_cleaned_aa_chunked test 64 ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
-    "spgispeech test 128"
-    "urgent2024 test 64"
-    "urgent2024_clean test 64"
-    "monsoon_en_in test 64 VoiceArena/Monsoon_en_IN_test"
+    "ami_cleaned test"
+    "gigaspeech_cleaned test"
+    "voxpopuli_cleaned_aa test"
+    "earnings22_cleaned_aa_chunked test ArtificialAnalysis/Earnings22-Cleaned-AA-chunked"
+    "spgispeech test"
+    "urgent2024 test"
+    "urgent2024_clean test"
+    "monsoon_en_in test VoiceArena/Monsoon_en_IN_test"
+    "voice_code_bench test besimple-ai/voice-code-bench"
 )
 # Optional: restrict this run to specific datasets, matched against the first
 # field of each DATASET_CONFIGS entry, e.g.:
 #   ONLY_DATASETS="monsoon_en_in" bash <this script>
 #   ONLY_DATASETS="ami_cleaned spgispeech" bash <this script>
 filter_only_datasets || exit 1
+vcb_init
 
 
 # ── Submit one job per model/dataset combination ─────────────────────────────
-for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
+for model_cfg in "${MODEL_CONFIGS[@]}"; do
+    read -r MODEL_ID REVISION BATCH_SIZE <<< "$model_cfg"
     MODEL_FOLDER="${MODEL_ID//\//-}"
 
     echo "████████████████████████████████████████████████████████████████████████████████"
@@ -61,26 +66,28 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
     echo "████████████████████████████████████████████████████████████████████████████████"
 
     for cfg in "${DATASET_CONFIGS[@]}"; do
-        read -r DATASET SPLIT BATCH_SIZE DATASET_PATH <<< "$cfg"
+        read -r DATASET SPLIT DATASET_PATH <<< "$cfg"
         if [[ -n "$DATASET_PATH" ]]; then
-            # Entry names its own repo: pass no config. Such repos hold a single
-            # (default) config, and the name here is just a label.
             DATASET_CONFIG=""
         else
             DATASET_PATH="$DEFAULT_DATASET_PATH"
             DATASET_CONFIG="$DATASET"
         fi
+        vcb_dataset_config
+        JOB_BATCH_SIZE="$BATCH_SIZE"
+        [[ "$DATASET_PATH" == "$VCB_DATASET_PATH" ]] && JOB_BATCH_SIZE=32  # 35-123 s clips: smaller batches
 
-        echo "Submitting job: model=${MODEL_ID} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
+        echo "Submitting job: model=${MODEL_ID}@${REVISION:0:7} dataset_path=${DATASET_PATH} dataset=${DATASET} split=${SPLIT} batch_size=${BATCH_SIZE}"
 
         NAMESPACE_ARG=""
         [ -n "$ORG_NAME" ] && NAMESPACE_ARG="--namespace ${ORG_NAME}"
 
         hf jobs run \
             --flavor "$FLAVOR" \
-            --timeout 8h \
+            --timeout "${JOB_TIMEOUT}" \
             --secrets HF_TOKEN="$HF_TOKEN" \
-            --env HF_AUDIO_DECODER_BACKEND="soundfile" \
+            --env TOKENIZERS_PARALLELISM=false \
+            --env HF_AUDIO_DECODER_BACKEND=soundfile \
             ${NAMESPACE_ARG} \
             --volume "hf://buckets/${RESULTS_BUCKET}:/results" \
             "hf.co/spaces/${SPACE}" \
@@ -89,13 +96,15 @@ for MODEL_ID in "${MODEL_CONFIGS[@]}"; do
                 ${LOCAL_SCRIPT_INJECT}
                 PYTHONPATH=/app python run_eval.py \
                     --model_id=${MODEL_ID} \
+                    --revision=${REVISION} \
                     --dataset_path=${DATASET_PATH} \
                     --dataset=${DATASET_CONFIG} \
                     --split=${SPLIT} \
                     --device=0 \
-                    --batch_size=${BATCH_SIZE} \
-                    --max_eval_samples=-1 \
-                    --language=${LANGUAGE} &&
+                    --batch_size=${JOB_BATCH_SIZE} \
+                    --dtype=bfloat16 \
+                    --warmup_steps=2 \
+                    --max_eval_samples=-1 &&
                 mkdir -p /results/${MODEL_FOLDER} &&
                 cp results/*.jsonl /results/${MODEL_FOLDER}/
             " > /dev/null 2>&1 &
@@ -121,4 +130,7 @@ from normalizer.eval_utils import score_results
 score_results('${RUN_RESULTS}', '${MODEL_ID}')
 "
 
+    vcb_track_model "$MODEL_ID" "$MODEL_FOLDER"
 done
+
+vcb_grade

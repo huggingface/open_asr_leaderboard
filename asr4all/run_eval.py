@@ -46,7 +46,7 @@ import torch
 
 torch.set_num_threads(int(os.environ["OMP_NUM_THREADS"]))
 torch.set_num_interop_threads(min(4, _N_CPU))
-from normalizer import data_utils
+from normalizer import data_utils, voice_code_bench
 from normalizer.eval_utils import score_results
 
 torch.set_float32_matmul_precision("high")
@@ -445,7 +445,8 @@ def main(args):
     dataset = data_utils.load_data(args)
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         dataset = dataset.take(args.max_eval_samples)
-    dataset = data_utils.prepare_data(dataset)
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)  # raw text, every sample kept
+    dataset = data_utils.prepare_data(dataset, normalize_text=not is_vcb)
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
 
     def _row(r):
@@ -455,6 +456,8 @@ def main(args):
         }
         if is_chunked:
             row["chunk"] = {k: r[k] for k in data_utils.CHUNK_METADATA_KEYS}
+        if is_vcb:
+            row["vcb"] = {k: r[k] for k in voice_code_bench.MANIFEST_KEYS}
         return row
 
     m0 = time.perf_counter()
@@ -470,6 +473,15 @@ def main(args):
     else:
         rows = [_row(r) for r in dataset]
     del dataset
+    full_rows = rows
+    if args.chunk_length_s:  # VCB: windows of <= chunk_length_s (PCEC caps at 256 tokens); tiny tail joins the last
+        n, rows = int(args.chunk_length_s * 16000), []
+        for p, r in enumerate(full_rows):
+            a = r["audio"]
+            st = list(range(0, len(a), n))
+            if len(st) > 1 and len(a) - st[-1] < 16000:
+                st.pop()
+            rows += [dict(r, audio=a[s:e], parent=p) for s, e in zip(st, st[1:] + [len(a)])]
     print(f"decoded {len(rows)} rows in {time.perf_counter() - m0:.1f}s ({n_dec} threads)")
     order = sorted(
         range(len(rows)), key=lambda i: len(rows[i]["audio"]), reverse=args.sort == "desc"
@@ -621,7 +633,21 @@ def main(args):
             results["predictions"].append(texts_by_idx[i])
             results["audio_length_s"].append(lens[j] / 16000)
             results["transcription_time_s"].append(tot_wall * (lens[j] / 16000) / tot_audio)
+    if args.chunk_length_s:  # join each recording's chunks in order; sum times, keep the full duration
+        g = {}
+        for k in sorted(range(len(results["row_idx"])), key=lambda k: results["row_idx"][k]):
+            g.setdefault(rows[results["row_idx"][k]]["parent"], []).append(k)
+        res = {key: [] for key in results}
+        for p, ks in sorted(g.items()):
+            res["references"].append(full_rows[p]["ref"])
+            res["predictions"].append(" ".join(t for t in (results["predictions"][k] for k in ks) if t))
+            res["audio_length_s"].append(sum(results["audio_length_s"][k] for k in ks))
+            res["transcription_time_s"].append(sum(results["transcription_time_s"][k] for k in ks))
+            res["row_idx"].append(p)
+        results, rows = res, full_rows
     extra = None
+    if is_vcb:
+        extra = {k: [rows[i]["vcb"][k] for i in results["row_idx"]] for k in voice_code_bench.MANIFEST_KEYS}
     if is_chunked:
         keys = data_utils.CHUNK_METADATA_KEYS
         extra = {k: [rows[i]["chunk"][k] for i in results["row_idx"]] for k in keys}
@@ -637,6 +663,9 @@ def main(args):
         extra_fields=extra,
     )
     print("results saved at path:", manifest_path)
+    if is_vcb:  # WER via score_results with the other datasets, CTEM via the grading job
+        print("RTFx:", round(sum(results["audio_length_s"]) / sum(results["transcription_time_s"]), 2))
+        return
     if is_chunked:
         import json as _json
 
@@ -700,5 +729,6 @@ if __name__ == "__main__":
     p.add_argument(
         "--prefetch", type=int, default=2, help="batches prepared ahead of the one being issued"
     )
+    p.add_argument("--chunk_length_s", type=float, default=None, help="split recordings into windows (VCB)")
     p.add_argument("--streaming", type=lambda x: x == "True", default=False)
     main(p.parse_args())

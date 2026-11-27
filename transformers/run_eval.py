@@ -7,6 +7,7 @@ import evaluate
 import numpy as np
 import torch
 from normalizer import data_utils
+from normalizer import voice_code_bench
 from torch.nn.attention import SDPBackend, sdpa_kernel
 from tqdm import tqdm
 
@@ -15,13 +16,16 @@ from transformers import (
     MODEL_FOR_MULTIMODAL_LM_MAPPING,
     MODEL_FOR_RNNT_MAPPING,
     MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
+    MODEL_FOR_TDT_MAPPING,
     AutoConfig,
     AutoModelForCTC,
     AutoModelForMultimodalLM,
     AutoModelForRNNT,
     AutoModelForSpeechSeq2Seq,
+    AutoModelForTDT,
     AutoProcessor,
     CompileConfig,
+    GenerationConfig,
 )
 
 
@@ -72,6 +76,8 @@ def main(args):
         cls_model = AutoModelForCTC
     elif type(config) in MODEL_FOR_RNNT_MAPPING:
         cls_model = AutoModelForRNNT
+    elif type(config) in MODEL_FOR_TDT_MAPPING:
+        cls_model = AutoModelForTDT
     else:
         raise ValueError(f"Model config of type {type(config)} not recognized in Transformers mappings.")
     is_ctc = cls_model == AutoModelForCTC
@@ -96,10 +102,18 @@ def main(args):
     model.to(args.device)
     model.eval()
     print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
-    processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
+    if args.processor_id:
+        # Checkpoint published without processor / generation files: take them from the companion repo
+        processor = AutoProcessor.from_pretrained(args.processor_id)
+        model.generation_config = GenerationConfig.from_pretrained(args.processor_id)
+    else:
+        processor = AutoProcessor.from_pretrained(args.model_id, revision=args.revision)
     has_transcription_processor = hasattr(processor, "apply_transcription_request")
     is_cohere = "cohere" in args.model_id.lower() and "transcribe" in args.model_id.lower()
     is_nemotron = any(m in args.model_id.lower() for m in ("nemotron-speech-streaming", "nemotron-3.5-asr-streaming"))
+    # Token-and-duration transducers (Parakeet TDT) share the transducer generate/decode path with the RNNT models above
+    is_tdt = cls_model == AutoModelForTDT
+    is_transducer = is_nemotron or is_tdt
     # Voxtral Realtime uses a simple processor call (no apply_transcription_request / prompt)
     is_voxtral_realtime = "voxtral" in args.model_id.lower() and "realtime" in args.model_id.lower()
     # Match on model_type too, so fine-tunes whose id lacks "qwen3-asr" take the Qwen3-ASR decode path
@@ -142,8 +156,9 @@ def main(args):
         # Clear deprecated Whisper generation config fields to suppress warnings.
         # Skipped for Gemma 4, where suppress_tokens holds the modality markers
         # (<|audio|>, <|image|>) that the model is meant not to emit -- they are
-        # not Whisper leftovers.
-        if not is_gemma4:
+        # not Whisper leftovers. Also skipped for Parakeet TDT, where suppress_tokens holds the
+        # duration tokens, which must never be fed back to the decoder.
+        if not (is_gemma4 or is_tdt):
             if hasattr(model.generation_config, "forced_decoder_ids"):
                 model.generation_config.forced_decoder_ids = None
             if hasattr(model.generation_config, "suppress_tokens"):
@@ -164,7 +179,7 @@ def main(args):
         raise ValueError("`max_new_tokens` should only be set for auto-regressive models, but got a CTC model.")
 
     if args.torch_compile is not None:
-        if is_nemotron:
+        if is_transducer:
             # RNNT uses its own generate implementation; compile the model directly
             model = torch.compile(model, mode=args.torch_compile, fullgraph=args.compile_fullgraph)
         elif model.can_generate():
@@ -251,7 +266,7 @@ def main(args):
             padding_audios = [audios[-1] for _ in range(padding_size)]
             audios.extend(padding_audios)
 
-        if is_nemotron:
+        if is_transducer:
             rnnt_processor_kwargs = dict(
                 sampling_rate=sampling_rate,
                 padding=True,
@@ -259,7 +274,7 @@ def main(args):
             )
             # Multilingual RNNT models accept a language prompt;
             # English-only models (e.g. nemotron-speech-streaming-en) do not.
-            if "-en" not in args.model_id.lower():
+            if is_nemotron and "-en" not in args.model_id.lower():
                 rnnt_processor_kwargs["language"] = args.language
             inputs = processor(audios, **rnnt_processor_kwargs)
         elif is_cohere:
@@ -361,8 +376,8 @@ def main(args):
         else:
             sdpa_backends = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
         with sdpa_kernel(sdpa_backends):
-            if is_nemotron:
-                # 2.0 RNNT generation (cache-aware FastConformer-RNNT)
+            if is_transducer:
+                # 2.0 RNNT/TDT generation (cache-aware FastConformer-RNNT)
                 rnnt_output = model.generate(**inputs, **inference_gen_kwargs, return_dict_in_generate=True)
                 pred_ids = rnnt_output.sequences
             elif model.can_generate():
@@ -406,7 +421,7 @@ def main(args):
             pred_ids = pred_ids[:-padding_size, ...]
 
         # 3.2 Convert token ids to text transcription
-        if is_nemotron:
+        if is_transducer:
             pred_text = processor.decode(pred_ids, skip_special_tokens=True)
         elif is_cohere:
             audio_chunk_index = inputs.get("audio_chunk_index")
@@ -445,8 +460,11 @@ def main(args):
             # Strip input prompt tokens
             pred_text = processor.decode(pred_ids[:, prompt_len:], skip_special_tokens=True)
         elif is_ctc:
-            # don't use skip_special_tokens as it collapses double letters
-            pred_text = processor.batch_decode(pred_ids)
+            if config.model_type == "omniasr_ctc":
+                pred_text = processor.batch_decode(pred_ids, skip_special_tokens=True)
+            else:
+                # don't use skip_special_tokens as it collapses double letters
+                pred_text = processor.batch_decode(pred_ids)
         else:
             pred_text = processor.decode(pred_ids, skip_special_tokens=True)
 
@@ -462,9 +480,11 @@ def main(args):
         batch["references"] = batch["original_text"]  # raw; normalization applied at scoring time
         return batch
 
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
+
     if args.warmup_steps is not None:
         dataset = data_utils.load_data(args)
-        dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
+        dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate, normalize_text=not is_vcb)
 
         # A normal multi-batch warm-up can amount to another complete pass over
         # a long-form split. One recording is enough to initialize the kernels
@@ -508,7 +528,7 @@ def main(args):
             dataset = dataset.take(args.max_eval_samples)
         else:
             dataset = dataset.select(range(min(args.max_eval_samples, len(dataset))))
-    dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate)
+    dataset = data_utils.prepare_data(dataset, sampling_rate=sampling_rate, normalize_text=not is_vcb)
 
     dataset = dataset.map(
         benchmark,
@@ -518,6 +538,10 @@ def main(args):
     )
 
     is_chunked = data_utils.is_chunked_dataset(args.dataset_path)
+    metadata_keys = (
+        voice_code_bench.MANIFEST_KEYS if is_vcb
+        else data_utils.CHUNK_METADATA_KEYS if is_chunked else []
+    )
 
     all_results = {
         "audio_length_s": [],
@@ -526,8 +550,7 @@ def main(args):
         "references": [],
         "audio_filepath": [],
     }
-    if is_chunked:
-        all_results.update({key: [] for key in data_utils.CHUNK_METADATA_KEYS})
+    all_results.update({key: [] for key in metadata_keys})
     result_iter = iter(dataset)
     for result in tqdm(result_iter, desc="Samples..."):
         for key in all_results:
@@ -545,11 +568,14 @@ def main(args):
         audio_length=all_results["audio_length_s"],
         transcription_time=all_results["transcription_time_s"],
         audio_filepaths=all_results["audio_filepath"],
-        extra_fields={key: all_results[key] for key in data_utils.CHUNK_METADATA_KEYS}
-        if is_chunked
-        else None,
+        extra_fields={key: all_results[key] for key in metadata_keys},
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
+
+    if is_vcb:
+        # The WER comes from score_results with the other datasets, the CTEM from the grading job.
+        print("RTFx:", round(sum(all_results["audio_length_s"]) / sum(all_results["transcription_time_s"]), 2))
+        return
 
     if is_chunked:
         sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest_path))
@@ -693,6 +719,13 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Model revision to use (e.g. 'refs/pr/11' for a PR branch). Defaults to the main branch.",
+    )
+    parser.add_argument(
+        "--processor_id",
+        type=str,
+        default=None,
+        help="Load the processor (feature extractor and tokenizer) and the generation config from this repo instead of "
+        "--model_id, for checkpoints published without those files. Defaults to --model_id.",
     )
     parser.add_argument(
         "--language",

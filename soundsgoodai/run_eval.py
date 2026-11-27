@@ -47,7 +47,7 @@ from kaldialign import batch_error_rate
 from librosa import resample
 from tqdm.auto import tqdm
 
-from normalizer import data_utils
+from normalizer import data_utils, voice_code_bench
 
 SAMPLE_RATE = 16000
 PCM16_SCALE = 32768
@@ -420,6 +420,42 @@ def export_bundle(
     return bundle, metadata
 
 
+VCB_MAX_AUDIO_SECONDS = 130.0  # VoiceCodeBench recordings last 35-123 s
+VCB_CHUNK_SECONDS = 30.0
+
+
+class ChunkedASR:
+    """Wrap an ASR instance so clips beyond its export profile are split into equal parts.
+
+    Each clip longer than ``VCB_CHUNK_SECONDS`` is cut into the fewest equal parts of at most that
+    length, the parts are transcribed in engine-sized batches, and their texts are joined per clip.
+    """
+
+    def __init__(self, backend: ASR, batch_size: int) -> None:
+        self.backend = backend
+        self.batch_size = batch_size
+        self.stream = backend.stream
+
+    def __call__(self, audios):
+        limit = round(VCB_CHUNK_SECONDS * SAMPLE_RATE)
+        pieces, owners = [], []
+        for i, audio in enumerate(audios):
+            parts = max(1, -(-len(audio) // limit))
+            for part in np.array_split(audio, parts):
+                pieces.append(np.ascontiguousarray(part, dtype=np.float32))
+                owners.append(i)
+        texts = []
+        for start in range(0, len(pieces), self.batch_size):
+            predictions, _ = self.backend(pieces[start:start + self.batch_size])
+            self.backend.stream.synchronize()
+            texts.extend(predictions)
+        joined = [[] for _ in audios]
+        for owner, text in zip(owners, texts):
+            if text:
+                joined[owner].append(text)
+        return [" ".join(parts) for parts in joined], [[] for _ in audios]
+
+
 def benchmark(
     dataset: Dataset, backends: list[ASR], batch_size: int, warmup_steps: int
 ) -> dict[str, list[str | int | float | None]]:
@@ -531,7 +567,7 @@ def benchmark(
             "audio_length_s": [len(audio) / SAMPLE_RATE for audio in audios[index]],
             "transcription_time_s": [elapsed / len(dataset)] * len(batch["audio"]),
             "audio_filepaths": data_utils.extract_audio_filepaths_from_batch(batch),
-            **{key: batch[key] for key in data_utils.CHUNK_METADATA_KEYS if key in batch},
+            **{key: batch[key] for key in (*data_utils.CHUNK_METADATA_KEYS, *voice_code_bench.MANIFEST_KEYS) if key in batch},
         }
         for key, values in rows.items():
             results.setdefault(key, []).extend(values)
@@ -552,6 +588,7 @@ def main() -> None:
     """
 
     args = parse_args()
+    is_vcb = voice_code_bench.is_voice_code_bench(args.dataset_path)
     with cp.cuda.Device(args.device):
         dataset = data_utils.load_data(args).cast_column("audio", Audio(decode=False))
         # Normalize metadata without copying or decoding the encoded audio column.
@@ -598,7 +635,7 @@ def main() -> None:
                 }
             ),
             fn_kwargs={
-                "max_samples": round(args.max_audio_seconds * SAMPLE_RATE),
+                "max_samples": round((VCB_MAX_AUDIO_SECONDS if is_vcb else args.max_audio_seconds) * SAMPLE_RATE),
                 "model_family": args.model_family,
             },
         )
@@ -622,13 +659,17 @@ def main() -> None:
 
         workers = min(args.workers, (len(dataset) + args.batch_size - 1) // args.batch_size)
         backends = [ASR(bundle, device_id=args.device) for _ in range(workers)]
+        if is_vcb:
+            backends = [ChunkedASR(backend, args.batch_size) for backend in backends]
 
         results = benchmark(dataset, backends, args.batch_size, args.warmup_steps)
         if len(results["predictions"]) != len(dataset):
             raise RuntimeError("Incomplete evaluation: not every sample was transcribed.")
 
         extra_fields = None
-        if data_utils.is_chunked_dataset(args.dataset_path):
+        if is_vcb:
+            extra_fields = {key: results[key] for key in voice_code_bench.MANIFEST_KEYS}
+        elif data_utils.is_chunked_dataset(args.dataset_path):
             extra_fields = {key: results[key] for key in data_utils.CHUNK_METADATA_KEYS}
 
         manifest = Path(
@@ -665,6 +706,12 @@ def main() -> None:
         }
         with open(manifest.with_suffix(".metadata.json"), "w", encoding="utf-8") as destination:
             json.dump(metadata, destination, indent=2, sort_keys=True)
+
+    if is_vcb:
+        # CTEM and WER are computed from the manifest by the grading job.
+        rtfx = sum(results["audio_length_s"]) / sum(results["transcription_time_s"])
+        print(f"Results: {manifest}\nRTFx: {rtfx:.2f}")
+        return
 
     sessions = data_utils.merge_chunked_manifest(data_utils.read_manifest(manifest))
     refs = [tuple(data_utils.normalizer(row["text"]).split()) for row in sessions]

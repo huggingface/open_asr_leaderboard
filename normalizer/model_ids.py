@@ -33,7 +33,9 @@ HYPHENATED_ORGS = frozenset(
         "distil-whisper",
         "efficient-speech",
         "futo-org",
+        "hf-audio",
         "ibm-granite",
+        "ishiki-labs",
         "zai-org",
     }
 )

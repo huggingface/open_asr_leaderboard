@@ -36,6 +36,7 @@ from transcribe_model_card_contract import (
     get_model_revision,
 )
 from normalizer import data_utils
+from normalizer import voice_code_bench
 
 
 SAMPLE_RATE = 16_000
@@ -52,6 +53,8 @@ class SampleResult:
     audio_filepath: str
     parent_id: str | None = None
     chunk_index: int | None = None
+    audio_id: str | None = None
+    voice_code_bench_revision: str | None = None
 
 
 @dataclass
@@ -65,6 +68,8 @@ class PreparedSample:
     audio_filepath: str
     parent_id: str | None = None
     chunk_index: int | None = None
+    audio_id: str | None = None
+    voice_code_bench_revision: str | None = None
 
 
 def _dataset_config(args: argparse.Namespace) -> str | None:
@@ -86,7 +91,11 @@ def load_eval_dataset(args: argparse.Namespace):
         load_args = copy.copy(args)
         load_args.dataset = _dataset_config(args)
         dataset = data_utils.load_data(load_args)
-        dataset = data_utils.prepare_data(dataset, sampling_rate=SAMPLE_RATE)
+        dataset = data_utils.prepare_data(
+            dataset,
+            sampling_rate=SAMPLE_RATE,
+            normalize_text=not voice_code_bench.is_voice_code_bench(args.dataset_path),
+        )
 
     if args.max_eval_samples is not None and args.max_eval_samples > 0:
         if isinstance(dataset, IterableDataset) or args.streaming:
@@ -192,6 +201,8 @@ def prepare_sample(
         audio_filepath=audio_filepath,
         parent_id=row.get("parent_id"),
         chunk_index=row.get("chunk_index"),
+        audio_id=row.get("audio_id"),
+        voice_code_bench_revision=row.get("voice_code_bench_revision"),
     )
 
 
@@ -218,6 +229,8 @@ def finalize_sample(prepared: PreparedSample, raw_parts: list[str]) -> SampleRes
         audio_filepath=prepared.audio_filepath,
         parent_id=prepared.parent_id,
         chunk_index=prepared.chunk_index,
+        audio_id=prepared.audio_id,
+        voice_code_bench_revision=prepared.voice_code_bench_revision,
     )
 
 
@@ -391,6 +404,14 @@ def evaluate(
         extra_fields.update(
             parent_id=[result.parent_id for result in all_results],
             chunk_index=[result.chunk_index for result in all_results],
+        )
+
+    if voice_code_bench.is_voice_code_bench(args.dataset_path):
+        extra_fields.update(
+            audio_id=[result.audio_id for result in all_results],
+            voice_code_bench_revision=[
+                result.voice_code_bench_revision for result in all_results
+            ],
         )
 
     manifest_path = data_utils.write_manifest(
