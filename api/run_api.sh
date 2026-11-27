@@ -44,6 +44,7 @@ MODEL_CONFIGS=(
     # "p99lab/audrey-1                 64"
     # "opusclip/steno-v1-preview     32"
     # "yoob/yoob-asr-pro-v1          16"
+    # "gabsy/gabsy-ear               8"
 )
 DEFAULT_DATASET_PATH="${DEFAULT_DATASET_PATH:-hf-audio/open-asr-leaderboard}"
 
@@ -127,6 +128,10 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             # SPGISpeech references remove some repetitions, so disable Azure's verbatim prompt.
             PROMPT_ARG="--prompt="
         fi
+        if [[ "$MODEL_ID" == "gabsy/gabsy-ear" && "$DATASET" == "spgispeech" ]]; then
+            # SPGISpeech references leave out repetitions and filler words: Gabsy's clean transcript mode.
+            PROMPT_ARG="--prompt=clean"
+        fi
 
         docker run --rm \
             --user "$(id -u):$(id -g)" \
@@ -163,6 +168,7 @@ for model_cfg in "${MODEL_CONFIGS[@]}"; do
             -e P99LAB_API_KEY="${P99LAB_API_KEY:-}" -e P99LAB_API_URL="${P99LAB_API_URL:-}" \
             -e OPUSCLIP_API_KEY="${OPUSCLIP_API_KEY:-}" -e OPUSCLIP_API_URL="${OPUSCLIP_API_URL:-}" \
             -e YOOB_API_KEY="${YOOB_API_KEY:-}" -e YOOB_API_URL="${YOOB_API_URL:-}" \
+            -e GABSY_API_KEY="${GABSY_API_KEY:-}" -e GABSY_API_URL="${GABSY_API_URL:-}" \
             -v "${RUNDIR}/results:/app/results" \
             -v "${REPO_ROOT}/../normalizer:/app/normalizer" \
             -v "${HF_CACHE_DIR}:/hf_cache" \

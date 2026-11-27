@@ -56,6 +56,7 @@ from . import (
     elevenlabs_provider,
     fonada_provider,
     gemini_provider,
+    gabsy_provider,
     gladia_provider,
     meta_provider,
     microsoft_azure_provider,
